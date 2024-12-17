@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 
 include(cmake/prelude.cmake)
 include(ExternalProject)
+include(FetchContent)
 
 project(
     open-broadcast-encoder
@@ -48,24 +49,37 @@ target_compile_features(open-broadcast-encoder_exe PRIVATE cxx_std_20)
 target_link_libraries(open-broadcast-encoder_exe PRIVATE open-broadcast-encoder_lib)
 
 #Include libristnet
-ExternalProject_Add(project_libristnet
-        GIT_REPOSITORY https://github.com/patcarter883/rist-cpp.git
-        GIT_TAG swxtch
-        SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ristwrap
-        BINARY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ristwrap
-        GIT_PROGRESS 1
-        BUILD_COMMAND cmake --build ${CMAKE_CURRENT_SOURCE_DIR}/ristwrap --config ${CMAKE_BUILD_TYPE} --target ristnet
-        STEP_TARGETS build
-        EXCLUDE_FROM_ALL TRUE
-        INSTALL_COMMAND ""
-        )
-add_library(ristnet STATIC IMPORTED)
-set_property(TARGET ristnet PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/ristwrap/libristnet.a)
-add_dependencies(ristnet project_libristnet)
 
-#Pass information about where to find headers
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/ristwrap/)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/ristwrap/rist/inc/)
+FetchContent_Declare(
+  rist-cpp
+  GIT_REPOSITORY https://github.com/patcarter883/rist-cpp.git
+  GIT_TAG swxtch
+)
+
+FetchContent_MakeAvailable(rist-cpp)
+
+target_link_libraries(open-broadcast-encoder_exe PRIVATE open-broadcast-encoder_lib ristnet)
+target_include_directories(open-broadcast-encoder_exe PUBLIC ${rist-cpp_SOURCE_DIR})
+
+
+# ExternalProject_Add(project_libristnet
+#         GIT_REPOSITORY https://github.com/patcarter883/rist-cpp.git
+#         GIT_TAG swxtch
+#         SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ristwrap
+#         BINARY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ristwrap
+#         GIT_PROGRESS 1
+#         BUILD_COMMAND cmake --build ${CMAKE_CURRENT_SOURCE_DIR}/ristwrap --config ${CMAKE_BUILD_TYPE} --target ristnet
+#         STEP_TARGETS build
+#         EXCLUDE_FROM_ALL TRUE
+#         INSTALL_COMMAND ""
+#         )
+# add_library(ristnet STATIC IMPORTED)
+# set_property(TARGET ristnet PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/ristwrap/libristnet.a)
+# add_dependencies(ristnet project_libristnet)
+
+# #Pass information about where to find headers
+# include_directories(${CMAKE_CURRENT_SOURCE_DIR}/ristwrap/)
+# include_directories(${CMAKE_CURRENT_SOURCE_DIR}/ristwrap/rist/inc/)
 
 # ---- Install rules ----
 

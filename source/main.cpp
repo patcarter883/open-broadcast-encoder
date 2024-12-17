@@ -3,6 +3,8 @@
 
 #include "lib.hpp"
 
+#include "RISTNet.h"
+
 auto main() -> int
 {
   auto const lib = library {};

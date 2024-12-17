@@ -11,7 +11,8 @@
       "hidden": true,
       "cacheVariables": {
         "open-broadcast-encoder_DEVELOPER_MODE": "ON",
-        "VCPKG_MANIFEST_FEATURES": "test"
+        "VCPKG_MANIFEST_FEATURES": "test",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true
       }
     },
     {
@@ -84,7 +85,9 @@
       "generator": "Ninja",
       "hidden": true,
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
       }
     },
     {
