@@ -15,11 +15,41 @@ project(
 include(cmake/project-is-top-level.cmake)
 include(cmake/variables.cmake)
 
+set(FLTK_DIR "/mnt/data/projects/fltk-1.4.1/fltk-1.4.1/build"
+    CACHE FILEPATH "FLTK installation or build directory")
+
+find_package(FLTK 1.4 CONFIG REQUIRED)
+
+# set(FLTK_OPTION_STD ON)
+# set(FLTK_OPTION_OPTIM "-Wall -Wno-deprecated-declarations")
+
+# # ---- External Projects ---
+# FetchContent_Declare(FLTK
+#   GIT_REPOSITORY  https://github.com/fltk/fltk
+#   GIT_TAG         master
+#   GIT_SHALLOW     TRUE
+# )
+
+FetchContent_Declare(
+  rist-cpp
+  GIT_REPOSITORY https://github.com/patcarter883/rist-cpp.git
+  GIT_TAG swxtch
+)
+
+message(STATUS "Download and build rist-cpp if necessary, please wait...")
+FetchContent_MakeAvailable(rist-cpp)
+message(STATUS "Download and build rist-cpp - done.")
+
+# message(STATUS "Download and build FLTK if necessary, please wait...")
+# FetchContent_MakeAvailable(FLTK)
+# message(STATUS "Download and build FLTK - done.")
+
 # ---- Declare library ----
 
 add_library(
     open-broadcast-encoder_lib OBJECT
     source/lib.cpp
+    source/ui.cxx
 )
 
 target_include_directories(
@@ -31,9 +61,9 @@ target_include_directories(
 target_compile_features(open-broadcast-encoder_lib PUBLIC cxx_std_20)
 
 find_package(fmt REQUIRED)
-find_package(FLTK CONFIG REQUIRED)
 
-target_link_libraries(open-broadcast-encoder_lib PRIVATE fmt::fmt fltk fltk_gl fltk_forms fltk_images)
+target_link_libraries(open-broadcast-encoder_lib PRIVATE fmt::fmt fltk::fltk)
+
 
 
 
@@ -46,19 +76,7 @@ set_property(TARGET open-broadcast-encoder_exe PROPERTY OUTPUT_NAME open-broadca
 
 target_compile_features(open-broadcast-encoder_exe PRIVATE cxx_std_20)
 
-target_link_libraries(open-broadcast-encoder_exe PRIVATE open-broadcast-encoder_lib)
-
-#Include libristnet
-
-FetchContent_Declare(
-  rist-cpp
-  GIT_REPOSITORY https://github.com/patcarter883/rist-cpp.git
-  GIT_TAG swxtch
-)
-
-FetchContent_MakeAvailable(rist-cpp)
-
-target_link_libraries(open-broadcast-encoder_exe PRIVATE open-broadcast-encoder_lib ristnet)
+target_link_libraries(open-broadcast-encoder_exe PRIVATE open-broadcast-encoder_lib ristnet fltk::fltk)
 target_include_directories(open-broadcast-encoder_exe PUBLIC ${rist-cpp_SOURCE_DIR})
 
 

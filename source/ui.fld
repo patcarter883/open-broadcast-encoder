@@ -1,0 +1,60 @@
+# data file for the Fltk User Interface Designer (fluid)
+version 1.0401
+header_name {.h}
+code_name {.cxx}
+class user_interface {open
+} {
+  Function {user_interface()} {open
+  } {
+    Fl_Window main_window {
+      label {Open Broadcast Encoder} open
+      xywh {847 161 950 475} type Double
+      code0 {main_window->resizable(pack);} visible
+    } {
+      Fl_Flex pack {open
+        xywh {50 25 900 430} type HORIZONTAL margin {50 25 50 25} gap 10
+      } {
+        Fl_Flex {} {
+          label Input open
+          xywh {100 50 260 380} gap 25 fixed_size_tuples {2  0 25  1 148 }
+        } {
+          Fl_Choice choice_input_protocol {
+            label Protocol open
+            xywh {100 50 260 25} down_box BORDER_BOX when 6
+          } {
+            MenuItem select_sdp_input {
+              label {SDP / RDP}
+              user_data 1 user_data_type long
+              xywh {0 0 100 20}
+            }
+            MenuItem select_ndi_input {
+              label NDI
+              user_data 2 user_data_type long selected
+              xywh {0 0 100 20}
+            }
+          }
+          Fl_Flex sdp_options_group {
+            label {SDP / RDP Options}
+            xywh {100 100 260 148} align 5 hide
+          } {}
+          Fl_Flex ndi_options_group {
+            label {NDI Options}
+            xywh {100 273 260 157} align 5
+          } {}
+        }
+        Fl_Flex {} {
+          label Encode open
+          xywh {370 50 260 380}
+        } {}
+        Fl_Flex {} {
+          label Output open
+          xywh {640 50 260 380}
+        } {}
+      }
+    }
+  }
+  Function {show(int argc, char **argv) const} {open
+  } {
+    code {main_window->show(argc, argv);} {}
+  }
+}

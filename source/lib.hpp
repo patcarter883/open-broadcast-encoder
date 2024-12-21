@@ -1,6 +1,10 @@
 #pragma once
 
+#include <memory>
 #include <string>
+#include "ui.h"
+
+enum input_mode { sdp, ndi };
 
 /**
  * @brief The core implementation of the executable
@@ -15,7 +19,9 @@ struct library
   /**
    * @brief Simply initializes the name member to the name of the project
    */
-  library();
+  library() noexcept;
 
   std::string name;
+  std::unique_ptr<user_interface> ui;
+  input_mode input_mode;
 };
