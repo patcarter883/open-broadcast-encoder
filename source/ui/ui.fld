@@ -1,0 +1,346 @@
+# data file for the Fltk User Interface Designer (fluid)
+version 1.0401
+header_name {.h}
+code_name {.cxx}
+decl {\#include "common.h"} {public global
+}
+
+class user_interface {open
+} {
+  Function {user_interface()} {open
+  } {
+    Fl_Window main_window {
+      label {Open Broadcast Encoder} open
+      xywh {49 145 1373 667} type Double
+      code0 {main_window->resizable(pack);} visible
+    } {
+      Fl_Flex pack {open
+        xywh {0 0 1373 667} margin {25 25 25 25} fixed_size_tuples {1  1 200 }
+      } {
+        Fl_Flex flx_top {open
+          xywh {25 25 1323 417} type HORIZONTAL margin {0 0 0 12} gap 12
+        } {
+          Fl_Flex {} {open
+            xywh {25 25 433 405} gap 25
+          } {
+            Fl_Flex flx_input {
+              label Input open
+              xywh {25 25 433 190} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {2  0 25  4 25 }
+            } {
+              Fl_Choice choice_input_protocol {
+                label Protocol
+                xywh {31 51 421 25} down_box BORDER_BOX align 5 when 6
+              } {
+                MenuItem {} {
+                  label { }
+                  user_data 0
+                  xywh {0 0 100 20}
+                }
+                MenuItem select_sdp_input {
+                  label {SDP / RDP}
+                  user_data 1 user_data_type long
+                  xywh {0 0 100 20}
+                }
+                MenuItem select_ndi_input {
+                  label NDI
+                  user_data 2 user_data_type long
+                  xywh {0 0 100 20}
+                }
+                MenuItem select_mpegts_input {
+                  label MPEGTS
+                  user_data 3 user_data_type long
+                  xywh {10 10 100 20}
+                }
+              }
+              Fl_Flex sdp_options_group {
+                xywh {100 100 260 127} align 5 hide gap 12 fixed_size_tuples {1  0 25 }
+              } {
+                Fl_Button btn_open_sdp {
+                  label {Open SDP File}
+                  xywh {100 100 260 25}
+                }
+              }
+              Fl_Flex ndi_options_group {
+                xywh {100 252 260 128} align 5 hide gap 12 fixed_size_tuples {2  0 25  1 25 }
+              } {
+                Fl_Choice choice_ndi_input {
+                  label {NDI Input} open
+                  xywh {100 252 260 25} down_box BORDER_BOX align 5
+                } {}
+                Fl_Button btn_refresh_ndi_devices {
+                  label {Refresh Devices}
+                  xywh {100 289 260 25}
+                }
+              }
+              Fl_Flex mpegts_options_group {open
+                xywh {110 110 260 127} align 5 hide gap 12 fixed_size_tuples {1  0 25 }
+              } {
+                Fl_Input input_listen_port {
+                  label {Listen Port}
+                  xywh {110 110 260 25} align 5
+                }
+              }
+              Fl_Button btn_preview_input {
+                label {Preview Input}
+                xywh {31 101 421 25}
+              }
+            }
+            Fl_Flex {} {
+              label Encode open
+              xywh {25 240 433 190} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {3  0 25  1 25  2 25 }
+            } {
+              Fl_Choice choice_codec {
+                label Codec
+                xywh {31 266 421 25} down_box BORDER_BOX align 5
+              } {
+                MenuItem {} {
+                  label H264
+                  user_data {static_cast<long>(codec::h264)} user_data_type long
+                  xywh {0 0 100 20}
+                }
+                MenuItem {} {
+                  label H265
+                  user_data {static_cast<long>(codec::h265)} user_data_type long
+                  xywh {10 10 100 20}
+                }
+                MenuItem {} {
+                  label AV1
+                  user_data {static_cast<long>(codec::av1)} user_data_type long
+                  xywh {20 20 100 20}
+                }
+              }
+              Fl_Choice choice_encoder {
+                label Encoder
+                xywh {31 316 421 25} down_box BORDER_BOX align 5
+              } {
+                MenuItem {} {
+                  label AMD
+                  user_data {static_cast<long>(encoder::amd)} user_data_type long
+                  xywh {30 30 100 20}
+                }
+                MenuItem {} {
+                  label NVENC
+                  user_data {static_cast<long>(encoder::nvenc)} user_data_type long
+                  xywh {40 40 100 20}
+                }
+                MenuItem {} {
+                  label QSV
+                  user_data {static_cast<long>(encoder::qsv)} user_data_type long
+                  xywh {50 50 100 20}
+                }
+                MenuItem {} {
+                  label Software
+                  user_data {static_cast<long>(encoder::software)} user_data_type long
+                  xywh {60 60 100 20}
+                }
+              }
+              Fl_Input input_encode_bitrate {
+                label Bitrate
+                xywh {31 366 421 25} align 5
+              }
+            }
+          }
+          Fl_Flex {} {
+            label Output open selected
+            xywh {470 25 433 405} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {2  0 25  1 25 }
+          } {
+            Fl_Input input_rist_address {
+              label {RIST Address}
+              xywh {476 51 421 25} align 5
+            }
+            Fl_Flex {} {open
+              xywh {476 101 421 25} type HORIZONTAL gap 12
+            } {
+              Fl_Button btn_start_encode {
+                label {Start Encode}
+                xywh {476 101 205 25}
+              }
+              Fl_Button btn_stop_encode {
+                label {Stop Encode}
+                xywh {693 101 204 25} deactivate
+              }
+            }
+          }
+          Fl_Flex {} {
+            label Stats
+            xywh {915 25 433 405} box BORDER_BOX margin {5 0 5 0} fixed_size_tuples {1  0 256 }
+          } {
+            Fl_Grid grid_stats {open
+              xywh {921 26 421 256}
+              dimensions {8 3}
+              rowheights { 25 25 25 25 25 25 25 0 }
+              colwidths { 50 50 0 }
+            } {
+              Fl_Output bandwidth_output {
+                label Bandwidth
+                xywh {1062 58 140 32} labeltype NO_LABEL
+                parent_properties {
+                  location {1 1}
+                }
+              }
+              Fl_Output link_quality_output {
+                label {Link Quality}
+                xywh {1062 90 140 32} labeltype NO_LABEL
+                parent_properties {
+                  location {2 1}
+                }
+              }
+              Fl_Output retransmitted_packets_output {
+                label {Retransmitted Packets}
+                xywh {1062 122 140 32} labeltype NO_LABEL
+                parent_properties {
+                  location {3 1}
+                }
+              }
+              Fl_Output rtt_output {
+                label RTT
+                xywh {1062 154 140 32} labeltype NO_LABEL
+                parent_properties {
+                  location {4 1}
+                }
+              }
+              Fl_Output total_packets_output {
+                label Packets
+                xywh {1062 186 140 32} labeltype NO_LABEL
+                parent_properties {
+                  location {5 1}
+                }
+              }
+              Fl_Output encode_bitrate_output {
+                label {Encode Bitrate}
+                xywh {1062 250 140 32} labeltype NO_LABEL
+                parent_properties {
+                  location {7 1}
+                }
+              }
+              Fl_Output cumulative_bandwidth_output {
+                label Bandwidth
+                xywh {1202 58 140 32} labeltype NO_LABEL
+                parent_properties {
+                  location {1 2}
+                }
+              }
+              Fl_Output cumulative_retransmitted_packets_output {
+                label {Retransmitted Packets}
+                xywh {1202 122 140 32} labeltype NO_LABEL
+                parent_properties {
+                  location {3 2}
+                }
+              }
+              Fl_Output cumulative_total_packets_output {
+                label Packets
+                xywh {1202 186 140 32} labeltype NO_LABEL
+                parent_properties {
+                  location {5 2}
+                }
+              }
+              Fl_Output cumulative_encode_bitrate_output {
+                label {Encode Bitrate}
+                xywh {1202 250 140 32} labeltype NO_LABEL
+                parent_properties {
+                  location {7 2}
+                  minsize {50 25}
+                }
+              }
+              Fl_Box {} {
+                label Total
+                xywh {1202 26 140 32}
+                parent_properties {
+                  location {0 2}
+                }
+              }
+              Fl_Box {} {
+                label Current
+                xywh {1062 26 140 32}
+                parent_properties {
+                  location {0 1}
+                }
+              }
+              Fl_Box {} {
+                label Bandwidth
+                xywh {915 57 145 32} align 24
+              }
+              Fl_Box {} {
+                label {Link Quality}
+                xywh {915 89 145 32} align 24
+              }
+              Fl_Box {} {
+                label Retransmitted
+                xywh {915 121 145 32} align 24
+              }
+              Fl_Box {} {
+                label RTT
+                xywh {915 153 145 32} align 24
+              }
+              Fl_Box {} {
+                label Packets
+                xywh {921 186 141 32} align 24
+                parent_properties {
+                  location {5 0}
+                }
+              }
+              Fl_Box {} {
+                label {Encode Bitrate}
+                xywh {921 250 141 32} align 24
+                parent_properties {
+                  location {7 0}
+                }
+              }
+            }
+          }
+        }
+        Fl_Flex flx_bottom {open
+          xywh {25 442 1323 200} type HORIZONTAL
+        } {
+          Fl_Text_Display transport_log_display {
+            xywh {25 442 662 200}
+          }
+          Fl_Text_Display encode_log_display {
+            xywh {687 442 661 200}
+          }
+        }
+      }
+    }
+  }
+  Function {show(int argc, char **argv) const} {} {
+    code {main_window->show(argc, argv);} {}
+  }
+  Function {layout()} {} {
+    code {pack->layout();
+flx_top->layout();
+flx_bottom->layout();} {}
+  }
+  decl {void init_ui_callbacks(input_config* input_c,
+                         encode_config* encode_c,
+                         FuncPtr start_funcptr,
+                         FuncPtr stop_funcptr,
+                         FuncPtr ndi_refresh_funcptr,
+                         FuncPtr input_rist_address_funcptr);} {public local
+  }
+  decl {Fl_Text_Buffer transport_log_buffer;} {private local
+  }
+  decl {Fl_Text_Buffer encode_log_buffer;} {private local
+  }
+  decl {void encode_log_append(const std::string& msg) const;} {public local
+  }
+  decl {void transport_log_append(const std::string& msg) const;} {public local
+  }
+  decl {void choose_ndi_input(input_config& input_config);} {private local
+  }
+  decl {void choose_input_protocol(input_config &input_config);} {private local
+  }
+  decl {void select_codec(encode_config& encode_config);} {private local
+  }
+  decl {void select_encoder(encode_config& encode_config);} {private local
+  }
+  decl {void start(FuncPtr start_funcptr);} {private local
+  }
+  decl {void stop(FuncPtr stop_funcptr);} {private local
+  }
+  decl {void refresh_ndi_devices(FuncPtr refresh_funcptr);} {private local
+  }
+  decl {void input_rist_address_cb(output_config* output_config, FuncPtr input_rist_address_funcptr);} {private local
+  }
+  decl {void input_listen_port_cb(input_config* input_config);} {private local
+  }
+}

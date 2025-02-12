@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.28)
+
+set(CMP0155 NEW)
+set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
 include(cmake/prelude.cmake)
 include(ExternalProject)
@@ -12,92 +15,65 @@ project(
     LANGUAGES CXX
 )
 
-include(cmake/project-is-top-level.cmake)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# include(cmake/project-is-top-level.cmake)
 include(cmake/variables.cmake)
 
-set(FLTK_DIR "/mnt/data/projects/fltk-1.4.1/fltk-1.4.1/build"
-    CACHE FILEPATH "FLTK installation or build directory")
+# include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
 
-find_package(FLTK 1.4 CONFIG REQUIRED)
+# add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/external/sdp-tools-cpp)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/external/fltk)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/external/rist-cpp)
 
-# set(FLTK_OPTION_STD ON)
-# set(FLTK_OPTION_OPTIM "-Wall -Wno-deprecated-declarations")
+find_package(NDI REQUIRED)
 
-# # ---- External Projects ---
-# FetchContent_Declare(FLTK
-#   GIT_REPOSITORY  https://github.com/fltk/fltk
-#   GIT_TAG         master
-#   GIT_SHALLOW     TRUE
-# )
+find_package(PkgConfig REQUIRED)
+    pkg_search_module(gstreamer REQUIRED IMPORTED_TARGET gstreamer-1.0>=1.24)
+    pkg_search_module(gstreamer-sdp REQUIRED IMPORTED_TARGET gstreamer-sdp-1.0>=1.24)
+    pkg_search_module(gstreamer-rtp REQUIRED IMPORTED_TARGET gstreamer-rtp-1.0>=1.24)
+    pkg_search_module(gstreamer-app REQUIRED IMPORTED_TARGET gstreamer-app-1.0>=1.24)
+    pkg_search_module(gstreamer-video REQUIRED IMPORTED_TARGET gstreamer-video-1.0>=1.24)
 
-FetchContent_Declare(
-  rist-cpp
-  GIT_REPOSITORY https://github.com/patcarter883/rist-cpp.git
-  GIT_TAG swxtch
-)
-
-message(STATUS "Download and build rist-cpp if necessary, please wait...")
-FetchContent_MakeAvailable(rist-cpp)
-message(STATUS "Download and build rist-cpp - done.")
-
-# message(STATUS "Download and build FLTK if necessary, please wait...")
-# FetchContent_MakeAvailable(FLTK)
-# message(STATUS "Download and build FLTK - done.")
-
-# ---- Declare library ----
-
-add_library(
-    open-broadcast-encoder_lib OBJECT
-    source/lib.cpp
-    source/ui.cxx
-)
-
-target_include_directories(
-    open-broadcast-encoder_lib ${warning_guard}
-    PUBLIC
-    "\$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/source>"
-)
-
-target_compile_features(open-broadcast-encoder_lib PUBLIC cxx_std_20)
-
-find_package(fmt REQUIRED)
-
-target_link_libraries(open-broadcast-encoder_lib PRIVATE fmt::fmt fltk::fltk)
-
-
-
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/lib)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/ui)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/ndi_input)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/transport)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/encode)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/stats)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/url)
 
 # ---- Declare executable ----
 
-add_executable(open-broadcast-encoder_exe source/main.cpp)
+add_executable(open-broadcast-encoder_exe ${CMAKE_CURRENT_LIST_DIR}/source/main.cpp)
 add_executable(open-broadcast-encoder::exe ALIAS open-broadcast-encoder_exe)
 
 set_property(TARGET open-broadcast-encoder_exe PROPERTY OUTPUT_NAME open-broadcast-encoder)
 
 target_compile_features(open-broadcast-encoder_exe PRIVATE cxx_std_20)
 
-target_link_libraries(open-broadcast-encoder_exe PRIVATE open-broadcast-encoder_lib ristnet fltk::fltk)
-target_include_directories(open-broadcast-encoder_exe PUBLIC ${rist-cpp_SOURCE_DIR})
+target_link_libraries(open-broadcast-encoder_exe PRIVATE 
+  open-broadcast-encoder_lib 
+  stats_lib
+  ndi_input_lib
+  ui_lib
+  encode_lib
+  transport_lib
+  ristnet 
+  PkgConfig::gstreamer
+  PkgConfig::gstreamer-sdp
+  PkgConfig::gstreamer-rtp
+  PkgConfig::gstreamer-app
+  PkgConfig::gstreamer-video
+  ${NDI_LIBRARIES})
+
+target_include_directories(open-broadcast-encoder_exe PUBLIC 
+${rist-cpp_SOURCE_DIR} 
+${GSTREAMER_INCLUDE_DIRS}
+${NDI_INCLUDE_DIRS})
 
 
-# ExternalProject_Add(project_libristnet
-#         GIT_REPOSITORY https://github.com/patcarter883/rist-cpp.git
-#         GIT_TAG swxtch
-#         SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ristwrap
-#         BINARY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ristwrap
-#         GIT_PROGRESS 1
-#         BUILD_COMMAND cmake --build ${CMAKE_CURRENT_SOURCE_DIR}/ristwrap --config ${CMAKE_BUILD_TYPE} --target ristnet
-#         STEP_TARGETS build
-#         EXCLUDE_FROM_ALL TRUE
-#         INSTALL_COMMAND ""
-#         )
-# add_library(ristnet STATIC IMPORTED)
-# set_property(TARGET ristnet PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/ristwrap/libristnet.a)
-# add_dependencies(ristnet project_libristnet)
-
-# #Pass information about where to find headers
-# include_directories(${CMAKE_CURRENT_SOURCE_DIR}/ristwrap/)
-# include_directories(${CMAKE_CURRENT_SOURCE_DIR}/ristwrap/rist/inc/)
 
 # ---- Install rules ----
 
