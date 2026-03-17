@@ -106,14 +106,34 @@ encode::~encode()
 
 void encode::pipeline_build_source()
 {
+
+  const auto *const sdp = "v=0\n"
+       "o=- 1443716955 1443716955 IN IP4 127.0.0.1\n"
+        "s=st2110 stream\n"
+        "t=0 0\n"
+        "a=recvonly\n"
+        "\n"
+        "m=video 20000 RTP/AVP 102\n"
+        "c=IN IP4 127.0.0.1/8\n"
+        "a=rtpmap:102 raw/90000\n"
+        "a=fmtp:102 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=30000/1000; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2017; TP=2110TPN;\n"
+        "a=mediaclk:direct=0\n"
+        "a=ts-refclk:ptp=IEEE1588-2008:00-02-c5-ff-fe-21-60-5c:127\n";
+
   switch (input_c.selected_input_mode) {
     case input_mode::mpegts:
       this->pipeline_str = std::format(
-          "udpsrc port={} ! tsparse set-timestamps=true ! tsdemux latency=10 "
+          "udpsrc port={} buffer-size=1000000 mtu=45000 ! tsparse set-timestamps=true ! tsdemux latency=10 "
           "name=demux ",
           input_c.selected_input);
       break;
     case input_mode::sdp:
+    
+    this->pipeline_str = std::format(
+      "sdpsrc sdp=\"{}\" "
+      "name=demux ",
+      sdp);
+  break;
     case input_mode::ndi:
       this->pipeline_str = std::format(
           "ndisrc do-timestamp=true ndi-name=\"{}\" ! ndisrcdemux name=demux ",
@@ -138,6 +158,9 @@ void encode::pipeline_build_video_demux()
     case input_mode::ndi:
       this->pipeline_str += " demux.video ! queue silent=true ! videoconvert !";
       break;
+    case input_mode::sdp:
+      this->pipeline_str += " demux. ! rtpvrawdepay ! queue silent=true ! videoconvert !";
+      break;
     default:
       this->pipeline_str +=
           " demux. ! queue silent=true ! decodebin3 ! videoconvert !";
@@ -151,6 +174,9 @@ void encode::pipeline_build_audio_demux()
     case input_mode::ndi:
       this->pipeline_str +=
           " demux.audio ! queue silent=true ! audioresample ! audioconvert !";
+      break;
+      case input_mode::sdp:
+      this->pipeline_str += " demux. ! rtpL24depay ! queue silent=true ! audioresample ! audioconvert !";
       break;
     default:
       this->pipeline_str +=
