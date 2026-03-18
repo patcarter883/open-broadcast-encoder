@@ -46,6 +46,15 @@ C++20 video streaming encoder with FLTK GUI, GStreamer pipelines, and RIST trans
    ui.unlock();      // Fl::unlock(); Fl::awake();
    ```
 
+4. **Global State**: [`main.cpp`](source/main.cpp) uses global instances for cross-component communication:
+   ```cpp
+   library app;                          // Shared config/state
+   std::unique_ptr<transport> transporter;
+   user_interface ui;
+   encode* ptr_encoder;                  // For bitrate adjustment callback
+   ndi_input ndi(app.input_config, &encode_log);
+   ```
+
 ## Build Commands
 
 ```bash
@@ -77,6 +86,8 @@ cmake --build build -t run-exe
 | `source/ndi_input/ndi_input.cppm` | `ndi_input` | `import ndi_input;` |
 | `source/stats/stats.cppm` | `stats` | `import stats;` |
 
+**Note**: `source/url/` contains a non-module URL parsing library (`url.h/url.cc`) used by transport.
+
 ## Coding Conventions
 
 ### clang-format
@@ -106,7 +117,7 @@ Always run `cmake --build build -t format-fix` before committing.
 
 ## GStreamer Pipeline Construction
 
-The `encode` module builds pipelines dynamically using string formatting:
+The [`encode`](source/encode/encode.cppm:19) class builds pipelines dynamically using string formatting:
 
 ```cpp
 pipeline_str = std::format(
@@ -131,7 +142,74 @@ The `encode` class uses a builder pattern with separate methods for each pipelin
 - `pipeline_build_video_encoder()` - Hardware/software encoder selection
 - `pipeline_build_amd_encoder()`, `pipeline_build_qsv_encoder()`, etc.
 
+### GStreamer Debugging
+
+**Error Handling**: Pipeline errors are caught via the GStreamer bus message loop in [`play_pipeline()`](source/encode/encode.cppm:449):
+
+```cpp
+void encode::handle_gst_message_error(GstMessage* message)
+{
+  GError* err;
+  gchar* debug_info;
+  gst_message_parse_error(message, &err, &debug_info);
+  log(std::format("Error received from element {}: {}\n",
+                  GST_OBJECT_NAME(message->src), err->message));
+  log(std::format("Debugging information: {}\n", debug_info));
+}
+```
+
+**Pipeline Logging**: The full pipeline string is logged before parsing via [`log(this->pipeline_str)`](source/encode/encode.cppm:428). Check the encode log display in the UI to see the constructed pipeline.
+
+**Environment Variables** for debugging GStreamer:
+```bash
+GST_DEBUG=3                    # Warning level logging
+GST_DEBUG=4                    # Info level logging
+GST_DEBUG=GST_PIPELINE:5       # Pipeline-specific debug
+GST_DEBUG_DUMP_DOT_DIR=/tmp    # Export pipeline graphs as DOT files
+```
+
+**Common Issues**:
+- Parse errors indicate malformed pipeline strings - check the logged pipeline string
+- Missing elements: ensure GStreamer plugins are installed (e.g., `gstreamer1.0-plugins-bad` for NDI)
+- State change failures: check if elements are properly linked
+
 ## Data Flow
+
+```mermaid
+flowchart LR
+    subgraph Input
+        NDI[NDI Source]
+        SDP[SDP/RTP]
+        TS[MPEG-TS]
+    end
+    
+    subgraph GStreamer Pipeline
+        DEMUX[Demuxer]
+        VCONV[videoconvert]
+        ACONV[audioconvert]
+        ENC[Encoder]
+        MUX[mpegtsmux]
+        SINK[appsink]
+    end
+    
+    subgraph Transport
+        RIST[RIST Sender]
+        NET[Network]
+    end
+    
+    NDI --> DEMUX
+    SDP --> DEMUX
+    TS --> DEMUX
+    DEMUX --> VCONV
+    DEMUX --> ACONV
+    VCONV --> ENC
+    ENC --> MUX
+    MUX --> SINK
+    SINK --> RIST
+    RIST --> NET
+```
+
+### Data Flow Steps
 
 1. **Input** → `ndi_input` or SDP/MPEGTS source → GStreamer demuxer
 2. **Decode** → `videoconvert`/`audioconvert` → Encoder element
@@ -141,10 +219,66 @@ The `encode` class uses a builder pattern with separate methods for each pipelin
 
 ## Adaptive Bitrate Logic
 
-`stats::got_rist_statistics()` adjusts encode bitrate based on RIST link quality:
-- If quality drops: reduce bitrate proportionally
-- If quality is 100%: gradually increase toward max bitrate
-- Updates UI with current/cumulative statistics
+```mermaid
+flowchart TD
+    STATS[RIST Statistics Callback] --> QUAL{Quality Changed?}
+    QUAL -->|Yes| DROP{Quality Dropped?}
+    QUAL -->|No| CHECK{Quality == 100% and Bitrate < Max?}
+    
+    DROP -->|Yes| REDUCE[Reduce bitrate proportionally]
+    DROP -->|No| MAINTAIN[Maintain current bitrate]
+    
+    CHECK -->|Yes| INCREASE[Increase bitrate gradually]
+    CHECK -->|No| MAINTAIN
+    
+    REDUCE --> UPDATE[Update encoder bitrate]
+    INCREASE --> UPDATE
+    MAINTAIN --> UI[Update UI statistics]
+    UPDATE --> UI
+    UI --> STATS
+```
+
+[`stats::got_rist_statistics()`](source/stats/stats.cppm:17) adjusts encode bitrate based on RIST link quality:
+
+### Algorithm Details
+
+1. **Quality Drop Detection**: When link quality changes from previous measurement:
+   ```cpp
+   qualDiffPct = statistics.stats.sender_peer.quality / stats->previous_quality;
+   adjBitrate = (int)(stats->current_bitrate * qualDiffPct);
+   bitrateDelta = adjBitrate - stats->current_bitrate;
+   ```
+
+2. **Gradual Increase**: When quality is 100% and below max bitrate:
+   ```cpp
+   qualDiffPct = (stats->current_bitrate / maxBitrate);
+   adjBitrate = (int)(stats->current_bitrate * (1 + qualDiffPct));
+   ```
+
+3. **Rate Limiting**: Bitrate changes are dampened by dividing delta by 2:
+   ```cpp
+   int newBitrate = std::max(std::min(stats->current_bitrate += bitrateDelta / 2, (int)maxBitrate), 1000);
+   ```
+
+4. **Bounds**: Bitrate is clamped between 1000 kbps minimum and configured maximum.
+
+5. **Statistics Tracking**: Maintains cumulative averages using online algorithm:
+   ```cpp
+   stats->bandwidth_avg = std::accumulate(stats->bandwidth.begin(), stats->bandwidth.end(), 0,
+       [n = 0](auto cma, auto i) mutable { return cma + (i - cma) / ++n; });
+   ```
+
+### Callback Integration
+
+The bitrate adjustment is triggered via RIST statistics callback in [`main.cpp`](source/main.cpp:58):
+```cpp
+static auto rist_stats_cb(const rist_stats& stats)
+{
+  if (stats::got_rist_statistics(stats, &app.stats, app.encode_config, ui)) {
+    ptr_encoder->set_encode_bitrate(app.stats.current_bitrate);
+  }
+}
+```
 
 ## External Submodules
 
@@ -156,7 +290,6 @@ git submodule update --init --recursive
 Submodules:
 - `external/fltk` - GUI toolkit
 - `external/rist-cpp` - RIST protocol C++ wrapper
-- `external/sdp-tools-cpp` - SDP parsing (currently disabled in CMakeLists.txt)
 
 ## Developer Workflows
 
@@ -224,6 +357,64 @@ a=mediaclk:direct=0
 a=ts-refclk:ptp=IEEE1588-2008:00-02-c5-ff-fe-21-60-5c:127
 ```
 
+## FLTK UI Patterns
+
+### Threading Model
+
+FLTK requires all UI updates from background threads to use proper locking:
+
+```cpp
+// From background threads
+ui.lock();                          // Fl::lock()
+ui.bandwidth_output->value("...");  // Update UI elements
+ui.unlock();                        // Fl::unlock(); Fl::awake();
+```
+
+The [`user_interface`](source/ui/ui.cppm:27) class provides helper methods:
+- [`lock()`](source/ui/ui.cppm:554) - Calls `Fl::lock()`
+- [`unlock()`](source/ui/ui.cppm:559) - Calls `Fl::unlock()` then `Fl::awake()`
+
+### Callback Pattern
+
+UI callbacks use FLTK's callback macros from `FL/fl_callback_macros.H`. The pattern uses `FL_METHOD_CALLBACK_N` macros to bind widget callbacks to class methods:
+
+```cpp
+// In init_ui_callbacks() - binds choice_input_protocol to choose_input_protocol method
+FL_METHOD_CALLBACK_2(choice_input_protocol,
+                     user_interface,    // Class type
+                     this,              // Instance
+                     choose_input_protocol,  // Method name
+                     input_config*,    // Argument 1 type
+                     input_c,          // Argument 1 value
+                     FuncPtr,          // Argument 2 type
+                     ndi_refresh_funcptr);  // Argument 2 value
+```
+
+### Menu Item Pattern
+
+Menu items store enum values as `user_data` for type-safe selection:
+
+```cpp
+// In ui.cppm - menu item definition
+Fl_Menu_Item user_interface::menu_choice_encoder[] = {
+    {"AMD", 0, 0, (void*)(static_cast<long>(encoder::amd)), ...},
+    {"NVENC", 0, 0, (void*)(static_cast<long>(encoder::nvenc)), ...},
+    ...
+};
+
+// Retrieving selection
+auto user_data = reinterpret_cast<uintptr_t>(choice_encoder->mvalue()->user_data());
+encode_config->encoder = static_cast<encoder>(user_data);
+```
+
+### UI Initialization Flow
+
+1. [`init_ui()`](source/ui/ui.cppm:548) - Sets up FLTK visual mode and threading (`Fl::lock()`)
+2. [`user_interface()`](source/ui/ui.cppm:228) constructor - Builds widget hierarchy
+3. [`init_ui_callbacks()`](source/ui/ui.cppm:705) - Binds callbacks to widgets
+4. [`show()`](source/ui/ui.cppm:518) - Displays the main window
+5. [`run_ui()`](source/ui/ui.cppm:565) - Enters FLTK main loop (`Fl::run()`)
+
 ## NDI Input
 
 NDI input uses GStreamer's `ndisrc` element:
@@ -242,18 +433,80 @@ gst_device_monitor_start(device_monitor);
 
 ## RIST Transport
 
-The `transport` module wraps `rist-cpp` for RIST protocol:
+The [`transport`](source/transport/transport.cppm:17) module wraps `rist-cpp` for RIST protocol:
 - `setup_rist_sender()` - Initialize sender with URL configuration
 - `send_buffer()` - Send video buffer data
 - `set_log_callback()` / `set_statistics_callback()` - Event callbacks
 
-RIST settings:
-- `mLogLevel = RIST_LOG_DEBUG`
-- `mProfile = RIST_PROFILE_ADVANCED`
+### Configuration Parameters
+
+The [`output_config`](source/lib/lib.cppm:68) struct defines RIST settings:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `address` | `127.0.0.1:5000` | Destination host:port |
+| `streams` | `1` | Number of parallel streams |
+| `bandwidth` | `6000` | Max bandwidth in kbps |
+| `buffer_min` | `245` | Minimum buffer size in ms |
+| `buffer_max` | `5000` | Maximum buffer size in ms |
+| `rtt_min` | `40` | Minimum RTT in ms |
+| `rtt_max` | `500` | Maximum RTT in ms |
+| `reorder_buffer` | `240` | Reorder buffer size in ms |
+
+### URL Construction
+
+RIST URLs are constructed dynamically in [`setup_rist_sender()`](source/transport/transport.cppm:82):
+
+```cpp
+string rist_output_url = std::format(
+    "rist://{}:{}?bandwidth={}&buffer-min={}&buffer-max={}&rtt-min={}&rtt-max={}&"
+    "reorder-buffer={}&timing-mode=2",
+    url.getHost(),
+    url.getPort() + (2 * i),  // Port offset for multiple streams
+    output_c.bandwidth,
+    output_c.buffer_min,
+    output_c.buffer_max,
+    output_c.rtt_min,
+    output_c.rtt_max,
+    output_c.reorder_buffer);
+```
+
+### Multiple Streams
+
+When `streams > 1`, the transport creates multiple RIST connections with port offsets:
+- Stream 0: base port
+- Stream 1: base port + 2
+- Stream N: base port + (2 * N)
+
+### RIST Profile Settings
+
+```cpp
+my_send_configuration.mLogLevel = RIST_LOG_DEBUG;
+my_send_configuration.mProfile = RIST_PROFILE_ADVANCED;
+```
+
+- `RIST_PROFILE_ADVANCED` enables all RIST features including encryption and bonding
+- Statistics callback is bound via `std::bind_front` for member function callback
 
 ## Stats Module
 
-The `stats` module handles RIST statistics and adaptive bitrate:
+The [`stats`](source/stats/stats.cppm:10) module handles RIST statistics and adaptive bitrate:
 - `got_rist_statistics()` - Process RIST stats and adjust bitrate
 - Tracks bandwidth, retransmitted packets, total packets
 - Updates UI with cumulative statistics
+
+## Common Patterns
+
+### Adding a New Encoder
+
+1. Add enum value to [`encoder`](source/lib/lib.cppm:27) in `lib.cppm`
+2. Add menu item to [`menu_choice_encoder`](source/ui/ui.cppm:189) in `ui.cppm`
+3. Implement `pipeline_build_<vendor>_<codec>_encoder()` methods in [`encode.cppm`](source/encode/encode.cppm)
+4. Wire up the switch case in `pipeline_build_<vendor>_encoder()`
+
+### Adding a New Input Source
+
+1. Add enum value to [`input_mode`](source/lib/lib.cppm:12) in `lib.cppm`
+2. Add menu item to [`menu_choice_input_protocol`](source/ui/ui.cppm:106) in `ui.cppm`
+3. Implement source building in `pipeline_build_source()` in [`encode.cppm`](source/encode/encode.cppm:107)
+4. Handle demux in `pipeline_build_video_demux()` and `pipeline_build_audio_demux()`
