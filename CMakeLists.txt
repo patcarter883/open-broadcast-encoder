@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
 
-set(CMP0155 NEW)
-set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
 include(cmake/prelude.cmake)
 include(ExternalProject)
@@ -24,17 +22,17 @@ include(cmake/variables.cmake)
 # include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
 
 # add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/external/sdp-tools-cpp)
-add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/external/fltk)
-add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/external/rist-cpp)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/external/fltk SYSTEM)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/external/rist-cpp SYSTEM)
 
 find_package(NDI REQUIRED)
 
 find_package(PkgConfig REQUIRED)
-    pkg_search_module(gstreamer REQUIRED IMPORTED_TARGET gstreamer-1.0>=1.24)
-    pkg_search_module(gstreamer-sdp REQUIRED IMPORTED_TARGET gstreamer-sdp-1.0>=1.24)
-    pkg_search_module(gstreamer-rtp REQUIRED IMPORTED_TARGET gstreamer-rtp-1.0>=1.24)
-    pkg_search_module(gstreamer-app REQUIRED IMPORTED_TARGET gstreamer-app-1.0>=1.24)
-    pkg_search_module(gstreamer-video REQUIRED IMPORTED_TARGET gstreamer-video-1.0>=1.24)
+    pkg_search_module(gstreamer REQUIRED IMPORTED_TARGET gstreamer-1.0>=1.28)
+    pkg_search_module(gstreamer-sdp REQUIRED IMPORTED_TARGET gstreamer-sdp-1.0>=1.28)
+    pkg_search_module(gstreamer-rtp REQUIRED IMPORTED_TARGET gstreamer-rtp-1.0>=1.28)
+    pkg_search_module(gstreamer-app REQUIRED IMPORTED_TARGET gstreamer-app-1.0>=1.28)
+    pkg_search_module(gstreamer-video REQUIRED IMPORTED_TARGET gstreamer-video-1.0>=1.28)
 
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/lib)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/ui)
@@ -68,10 +66,19 @@ target_link_libraries(open-broadcast-encoder_exe PRIVATE
   PkgConfig::gstreamer-video
   ${NDI_LIBRARIES})
 
-target_include_directories(open-broadcast-encoder_exe PUBLIC 
+
+target_include_directories(open-broadcast-encoder_exe PUBLIC SYSTEM
 ${rist-cpp_SOURCE_DIR} 
 ${GSTREAMER_INCLUDE_DIRS}
 ${NDI_INCLUDE_DIRS})
+
+target_include_directories(open-broadcast-encoder_exe PUBLIC
+${CMAKE_CURRENT_LIST_DIR}/source/lib
+${CMAKE_CURRENT_LIST_DIR}/source/stats
+${CMAKE_CURRENT_LIST_DIR}/source/encode
+${CMAKE_CURRENT_LIST_DIR}/source/transport
+${CMAKE_CURRENT_LIST_DIR}/source/ndi_input
+${CMAKE_CURRENT_LIST_DIR}/source/ui)
 
 
 

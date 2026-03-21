@@ -9,19 +9,11 @@
 
 // #include "common.h"
 #include "stats.h"
-
-// #include "encode.h"
-// #include "lib.h"
-// #include "ndi_input.h"
-// #include "stats_lib.h"
-// #include "transport.h"
-
-import encode;
-import transport;
-import library;
-import stats;
-import ndi_input;
-import ui;
+#include "encode.h"
+#include "transport.h"
+#include "lib.h"
+#include "ndi_input.h"
+#include "ui.h"
 
 library app;
 std::unique_ptr<transport> transporter;
@@ -75,7 +67,7 @@ static void run_loop()
   while (app.is_running) {
     auto vidbuf = encoder.pull_video_buffer();
     if (vidbuf.buf_size > 0) {
-      transporter->send_buffer(vidbuf);
+      transporter->send_buffer(vidbuf, 0);
     }
   }
 }
@@ -133,6 +125,6 @@ auto main(int argc, char** argv) -> int
                        &run_transport,
                        &preview_input);
   ui.show(argc, argv);
-  const auto result = ui.run_ui();
+  const int result = ui.run_ui();
   return result;
 }

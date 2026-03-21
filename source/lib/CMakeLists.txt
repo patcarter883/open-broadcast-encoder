@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
 
-set(CMP0155 NEW)
-set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
 project(
     open-broadcast-encoder-lib
@@ -16,16 +14,14 @@ add_library(
 
 target_sources(open-broadcast-encoder_lib
   PUBLIC
-#   ${CMAKE_CURRENT_LIST_DIR}/encode.cpp
-    FILE_SET CXX_MODULES FILES
-      lib.cppm
+    lib.h
+    lib.cpp
 )
 
-# target_include_directories(
-#     open-broadcast-encoder_lib ${warning_guard}
-#     PUBLIC
-#     ${CMAKE_CURRENT_LIST_DIR}
-# )
+target_include_directories(
+    open-broadcast-encoder_lib PUBLIC
+    ${CMAKE_SOURCE_DIR}/source
+)
 
 target_compile_features(open-broadcast-encoder_lib PUBLIC cxx_std_20)
 
@@ -42,5 +38,5 @@ PkgConfig::gstreamer-app
 PkgConfig::gstreamer-video
 )
 
-target_include_directories(open-broadcast-encoder_lib PRIVATE 
+target_include_directories(open-broadcast-encoder_lib PRIVATE
 ${GSTREAMER_INCLUDE_DIRS})
