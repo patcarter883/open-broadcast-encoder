@@ -44,30 +44,41 @@ Fl_Menu_Item user_interface::menu_choice_input_protocol[] = {
      .labelfont_ = 0,
      .labelsize_ = 14,
      .labelcolor_ = 0},
-    {.text = "MPEGTS",
-     .shortcut_ = 0,
-     .callback_ = 0,
-     .user_data_ = (void*)(3),
-     .flags = 0,
-     .labeltype_ = (uchar)FL_NORMAL_LABEL,
-     .labelfont_ = 0,
-     .labelsize_ = 14,
-     .labelcolor_ = 0},
-    {.text = 0,
-     .shortcut_ = 0,
-     .callback_ = 0,
-     .user_data_ = 0,
-     .flags = 0,
-     .labeltype_ = 0,
-     .labelfont_ = 0,
-     .labelsize_ = 0,
-     .labelcolor_ = 0}};
+     {.text = "MPEGTS",
+      .shortcut_ = 0,
+      .callback_ = 0,
+      .user_data_ = (void*)(3),
+      .flags = 0,
+      .labeltype_ = (uchar)FL_NORMAL_LABEL,
+      .labelfont_ = 0,
+      .labelsize_ = 14,
+      .labelcolor_ = 0},
+     {.text = "Test Pattern",
+      .shortcut_ = 0,
+      .callback_ = 0,
+      .user_data_ = (void*)(4),
+      .flags = 0,
+      .labeltype_ = (uchar)FL_NORMAL_LABEL,
+      .labelfont_ = 0,
+      .labelsize_ = 14,
+      .labelcolor_ = 0},
+     {.text = 0,
+      .shortcut_ = 0,
+      .callback_ = 0,
+      .user_data_ = 0,
+      .flags = 0,
+      .labeltype_ = 0,
+      .labelfont_ = 0,
+      .labelsize_ = 0,
+      .labelcolor_ = 0}};
 Fl_Menu_Item* user_interface::select_sdp_input =
     user_interface::menu_choice_input_protocol + 1;
 Fl_Menu_Item* user_interface::select_ndi_input =
     user_interface::menu_choice_input_protocol + 2;
 Fl_Menu_Item* user_interface::select_mpegts_input =
     user_interface::menu_choice_input_protocol + 3;
+Fl_Menu_Item* user_interface::select_test_input =
+    user_interface::menu_choice_input_protocol + 4;
 
 Fl_Menu_Item user_interface::menu_choice_codec[] = {
     {"H264",
@@ -516,6 +527,18 @@ void user_interface::choose_input_protocol(input_config* input_config, FuncPtr r
       mpegts_options_group->show();
       ndi_options_group->hide();
       sdp_options_group->hide();
+      layout();
+      Fl::unlock();
+      Fl::awake();
+      break;
+    }
+
+    case 4: {
+      input_config->selected_input_mode = input_mode::test;
+      Fl::lock();
+      ndi_options_group->hide();
+      sdp_options_group->hide();
+      mpegts_options_group->hide();
       layout();
       Fl::unlock();
       Fl::awake();

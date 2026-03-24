@@ -45,6 +45,7 @@ private:
   void build_pipeline();
   void pipeline_build_source();
   void pipeline_build_sink();
+  void pipeline_build_test_source();
   void pipeline_build_video_demux();
   void pipeline_build_audio_demux();
   void pipeline_build_audio_encoder();

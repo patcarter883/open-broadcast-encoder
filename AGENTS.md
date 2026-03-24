@@ -12,27 +12,25 @@ C++20 video streaming encoder with FLTK GUI, GStreamer pipelines, and RIST trans
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   UI (FLTK) │────▶│  lib.cppm    │◀────│  main.cpp   │
-│  ui.cppm    │     │  (types)     │     │ (orchestrator)│
+│   UI (FLTK) │────▶│    lib.h     │◀────│  main.cpp   │
+│    ui.h     │     │  (types)     │     │ (orchestrator)│
 └─────────────┘     └──────────────┘     └─────────────┘
                             │                    │
          ┌──────────────────┼────────────────────┤
          ▼                  ▼                    ▼
 ┌─────────────┐    ┌──────────────┐    ┌─────────────┐
-│ encode.cppm │    │ transport.cppm│   │ndi_input.cppm│
+│ encode.h    │    │ transport.h  │   │ndi_input.h  │
 │ (GStreamer) │    │  (RIST net)  │   │ (NDI monitor)│
 └─────────────┘    └──────────────┘    └─────────────┘
-                            │
-                            ▼
-                    ┌──────────────┐
-                    │  stats.cppm  │
-                    │ (bitrate adj)│
-                    └──────────────┘
+                             │
+                             ▼
+                     ┌──────────────┐
+                     │  stats.h     │
+                     │ (bitrate adj)│
+                     └──────────────┘
 ```
 
 ### Key Design Decisions
-
-1. **C++20 Modules**: All source files use `.cppm` extension. Module names differ from file paths (e.g., `source/lib/lib.cppm` exports as `library` module).
 
 2. **Callback Pattern**: Components use function pointer callbacks for logging and events:
    ```cpp
@@ -75,18 +73,38 @@ cmake --build build -t format-check
 cmake --build build -t run-exe
 ```
 
-## C++20 Modules
+## Source File Organization
 
-| File | Module Name | Import Statement |
-|------|-------------|------------------|
-| `source/lib/lib.cppm` | `library` | `import library;` |
-| `source/encode/encode.cppm` | `encode` | `import encode;` |
-| `source/transport/transport.cppm` | `transport` | `import transport;` |
-| `source/ui/ui.cppm` | `ui` | `import ui;` |
-| `source/ndi_input/ndi_input.cppm` | `ndi_input` | `import ndi_input;` |
-| `source/stats/stats.cppm` | `stats` | `import stats;` |
+The project uses traditional C++ header/source file organization with .h and .cpp files:
+
+| File | Purpose |
+|------|---------|
+| `source/lib/lib.h` | Header file containing declarations and inline/template code for shared types and configuration |
+| `source/encode/encode.h` | Header file for the encode class (GStreamer pipeline management) |
+| `source/encode/encode.cpp` | Implementation file for the encode class |
+| `source/transport/transport.h` | Header file for the transport class (RIST protocol wrapper) |
+| `source/transport/transport.cpp` | Implementation file for the transport class |
+| `source/ui/ui.h` | Header file for the user_interface class (FLTK GUI) |
+| `source/ui/ui.cpp` | Implementation file for the user_interface class |
+| `source/ndi_input/ndi_input.h` | Header file for the ndi_input class (NDI source handling) |
+| `source/ndi_input/ndi_input.cpp` | Implementation file for the ndi_input class |
+| `source/stats/stats.h` | Header file for the stats module (RIST statistics and adaptive bitrate) |
+| `source/stats/stats.cpp` | Implementation file for the stats module |
 
 **Note**: `source/url/` contains a non-module URL parsing library (`url.h/url.cc`) used by transport.
+
+### Include Pattern
+
+Instead of C++20 module imports (`import library;`), the project uses traditional include statements:
+
+```cpp
+#include "lib.h"      // For shared types and configuration
+#include "encode.h"   // For GStreamer pipeline management
+#include "transport.h" // For RIST transport
+#include "ui.h"       // For FLTK GUI
+#include "ndi_input.h" // For NDI input
+#include "stats.h"    // For adaptive bitrate statistics
+```
 
 ## Coding Conventions
 
@@ -117,7 +135,7 @@ Always run `cmake --build build -t format-fix` before committing.
 
 ## GStreamer Pipeline Construction
 
-The [`encode`](source/encode/encode.cppm:19) class builds pipelines dynamically using string formatting:
+The [`encode`](source/encode/encode.h:18) class builds pipelines dynamically using string formatting:
 
 ```cpp
 pipeline_str = std::format(
@@ -144,7 +162,7 @@ The `encode` class uses a builder pattern with separate methods for each pipelin
 
 ### GStreamer Debugging
 
-**Error Handling**: Pipeline errors are caught via the GStreamer bus message loop in [`play_pipeline()`](source/encode/encode.cppm:449):
+**Error Handling**: Pipeline errors are caught via the GStreamer bus message loop in [`play_pipeline()`](source/encode/encode.cpp:449):
 
 ```cpp
 void encode::handle_gst_message_error(GstMessage* message)
@@ -158,7 +176,7 @@ void encode::handle_gst_message_error(GstMessage* message)
 }
 ```
 
-**Pipeline Logging**: The full pipeline string is logged before parsing via [`log(this->pipeline_str)`](source/encode/encode.cppm:428). Check the encode log display in the UI to see the constructed pipeline.
+**Pipeline Logging**: The full pipeline string is logged before parsing via [`log(this->pipeline_str)`](source/encode/encode.cpp:428). Check the encode log display in the UI to see the constructed pipeline.
 
 **Environment Variables** for debugging GStreamer:
 ```bash
@@ -238,7 +256,7 @@ flowchart TD
     UI --> STATS
 ```
 
-[`stats::got_rist_statistics()`](source/stats/stats.cppm:17) adjusts encode bitrate based on RIST link quality:
+[`stats::got_rist_statistics()`](source/stats/stats.h:12) adjusts encode bitrate based on RIST link quality:
 
 ### Algorithm Details
 
@@ -370,9 +388,9 @@ ui.bandwidth_output->value("...");  // Update UI elements
 ui.unlock();                        // Fl::unlock(); Fl::awake();
 ```
 
-The [`user_interface`](source/ui/ui.cppm:27) class provides helper methods:
-- [`lock()`](source/ui/ui.cppm:554) - Calls `Fl::lock()`
-- [`unlock()`](source/ui/ui.cppm:559) - Calls `Fl::unlock()` then `Fl::awake()`
+The [`user_interface`](source/ui/ui.h:23) class provides helper methods:
+- [`lock()`](source/ui/ui.cpp:554) - Calls `Fl::lock()`
+- [`unlock()`](source/ui/ui.cpp:559) - Calls `Fl::unlock()` then `Fl::awake()`
 
 ### Callback Pattern
 
@@ -395,7 +413,7 @@ FL_METHOD_CALLBACK_2(choice_input_protocol,
 Menu items store enum values as `user_data` for type-safe selection:
 
 ```cpp
-// In ui.cppm - menu item definition
+// In ui.h - menu item definition
 Fl_Menu_Item user_interface::menu_choice_encoder[] = {
     {"AMD", 0, 0, (void*)(static_cast<long>(encoder::amd)), ...},
     {"NVENC", 0, 0, (void*)(static_cast<long>(encoder::nvenc)), ...},
@@ -409,11 +427,11 @@ encode_config->encoder = static_cast<encoder>(user_data);
 
 ### UI Initialization Flow
 
-1. [`init_ui()`](source/ui/ui.cppm:548) - Sets up FLTK visual mode and threading (`Fl::lock()`)
-2. [`user_interface()`](source/ui/ui.cppm:228) constructor - Builds widget hierarchy
-3. [`init_ui_callbacks()`](source/ui/ui.cppm:705) - Binds callbacks to widgets
-4. [`show()`](source/ui/ui.cppm:518) - Displays the main window
-5. [`run_ui()`](source/ui/ui.cppm:565) - Enters FLTK main loop (`Fl::run()`)
+1. [`init_ui()`](source/ui/ui.cpp:548) - Sets up FLTK visual mode and threading (`Fl::lock()`)
+2. [`user_interface()`](source/ui/ui.h:23) constructor - Builds widget hierarchy
+3. [`init_ui_callbacks()`](source/ui/ui.cpp:705) - Binds callbacks to widgets
+4. [`show()`](source/ui/ui.cpp:518) - Displays the main window
+5. [`run_ui()`](source/ui/ui.cpp:565) - Enters FLTK main loop (`Fl::run()`)
 
 ## NDI Input
 
@@ -433,14 +451,14 @@ gst_device_monitor_start(device_monitor);
 
 ## RIST Transport
 
-The [`transport`](source/transport/transport.cppm:17) module wraps `rist-cpp` for RIST protocol:
+The [`transport`](source/transport/transport.h:14) module wraps `rist-cpp` for RIST protocol:
 - `setup_rist_sender()` - Initialize sender with URL configuration
 - `send_buffer()` - Send video buffer data
 - `set_log_callback()` / `set_statistics_callback()` - Event callbacks
 
 ### Configuration Parameters
 
-The [`output_config`](source/lib/lib.cppm:68) struct defines RIST settings:
+The [`output_config`](source/lib/lib.h:68) struct defines RIST settings:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -455,7 +473,7 @@ The [`output_config`](source/lib/lib.cppm:68) struct defines RIST settings:
 
 ### URL Construction
 
-RIST URLs are constructed dynamically in [`setup_rist_sender()`](source/transport/transport.cppm:82):
+RIST URLs are constructed dynamically in [`setup_rist_sender()`](source/transport/transport.cpp:82):
 
 ```cpp
 string rist_output_url = std::format(
@@ -490,7 +508,7 @@ my_send_configuration.mProfile = RIST_PROFILE_ADVANCED;
 
 ## Stats Module
 
-The [`stats`](source/stats/stats.cppm:10) module handles RIST statistics and adaptive bitrate:
+The [`stats`](source/stats/stats.h:1) module handles RIST statistics and adaptive bitrate:
 - `got_rist_statistics()` - Process RIST stats and adjust bitrate
 - Tracks bandwidth, retransmitted packets, total packets
 - Updates UI with cumulative statistics
@@ -499,14 +517,14 @@ The [`stats`](source/stats/stats.cppm:10) module handles RIST statistics and ada
 
 ### Adding a New Encoder
 
-1. Add enum value to [`encoder`](source/lib/lib.cppm:27) in `lib.cppm`
-2. Add menu item to [`menu_choice_encoder`](source/ui/ui.cppm:189) in `ui.cppm`
-3. Implement `pipeline_build_<vendor>_<codec>_encoder()` methods in [`encode.cppm`](source/encode/encode.cppm)
+1. Add enum value to [`encoder`](source/lib/lib.h:27) in `lib.h`
+2. Add menu item to [`menu_choice_encoder`](source/ui/ui.h:189) in `ui.h`
+3. Implement `pipeline_build_<vendor>_<codec>_encoder()` methods in [`encode.cpp`](source/encode/encode.cpp)
 4. Wire up the switch case in `pipeline_build_<vendor>_encoder()`
 
 ### Adding a New Input Source
 
-1. Add enum value to [`input_mode`](source/lib/lib.cppm:12) in `lib.cppm`
-2. Add menu item to [`menu_choice_input_protocol`](source/ui/ui.cppm:106) in `ui.cppm`
-3. Implement source building in `pipeline_build_source()` in [`encode.cppm`](source/encode/encode.cppm:107)
+1. Add enum value to [`input_mode`](source/lib/lib.h:12) in `lib.h`
+2. Add menu item to [`menu_choice_input_protocol`](source/ui/ui.h:106) in `ui.h`
+3. Implement source building in `pipeline_build_source()` in [`encode.cpp`](source/encode/encode.cpp:107)
 4. Handle demux in `pipeline_build_video_demux()` and `pipeline_build_audio_demux()`

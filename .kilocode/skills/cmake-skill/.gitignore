@@ -1,0 +1,7 @@
+.ruff_cache/
+__pycache__/
+*.skill
+.cmake-skill-manifest.json
+cmake_reports/
+cmake_report.md
+node_modules/

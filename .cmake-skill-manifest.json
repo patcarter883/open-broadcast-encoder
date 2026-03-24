@@ -1,0 +1,7 @@
+{
+  "preset": "dev",
+  "report_dir": "build/dev-mode/cmake_reports",
+  "json_report": "build/dev-mode/cmake_reports/cmake_report.json",
+  "md_report": "build/dev-mode/cmake_reports/cmake_report.md",
+  "timestamp": "2026-03-23T19:58:31.940373"
+}

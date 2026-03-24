@@ -56,7 +56,7 @@ void encode::pipeline_build_source()
           input_c.selected_input);
       break;
     case input_mode::sdp:
-    
+     
     this->pipeline_str = std::format(
       "sdpsrc sdp=\"{}\" "
       "name=demux ",
@@ -67,9 +67,21 @@ void encode::pipeline_build_source()
           "ndisrc do-timestamp=true ndi-name=\"{}\" ! ndisrcdemux name=demux ",
           input_c.selected_input);
       break;
+    case input_mode::test:
+      this->pipeline_build_test_source();
+      break;
     case input_mode::none:
       break;
   }
+}
+
+void encode::pipeline_build_test_source()
+{
+  this->pipeline_str = std::format(
+      "videotestsrc pattern=smpte is-live=true ! video/x-raw,width={},height={},framerate={}/1 ! videoconvert ! ",
+      encode_c.width,
+      encode_c.height,
+      encode_c.framerate);
 }
 
 void encode::pipeline_build_sink()
@@ -340,12 +352,18 @@ void encode::build_pipeline()
 {
   this->pipeline_build_source();
   this->pipeline_build_sink();
-  this->pipeline_build_audio_demux();
-  this->pipeline_build_audio_encoder();
-  this->pipeline_build_audio_payloader();
-  this->pipeline_build_video_demux();
-  this->pipeline_build_video_encoder();
-  this->pipeline_build_video_payloader();
+  
+  if (input_c.selected_input_mode == input_mode::test) {
+    this->pipeline_build_video_encoder();
+    this->pipeline_build_video_payloader();
+  } else {
+    this->pipeline_build_audio_demux();
+    this->pipeline_build_audio_encoder();
+    this->pipeline_build_audio_payloader();
+    this->pipeline_build_video_demux();
+    this->pipeline_build_video_encoder();
+    this->pipeline_build_video_payloader();
+  }
 }
 
 void encode::parse_pipeline()

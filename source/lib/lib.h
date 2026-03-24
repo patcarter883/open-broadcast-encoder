@@ -11,6 +11,7 @@ enum class input_mode : std::uint8_t
   mpegts,
   sdp,
   ndi,
+  test,
   none
 };
 
@@ -60,6 +61,9 @@ struct encode_config {
   codec codec = codec::h264;
   encoder encoder = encoder::software;
   std::string bitrate = "4300";
+  int width = 1920;
+  int height = 1080;
+  int framerate = 30;
 };
 
 struct output_config {

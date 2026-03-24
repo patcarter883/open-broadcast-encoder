@@ -33,6 +33,7 @@ public:
   static Fl_Menu_Item* select_sdp_input;
   static Fl_Menu_Item* select_ndi_input;
   static Fl_Menu_Item* select_mpegts_input;
+  static Fl_Menu_Item* select_test_input;
   Fl_Flex* sdp_options_group;
   Fl_Button* btn_open_sdp;
   Fl_Flex* ndi_options_group;
