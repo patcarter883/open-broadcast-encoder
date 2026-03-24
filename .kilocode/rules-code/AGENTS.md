@@ -1,16 +1,17 @@
-# AGENTS.md
+# AGENTS.md - Code Mode
 
 This file provides guidance to agents when working with code in this repository.
 
-C++20 video streaming encoder with FLTK GUI, GStreamer pipelines, and RIST transport.
+## Critical Build Rule
 
-## Critical Rules
+- **Use cmake-skill for ALL CMake operations** - Never call cmake directly via terminal
 
-- **Use cmake-skill for all CMake operations** - Do not call cmake via terminal directly
-- **Use context7 MCP for GStreamer** - Always query Context7 for GStreamer documentation
-- **Use clear-thought MCP** - For code generation/modification and code analysis
+## Code Generation Rules
 
-## Non-Obvious Patterns
+- **Use clear-thought MCP** for all code generation and modification tasks
+- **Use context7 MCP** when dealing with GStreamer APIs
+
+## Non-Obvious Coding Patterns
 
 ### FLTK Threading (Critical)
 All UI updates from background threads MUST use this exact pattern:
@@ -56,42 +57,31 @@ Headers MUST be included in this order:
 2. Third-party headers (GStreamer, FLTK)
 3. Project headers (lib.h first, then others)
 
-## Build Commands
-
-```bash
-# Use cmake-skill (not direct cmake)
-cmake --build build -t format-fix    # Must run before commit
-cmake --build build -t run-exe       # Run the executable
-```
-
-### Developer Mode
-Create `CMakeUserPresets.json` (see HACKING.md), then:
-```bash
-cmake --preset=dev
-cmake --build --preset=dev
-ctest --preset=dev
-```
-
-## Code Style
-
-Enforced by clang-format/clang-tidy (see configs):
-- 80 column limit, 2-space indent
-- `lower_case` for classes, functions, enums
-- Left pointer alignment: `type* ptr`
-- Brace wrapping after functions/classes/namespaces
-- Include order: system → third-party → project
-
-## Pipeline Building Pattern
-
+### Pipeline Building Pattern
 The `encode` class builds GStreamer pipelines using string formatting. Elements are named for later retrieval:
 ```cpp
 pipeline_str = std::format("... ! {} name=videncoder ! ...", encoder_element);
 video_encoder = gst_bin_get_by_name(GST_BIN(pipeline), "videncoder");
 ```
 
-### GStreamer Debug Environment Variables
-```bash
-GST_DEBUG=3                    # Warning level
-GST_DEBUG=GST_PIPELINE:5       # Pipeline-specific
-GST_DEBUG_DUMP_DOT_DIR=/tmp    # Export DOT graphs
-```
+## Adding New Features
+
+### Adding a New Encoder
+1. Add enum value to [`encoder`](source/lib/lib.h:27) in `lib.h`
+2. Add menu item to [`menu_choice_encoder`](source/ui/ui.h:189) in `ui.h`
+3. Implement `pipeline_build_<vendor>_<codec>_encoder()` in [`encode.cpp`](source/encode/encode.cpp)
+4. Wire up switch case in `pipeline_build_<vendor>_encoder()`
+
+### Adding a New Input Source
+1. Add enum value to [`input_mode`](source/lib/lib.h:12) in `lib.h`
+2. Add menu item to [`menu_choice_input_protocol`](source/ui/ui.h:106) in `ui.h`
+3. Implement source building in `pipeline_build_source()` in [`encode.cpp`](source/encode/encode.cpp:107)
+4. Handle demux in `pipeline_build_video_demux()` and `pipeline_build_audio_demux()`
+
+## Code Style
+
+- Run `cmake --build build -t format-fix` before committing
+- 80 column limit, 2-space indent
+- `lower_case` for classes, functions, enums
+- Left pointer alignment: `type* ptr`
+- Brace wrapping after functions/classes/namespaces
