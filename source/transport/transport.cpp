@@ -48,7 +48,7 @@ void transport::setup_rist_sender(output_config &output_c) {
   {
       string rist_output_url = std::format(
           "rist://"
-          "{}:{}?bandwidth={}buffer-min={}&buffer-max={}&rtt-min={}&rtt-max={}&"
+          "{}:{}?bandwidth={}&buffer-min={}&buffer-max={}&rtt-min={}&rtt-max={}&"
           "reorder-buffer={}&timing-mode=2",
           url.getHost(),
           url.getPort() + (2 * i),

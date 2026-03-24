@@ -25,7 +25,7 @@ struct ndi_input
 
   auto run_device_monitor() -> void;
   auto stop_device_monitor() -> void;
-  auto refresh_devices() const -> std::vector<char*>;
+  auto refresh_devices() const -> std::vector<std::string>;
   auto preview() -> void;
 
 private:

@@ -20,7 +20,6 @@ auto ndi_input::run_device_monitor() -> void
   device_monitor_thread = std::thread(
       [&]
       {
-        // auto* bus = gst_device_monitor_get_bus(device_monitor);
         auto* caps = gst_caps_new_empty_simple("application/x-ndi");
         gst_device_monitor_add_filter(device_monitor, "Video/Source", caps);
         gst_caps_unref(caps);
@@ -36,24 +35,36 @@ auto ndi_input::run_device_monitor() -> void
       });
 }
 
-auto ndi_input::refresh_devices() const -> std::vector<char*>
+auto ndi_input::refresh_devices() const -> std::vector<std::string>
 {
-  auto device_names = std::vector<char*>();
+  auto device_names = std::vector<std::string>();
   GList* devices = gst_device_monitor_get_devices(device_monitor);
 
   for (GList* list_item = devices; list_item != nullptr; list_item = list_item->next) {
     auto* device = static_cast<GstDevice*>(list_item->data);
 
-  char* device_name = gst_device_get_display_name(device);
-  device_names.emplace_back(device_name);
-  gst_object_unref(device);
-}
-return device_names;
+    char* device_name = gst_device_get_display_name(device);
+    if (device_name != nullptr) {
+      device_names.emplace_back(device_name);
+      g_free(device_name);
+    }
+    gst_object_unref(device);
+  }
+  g_list_free(devices);
+  return device_names;
 }
 
 auto ndi_input::stop_device_monitor() -> void
 {
   run_monitor = false;
+  if (device_monitor_thread.joinable()) {
+    device_monitor_thread.join();
+  }
+  if (device_monitor != nullptr) {
+    gst_device_monitor_stop(device_monitor);
+    gst_object_unref(device_monitor);
+    device_monitor = nullptr;
+  }
 }
 
 auto ndi_input::preview() -> void
@@ -108,6 +119,7 @@ auto ndi_input::preview() -> void
         g_main_loop_run(loop);
 
         /* Free resources */
+        g_main_loop_unref(loop);
         gst_object_unref(bus);
         gst_element_set_state(pipeline, GST_STATE_NULL);
         gst_object_unref(pipeline);

@@ -569,15 +569,18 @@ void user_interface::choose_input_protocol(input_config* input_config, FuncPtr r
   }
 }
 
-void user_interface::add_ndi_choices(std::vector<char*> choice_names)
+void user_interface::add_ndi_choices(const std::vector<std::string>& choice_names)
 {
   Fl::lock();
-  std::for_each(
-      choice_names.begin(),
-      choice_names.end(),
-      [&](char* choice_name)
-      { choice_ndi_input->add(choice_name, 0, nullptr, choice_name, 0); });
-
+  for (const auto& choice_name : choice_names) {
+    ndi_device_names.push_back(choice_name);
+    choice_ndi_input->add(
+        choice_name.c_str(),
+        0,
+        nullptr,
+        const_cast<char*>(ndi_device_names.back().c_str()),
+        0);
+  }
   Fl::unlock();
   Fl::awake();
 }
@@ -586,14 +589,17 @@ void user_interface::clear_ndi_choices()
 {
   Fl::lock();
   choice_ndi_input->clear();
+  ndi_device_names.clear();
   Fl::unlock();
   Fl::awake();
 }
 
 void user_interface::choose_ndi_input(input_config* input_config)
 {
-  auto input_name = static_cast<char*>(choice_ndi_input->mvalue()->user_data());
-  input_config->selected_input = input_name;
+  auto* input_name = static_cast<char*>(choice_ndi_input->mvalue()->user_data());
+  if (input_name != nullptr) {
+    input_config->selected_input = input_name;
+  }
 }
 
 void user_interface::input_listen_port_cb(input_config* input_config)

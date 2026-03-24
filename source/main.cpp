@@ -7,7 +7,6 @@
 #include <gst/gst.h>
 #include <gst/gstdevice.h>
 
-// #include "common.h"
 #include "stats.h"
 #include "encode.h"
 #include "transport.h"
@@ -49,6 +48,9 @@ static auto rist_log_cb(void* arg,
 
 static auto rist_stats_cb(const rist_stats& stats)
 {
+  if (ptr_encoder == nullptr) {
+    return;
+  }
   if (stats::got_rist_statistics(stats, &app.stats, app.encode_config, ui)) {
     ptr_encoder->set_encode_bitrate(app.stats.current_bitrate);
   }

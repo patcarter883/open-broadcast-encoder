@@ -48,7 +48,7 @@ struct cumulative_stats
   int retransmitted_packets_sum = 0;
   int total_packets_sum = 0;
   int encode_bitrate_avg = 0;
-  int current_bitrate;
+  int current_bitrate = 0;
   double previous_quality;
 };
 
@@ -83,10 +83,6 @@ struct library
    * @brief Simply initializes the name member to the name of the project
    */
   library() noexcept;
-  
-  // std::future<void> input_thread_future;
-  // std::future<void> encode_thread_future;
-  // std::future<void> transport_thread_future;
 
   std::atomic_bool is_running;
 

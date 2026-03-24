@@ -80,7 +80,7 @@ public:
   void encode_log_append(const std::string& msg) const;
   void init_ui();
   int run_ui();
-  void add_ndi_choices(std::vector<char*> choice_names);
+  void add_ndi_choices(const std::vector<std::string>& choice_names);
   void clear_ndi_choices();
   void lock();
   void unlock();
@@ -88,6 +88,7 @@ public:
 private:
   Fl_Text_Buffer transport_log_buffer;
   Fl_Text_Buffer encode_log_buffer;
+  std::vector<std::string> ndi_device_names;
   void choose_ndi_input(input_config* input_config);
   void choose_input_protocol(input_config* input_config, FuncPtr refresh_ndi_funcptr);
   void input_listen_port_cb(input_config* input_config);
