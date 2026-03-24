@@ -107,6 +107,63 @@ static void preview_input()
     }
     case input_mode::mpegts:
       break;
+    case input_mode::test: {
+      auto preview_thread = std::thread(
+          [&]
+          {
+            std::string pipeline_string = std::format(
+                "videotestsrc pattern=smpte is-live=true ! video/x-raw,width={},height={},framerate={}/1 ! videoconvert ! autovideosink",
+                app.encode_config.width,
+                app.encode_config.height,
+                app.encode_config.framerate);
+            auto *pipeline = gst_parse_launch(pipeline_string.c_str(), nullptr);
+            auto *bus = gst_element_get_bus(pipeline);
+
+            gst_element_set_state(pipeline, GST_STATE_PLAYING);
+            auto *msg = gst_bus_timed_pop_filtered(
+                bus,
+                GST_CLOCK_TIME_NONE,
+                static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_EOS));
+            /* Parse message */
+            if (msg != nullptr) {
+              GError* err = nullptr;
+              gchar* debug_info = nullptr;
+
+              switch (GST_MESSAGE_TYPE(msg)) {
+                case GST_MESSAGE_ERROR:
+                  encode_log(std::format("Error in test preview: {}",
+                                         GST_OBJECT_NAME(msg->src)));
+                  gst_message_parse_error(msg, &err, &debug_info);
+                  encode_log(std::format("Error from element {}: {}\n",
+                                         GST_OBJECT_NAME(msg->src),
+                                         err->message));
+                  encode_log(std::format("Debugging information: {}\n",
+                                         (debug_info != nullptr) ? debug_info : "none"));
+                  g_clear_error(&err);
+                  g_free(debug_info);
+                  break;
+                case GST_MESSAGE_EOS:
+                  encode_log("Test preview: End-Of-Stream reached.\n");
+                  break;
+                default:
+                  /* We should not reach here because we only asked for ERRORs and
+                  EOS */
+                  break;
+              }
+              gst_message_unref(msg);
+            }
+
+            auto* loop = g_main_loop_new(nullptr, FALSE);
+            g_main_loop_run(loop); // This function returns when the main loop is stopped.
+
+            /* Free resources */
+            gst_object_unref(bus);
+            gst_element_set_state(pipeline, GST_STATE_NULL);
+            gst_object_unref(pipeline);
+          });
+      preview_thread.detach();  // Detach thread before returning
+      break;
+    }
   }
 }
 
