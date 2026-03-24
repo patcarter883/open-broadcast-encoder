@@ -405,6 +405,18 @@ user_interface::user_interface()
             cell = grid_stats->widget(grid_stats->child(11), 0, 1, 1, 1, 48);
             if (cell)
               cell->minimum_size(20, 20);
+            cell = grid_stats->widget(grid_stats->child(12), 1, 0, 1, 1, 48);
+            if (cell)
+              cell->minimum_size(20, 20);
+            cell = grid_stats->widget(grid_stats->child(13), 2, 0, 1, 1, 48);
+            if (cell)
+              cell->minimum_size(20, 20);
+            cell = grid_stats->widget(grid_stats->child(14), 3, 0, 1, 1, 48);
+            if (cell)
+              cell->minimum_size(20, 20);
+            cell = grid_stats->widget(grid_stats->child(15), 4, 0, 1, 1, 48);
+            if (cell)
+              cell->minimum_size(20, 20);
             cell = grid_stats->widget(grid_stats->child(16), 5, 0, 1, 1, 48);
             if (cell)
               cell->minimum_size(20, 20);
