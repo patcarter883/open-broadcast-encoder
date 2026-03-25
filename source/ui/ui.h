@@ -14,9 +14,14 @@
 #include <FL/Fl_Input.H>
 #include <FL/Fl_Output.H>
 #include <FL/Fl_Text_Display.H>
+#include <FL/Fl_Scroll.H>
 #include <stdint.h>
 #include "FL/fl_callback_macros.H"
 #include "lib/lib.h"
+
+class transport_manager;
+class output_stream_widget;
+class add_output_dialog;
 
 using FuncPtr = void (*)();
 
@@ -85,6 +90,13 @@ public:
   void lock();
   void unlock();
 
+  // Multi-output UI methods
+  void set_transport_manager(transport_manager* manager);
+  void add_output_stream(const stream_config& config);
+  void remove_output_stream(const std::string& stream_id);
+  void update_output_stream_stats(const stream_stats& stats);
+  void clear_output_streams();
+
 private:
   Fl_Text_Buffer transport_log_buffer;
   Fl_Text_Buffer encode_log_buffer;
@@ -99,4 +111,9 @@ private:
   void stop(FuncPtr stop_funcptr);
   void refresh_ndi_devices(FuncPtr refresh_ndi_funcptr);
   void btn_preview_input_cb(FuncPtr preview_src_funcptr);
+
+  // Multi-output members
+  transport_manager* m_transport_manager {nullptr};
+  std::vector<output_stream_widget*> m_output_widgets;
+  add_output_dialog* m_add_output_dialog {nullptr};
 };

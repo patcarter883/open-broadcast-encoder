@@ -734,3 +734,90 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        FuncPtr,
                        ndi_refresh_funcptr);
 }
+
+// Multi-output UI implementation
+#include "transport/transport_manager.h"
+#include "transport/buffer_distributor.h"
+#include "ui/output_stream_widget.h"
+#include "ui/add_output_dialog.h"
+
+// External app reference
+extern library app;
+
+void user_interface::set_transport_manager(transport_manager* manager)
+{
+  m_transport_manager = manager;
+}
+
+void user_interface::add_output_stream(const stream_config& config)
+{
+  if (!m_transport_manager) {
+    return;
+  }
+
+  // Create transport
+  auto transport = m_transport_manager->create_transport(config);
+  if (!transport) {
+    return;
+  }
+
+  // Add to library streams
+  app.streams.push_back(config);
+
+  // Create UI widget
+  // Note: This should be called from main thread
+  // Widget creation would be handled here
+}
+
+void user_interface::remove_output_stream(const std::string& stream_id)
+{
+  if (!m_transport_manager) {
+    return;
+  }
+
+  m_transport_manager->remove_transport(stream_id);
+
+  // Remove from library streams
+  app.streams.erase(
+      std::remove_if(app.streams.begin(), app.streams.end(),
+          [&stream_id](const stream_config& s) {
+            return s.id == stream_id;
+          }),
+      app.streams.end());
+}
+
+void user_interface::update_output_stream_stats(const stream_stats& stats)
+{
+  // Update the corresponding widget
+  // Note: FLTK updates must be done with Fl::lock()
+  if (Fl::lock()) {
+    for (auto* widget : m_output_widgets) {
+      if (widget->get_stream_id() == stats.stream_id) {
+        widget->update_stats(
+            stats.bandwidth,
+            stats.quality,
+            stats.rtt,
+            stats.total_packets,
+            stats.connected);
+        break;
+      }
+    }
+    Fl::unlock();
+    Fl::awake();
+  }
+}
+
+void user_interface::clear_output_streams()
+{
+  if (!m_transport_manager) {
+    return;
+  }
+
+  m_transport_manager->stop_all();
+
+  for (auto* widget : m_output_widgets) {
+    delete widget;
+  }
+  m_output_widgets.clear();
+  app.streams.clear();
+}

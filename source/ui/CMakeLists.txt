@@ -16,6 +16,10 @@ add_library(
 target_sources(ui_lib ${warning_guard}
   PUBLIC
     ui.cpp
+    output_stream_widget.h
+    output_stream_widget.cpp
+    add_output_dialog.h
+    add_output_dialog.cpp
 )
 
 target_compile_features(ui_lib PUBLIC cxx_std_20)
@@ -26,6 +30,7 @@ fltk::fltk
 
 target_link_libraries(ui_lib PRIVATE
 open-broadcast-encoder_lib
+transport_lib
 )
 
 target_include_directories(ui_lib PUBLIC

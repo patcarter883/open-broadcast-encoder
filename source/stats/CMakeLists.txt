@@ -20,6 +20,8 @@ target_sources(stats_lib ${warning_guard}
   PUBLIC
     stats.h
     stats.cpp
+    statistics_aggregator.h
+    statistics_aggregator.cpp
 )
 
 target_include_directories(

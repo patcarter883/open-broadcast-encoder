@@ -16,6 +16,18 @@ target_sources(transport_lib ${warning_guard}
   PUBLIC
     transport.h
     transport.cpp
+    transport_base.h
+    transport_base.cpp
+    buffer_distributor.h
+    buffer_distributor.cpp
+    transport_manager.h
+    transport_manager.cpp
+    rist_transport.h
+    rist_transport.cpp
+    srt_transport.h
+    srt_transport.cpp
+    rtmp_transport.h
+    rtmp_transport.cpp
 )
 
 target_include_directories(

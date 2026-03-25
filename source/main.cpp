@@ -10,12 +10,17 @@
 #include "stats.h"
 #include "encode.h"
 #include "transport.h"
-#include "lib.h"
+#include "transport/transport_manager.h"
+#include "transport/buffer_distributor.h"
+#include "stats/statistics_aggregator.h"
+#include "lib/lib.h"
 #include "ndi_input.h"
 #include "ui.h"
 
 library app;
 std::unique_ptr<transport> transporter;
+transport_manager g_transport_manager;
+statistics_aggregator g_stats_aggregator;
 user_interface ui;
 encode* ptr_encoder;
 
@@ -69,7 +74,8 @@ static void run_loop()
   while (app.is_running) {
     auto vidbuf = encoder.pull_video_buffer();
     if (vidbuf.buf_size > 0) {
-      transporter->send_buffer(vidbuf, 0);
+      // Convert legacy buffer to shared buffer and distribute
+      g_transport_manager.get_distributor().distribute_legacy(vidbuf);
     }
   }
 }
@@ -82,14 +88,30 @@ static void run()
 static void stop()
 {
   app.is_running = false;
+  g_transport_manager.stop_all();
 }
 
 static void run_transport()
 {
-  transporter = std::make_unique<transport>();
-  transporter->set_log_callback(&rist_log_cb);
-  transporter->set_statistics_callback(&rist_stats_cb);
-  transporter->setup_rist_sender(app.output_config);
+  // Legacy: Create a RIST transport from existing output_config
+  // This maintains backward compatibility with existing UI
+  stream_config config;
+  config.id = "legacy_rist";
+  config.protocol = transport_protocol::rist;
+  config.address = app.output_config.address;
+  config.streams = app.output_config.streams;
+  config.bandwidth = app.output_config.bandwidth;
+  config.buffer_min = app.output_config.buffer_min;
+  config.buffer_max = app.output_config.buffer_max;
+  config.rtt_min = app.output_config.rtt_min;
+  config.rtt_max = app.output_config.rtt_max;
+  config.reorder_buffer = app.output_config.reorder_buffer;
+
+  auto transport = g_transport_manager.create_transport(config);
+  if (transport) {
+    transport->set_log_callback(&transport_log);
+    g_transport_manager.start_all();
+  }
 }
 
 static void preview_input()
@@ -173,8 +195,20 @@ auto main(int argc, char** argv) -> int
 {
   gst_init(&argc, &argv);
 
+  // Set up stats aggregator callback for bitrate adjustment
+  g_stats_aggregator.set_stats_callback([](const cumulative_stats& stats) {
+    if (ptr_encoder != nullptr) {
+      int max_bitrate = std::stoi(app.encode_config.bitrate);
+      int new_bitrate = g_stats_aggregator.calculate_consensus_bitrate(max_bitrate);
+      if (new_bitrate != app.stats.current_bitrate) {
+        ptr_encoder->set_encode_bitrate(new_bitrate);
+      }
+    }
+  });
+
   ndi.run_device_monitor();
   ui.init_ui();
+  ui.set_transport_manager(&g_transport_manager);
   ui.init_ui_callbacks(&(app.input_config),
                        &(app.encode_config),
                        &(app.output_config),
