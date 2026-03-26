@@ -1,0 +1,23 @@
+[package]
+name = "open-broadcast-encoder-tauri"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = "2.0"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri = { version = "2.0", features = ["shell-open", "dialog-open", "dialog-message"] }
+tokio = { version = "1", features = ["full"] }
+libloading = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[[bin]]
+name = "main"
+path = "src/main.rs"
