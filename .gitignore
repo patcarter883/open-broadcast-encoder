@@ -10,3 +10,6 @@ CMakeLists.txt.user
 CMakeUserPresets.json
 compile_commands.json
 build-ninja/
+frontend/node_modules
+frontend/dist
+src-tauri/target

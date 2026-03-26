@@ -16,6 +16,9 @@ project(
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# BUILD_TAURI option for conditional compilation
+option(BUILD_TAURI "Build Tauri FFI wrapper instead of FLTK UI" OFF)
+
 # include(cmake/project-is-top-level.cmake)
 include(cmake/variables.cmake)
 
@@ -41,6 +44,11 @@ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/transport)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/encode)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/stats)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/url)
+
+# Encoder wrapper (C FFI layer for Tauri)
+if(BUILD_TAURI)
+  add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/encoder_wrapper)
+endif()
 
 # ---- Declare executable ----
 
