@@ -1,1 +1,7 @@
-{"mcpServers":{}}
+{"mcpServers":{
+    "quasar Docs": {
+      "url": "https://gitmcp.io/quasarframework/quasar",
+      "disabled": false,
+      "autoApprove": []
+    }
+}}

@@ -1,14 +1,31 @@
 <template>
-  <div role="main">
-    <MenuBar />
-    <div class="content">
-      <InputSelector />
-      <CodecControls />
-      <OutputManager />
-      <StatsDashboard />
-      <LogViewer />
-    </div>
-  </div>
+  <q-layout view="hHh lpR fFf">
+    <q-header elevated class="bg-dark text-white">
+      <MenuBar />
+    </q-header>
+
+    <q-page-container>
+      <q-page padding>
+        <div class="row q-col-gutter-md">
+          <div class="col-12 col-md-6 col-lg-4">
+            <InputSelector />
+          </div>
+          <div class="col-12 col-md-6 col-lg-4">
+            <CodecControls />
+          </div>
+          <div class="col-12 col-md-6 col-lg-4">
+            <OutputManager />
+          </div>
+          <div class="col-12 col-md-6 col-lg-8">
+            <StatsDashboard />
+          </div>
+          <div class="col-12 col-lg-4">
+            <LogViewer />
+          </div>
+        </div>
+      </q-page>
+    </q-page-container>
+  </q-layout>
 </template>
 
 <script setup lang="ts">
@@ -21,6 +38,5 @@ import LogViewer from './components/LogViewer.vue'
 </script>
 
 <style>
-body { margin: 0; font-family: system-ui, sans-serif; }
-#app { display: flex; flex-direction: column; height: 100vh; }
+body { margin: 0; }
 </style>
