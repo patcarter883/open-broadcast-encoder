@@ -2,206 +2,181 @@
 
 **Analysis Date:** 2026-04-27
 
-<guidelines>
-- This document is durable intent: boundaries, layering, entrypoints, and change-routing rules.
-- Do NOT write a static directory tree. It rots. Instead: reference a few canonical entrypoints and show "where changes go".
-- Every layer/abstraction must include concrete file paths.
-- Include "where to add new code" rules. This prevents downstream agents from scattering logic across random files.
-</guidelines>
-
 ## Pattern Overview
 
-Overall: **Strategy Pattern + Publisher-Buffer-Consumer Pipeline in a Single-Executable Desktop Application.**
+Overall: **Modular Monolith with Strategy Pattern**
 
 Key characteristics:
-- A single `open-broadcast-encoder` executable with a multi-library CMake build (`source/lib`, `source/ui`, `source/encode`, `source/transport`, `source/ndi_input`, `source/stats`, `source/url`)
-- Strategy pattern on `transport_base` abstracts three protocol families (RIST, SRT, RTMP) behind a uniform send interface used by `buffer_distributor`
-- GStreamer pipeline is built as a string in the `encode` class; video frames are pulled from `appsink`, converted to shared buffers, and fan-out to zero or more transport outputs
-- FLTK GUI runs on the main thread; all cross-thread communication uses the `Fl::lock()/Fl::unlock()/Fl::awake()` pattern and callback function pointers
-- Global mutable state lives in `main.cpp` as top-level variables (`library app`, `g_transport_manager`, `g_stats_aggregator`, `ptr_encoder`) — all components reach for these globals rather than using dependency injection
+- Single executable with clearly separated subsystems, each built as a static library
+- Strategy pattern for transport layer (`transport_base` abstract interface with RIST/SRT/RTMP concrete implementations)
+- Global mutable shared state for cross-component communication (`library app` singleton)
+- GStreamer pipeline-as-string construction for media processing
+- FLTK event-loop UI with threaded background work and `Fl::lock()/Fl::unlock()/Fl::awake()` for thread safety
 
 ## Layers (Boundaries)
 
-Layer: Presentation (FLTK GUI)
-- Purpose: Render the user interface, collect configuration, display logs and stats
-- Location: `source/ui/`
-- Owns: FLTK widget hierarchy, callback wiring, log display updates, NDI device choice management, multi-output stream widget management
-- Does NOT own: Business logic, encoding, transport, statistics computation
-- Depends on: `source/lib/lib.h` (types), `source/transport/transport_manager.h` (multi-output)
-- Used by: `source/main.cpp` (entry point, wiring), `source/ndi_input/ndi_input.h` (NDI refresh callback)
-- Threading rule: All UI updates from background threads MUST use `Fl::lock()` / `Fl::unlock()` / `Fl::awake()` — never touch widgets from background threads directly
-
-Layer: Application Entry Point (Orchestrator)
-- Purpose: Initialize all subsystems, wire callbacks, manage lifecycle
+### Layer: Main / Orchestration
+- Purpose: Application bootstrap, lifecycle coordination, global state management
 - Location: `source/main.cpp`
-- Owns: Global state declarations, main loop (`run_loop`), transport start/stop, preview logic, callback wiring to UI
-- Does NOT own: Any business logic — it delegates to `encode`, `transport_manager`, `ndi_input`, `ui`
-- Depends on: Every other layer (`source/encode/encode.h`, `source/transport/transport.h`, `source/transport/transport_manager.h`, `source/transport/buffer_distributor.h`, `source/stats/statistics_aggregator.h`, `source/lib/lib.h`, `source/ndi_input/ndi_input.h`, `source/ui/ui.h`, `source/stats/stats.h`)
-- Used by: System (invoked at program startup via `main()`)
+- Owns: Global object instantiation (`library app`, `transport_manager`, `statistics_aggregator`, `user_interface`, `encode`, `ndi_input`), log callback wiring, event loop setup, run/stop lifecycle
+- Does NOT own: Business logic (delegates to subsystems), UI rendering, pipeline construction, transport implementation
+- Depends on: `stats.h`, `encode.h`, `transport.h`, `transport/transport_manager.h`, `transport/buffer_distributor.h`, `stats/statistics_aggregator.h`, `lib/lib.h`, `ndi_input.h`, `ui.h`
+- Used by: Nothing — this is the entry point, the top of the call graph
 
-Layer: Input Discovery (NDI)
-- Purpose: Discover NDI network devices and preview NDI sources
-- Location: `source/ndi_input/ndi_input.h`
-- Owns: GStreamer `GstDeviceMonitor` lifecycle, device enumeration, NDI preview pipeline
-- Does NOT own: Configuration storage, UI rendering
-- Depends on: `source/lib/lib.h` (input_config), `source/main.cpp` (log callback reference)
-- Used by: `source/main.cpp` (device monitor, refresh callback), `source/ui/ui.h` (choice population)
+### Layer: Configuration / Shared Types
+- Purpose: Defines all enums, structs, and value types shared across subsystems
+- Location: `source/lib/lib.h` (definitions), `include/common.h` (legacy/early definitions)
+- Owns: Enums (`input_mode`, `codec`, `encoder`, `transport_protocol`), value structs (`buffer_data`, `shared_buffer`, `cumulative_stats`, `stream_stats`, `stream_config`, `input_config`, `encode_config`, `output_config`, `library`), `library` constructor and `log_append()`
+- Does NOT own: Pipeline logic, UI rendering, transport I/O, statistics computation
+- Depends on: Nothing (self-contained header)
+- Used by: Every other layer — this is the most-included file in the codebase
 
-Layer: Encoding (GStreamer Pipeline Builder)
-- Purpose: Build and manage a GStreamer pipeline for video+audio encoding, expose raw video buffers
-- Location: `source/encode/encode.h`
-- Owns: Pipeline construction (source -> encoder -> appsink), GStreamer bus message handling, encoder parameter switching (bitrate), audio encoding
-- Does NOT own: Transport/networking, statistics aggregation
-- Depends on: `source/lib/lib.h` (config types, buffer_data), `source/main.cpp` (log callback, run_flag)
-- Used by: `source/main.cpp` (run_loop pulls video buffers via `pull_video_buffer()`)
+### Layer: Input Sources
+- Purpose: Discovers and previews video input sources (NDI, SDP, MPEGTS, test pattern)
+- Location: `source/ndi_input/ndi_input.h`, `source/ndi_input/ndi_input.cpp`
+- Owns: NDI device discovery via GStreamer `GstDeviceMonitor`, NDI preview pipeline, SDP input mode handling, test pattern preview
+- Does NOT own: Video encoding, transport delivery, UI display of results (reports via callbacks)
+- Depends on: `lib/lib.h`, GStreamer (NDI plugin, device monitoring)
+- Used by: `main.cpp` (via `ndi_input` global), UI (via `refresh_ndi_devices` callback)
 
-Layer: Transport Strategy (Protocol Abstraction)
-- Purpose: Abstract RIST, SRT, and RTMP protocols behind a common send interface; manage transport lifecycle and buffer fan-out
-- Location: `source/transport/`
+### Layer: Encode (GStreamer Pipeline)
+- Purpose: Builds and runs GStreamer pipelines for video/audio encoding with hardware or software encoders
+- Location: `source/encode/encode.h`, `source/encode/encode.cpp`
+- Owns: Pipeline construction (`build_pipeline`), GStreamer element management, encoder selection (AMD/QSV/NVENC/software × H.264/H.265/AV1), bitrate adjustment, buffer pulling from appsink, error/EOS handling
+- Does NOT own: Transport delivery (pushes to `buffer_distributor`), UI updates (uses callback), input source setup (delegated to pipeline building methods)
+- Depends on: `lib/lib.h`, GStreamer (`gst/gst.h`, `gst/app/gstappsink.h`)
+- Used by: `main.cpp` (as the `encode` instance), `stats.h` (for bitrate callback)
+
+### Layer: Transport (Distribution & Delivery)
+- Purpose: Distributes encoded buffers to multiple output destinations over various network protocols
+- Location: `source/transport/` (directory)
 - Owns:
-  - `source/transport/transport_base.h` — abstract interface for all protocols
-  - `source/transport/rist_transport.h` — RIST protocol implementation
-  - `source/transport/srt_transport.h` — SRT protocol implementation
-  - `source/transport/rtmp_transport.h` — RTMP protocol implementation
-  - `source/transport/transport_manager.h` — factory and lifecycle manager, owns `buffer_distributor`
-  - `source/transport/buffer_distributor.h` — publishes buffers to all registered transports using `shared_ptr` for zero-copy multi-consumer delivery
-  - `source/transport/transport.h` — legacy single-transport wrapper (backward compatibility)
-- Does NOT own: Statistics (delegates to `source/stats/`), pipeline building (delegates to `source/encode/`)
-- Depends on: `source/lib/lib.h` (stream_config, buffer_data, shared_buffer, cumulative_stats), `source/url/url.h` (URL parsing in transport base)
-- Used by: `source/main.cpp` (create_transport, start_all, stop_all), `source/ui/ui.h` (multi-output widget management)
+  - `buffer_distributor` (single-to-many buffer fan-out, zero-copy via `shared_ptr`)
+  - `transport_manager` (factory for concrete transports, lifecycle management)
+  - `transport_base` (abstract interface for protocol implementations)
+  - `rist_transport` (RIST via `RISTNetSender` from `rist-cpp`)
+  - `srt_transport` (SRT — stub/not yet connected)
+  - `rtmp_transport` (RTMP — stub/not yet connected)
+  - Legacy `transport` class (original RIST-only sender, used in legacy path)
+- Does NOT own: Buffer creation (incoming from encoder), UI display (reports stats via callbacks)
+- Depends on: `lib/lib.h`, `transport_base.h`, RISTNet headers, `url/url.h`
+- Used by: `main.cpp` (via `g_transport_manager`), UI (via `set_transport_manager` for multi-output)
+- Data flow direction: Encoder -> `buffer_distributor::distribute()` -> per-transport `send_buffer()` -> network
 
-Layer: Statistics
-- Purpose: Aggregate per-stream statistics, compute consensus bitrate, drive adaptive encoding
-- Location: `source/stats/`
+### Layer: Statistics & Bitrate Control
+- Purpose: Aggregates per-stream network statistics and computes consensus bitrate recommendations
+- Location: `source/stats/stats.h`, `source/stats/stats.cpp`, `source/stats/statistics_aggregator.h`, `source/stats/statistics_aggregator.cpp`
 - Owns:
-  - `source/stats/statistics_aggregator.h` — multi-stream aggregation, consensus bitrate calculation, stale stream pruning
-  - `source/stats/stats.h` — legacy RIST statistics helper (static method)
-- Does NOT own: Transport internals, UI rendering
-- Depends on: `source/lib/lib.h` (stream_stats, cumulative_stats), `source/stats/stats.h` (got_rist_statistics)
-- Used by: `source/main.cpp` (bitrate callback), `source/encode/encode.h` (bitrate adjustment via `set_encode_bitrate`)
+  - `stats::got_rist_statistics()` — single-stream stat processing with auto-bitrate adjustment logic and UI update
+  - `statistics_aggregator` — multi-stream aggregation, consensus bitrate calculation (quality-weighted), stale stream pruning, callback notification
+- Does NOT own: Network I/O, encoding (reports to encoder via bitrate setter callback)
+- Depends on: `lib/lib.h`, `RISTNet.h`, `ui/ui.h` (for single-stream path)
+- Used by: `main.cpp` (via `g_stats_aggregator`), RIST transport (via stats callback)
+- Data flow direction: RIST transport -> stats callback -> `statistics_aggregator::update_stream_stats()` -> consensus calculation -> bitrate callback -> `encode::set_encode_bitrate()`
 
-Layer: Configuration & Data Types
-- Purpose: Define all shared types — enums, structs, configuration containers
-- Location: `source/lib/lib.h`
-- Owns: All enums (`input_mode`, `codec`, `encoder`, `transport_protocol`), all config structs (`input_config`, `encode_config`, `output_config`, `stream_config`), all data structs (`buffer_data`, `shared_buffer`, `cumulative_stats`, `stream_stats`, `library`)
-- Does NOT own: Behavior — types are data-only
-- Depends on: Nothing (this is the foundational layer)
-- Used by: Every other layer in the codebase
+### Layer: UI (FLTK)
+- Purpose: Graphical configuration and monitoring interface
+- Location: `source/ui/ui.h`, `source/ui/ui.cpp`, `source/ui/output_stream_widget.h`, `source/ui/output_stream_widget.cpp`, `source/ui/add_output_dialog.h`
+- Owns: FLTK widget construction (`Fl_Double_Window`, `Fl_Flex`, `Fl_Grid` layouts), input configuration controls (protocol selection, codec/encoder choice, bitrate input), output address input, stats display grid, log text displays, multi-output stream widgets, add-output dialog
+- Does NOT own: Video encoding, network I/O, pipeline construction (configures via shared `library app` state and callbacks)
+- Depends on: `lib/lib.h`, FLTK headers, `transport/transport_manager.h` (for multi-output integration)
+- Used by: `main.cpp` (via `ui` global, `ui.show()`, `ui.run_ui()`)
+- Threading: All UI updates from background threads use `Fl::lock()` -> update -> `Fl::unlock()` -> `Fl::awake()`
 
-Layer: URL Parsing (Utility)
-- Purpose: Parse and manipulate URLs for transport address handling
-- Location: `source/url/url.h`
-- Owns: RFC 3986 compliant URL parsing (from `homer6::url` external library)
-- Does NOT own: Transport logic, encoding logic
-- Depends on: Nothing (pure utility)
-- Used by: `source/transport/transport.h` (address parsing)
+### Layer: URL Parsing (Utility)
+- Purpose: RFC 3986 compliant URL parsing for transport address strings
+- Location: `source/url/url.h`, `source/url/url.cc`
+- Owns: URL scheme, host, port, path, query parameter parsing
+- Does NOT own: Transport logic (only provides parsing utility)
+- Depends on: Standard C++ library only
+- Used by: `transport.cpp`, `rist_transport.cpp`
 
-Layer: FFI Wrapper (Optional — BUILD_TAURI)
-- Purpose: Expose encoder functionality via C FFI for Tauri (Rust) frontend
-- Location: `source/encoder_wrapper/`
-- Owns: `source/encoder_wrapper/encoder_wrapper.h`, `source/encoder_wrapper/encoder_wrapper.cpp`
-- Does NOT own: Core encoding or transport logic
-- Depends on: `source/encode/encode.h`
-- Used by: Tauri app (external consumer), optional build target
+### Layer: External Dependencies
+- Location: `external/` (submodules)
+- `external/fltk/` — FLTK GUI toolkit (embeddedled as `SYSTEM` include)
+- `external/rist-cpp/` — RIST C++ API wrapper (`RISTNetSender`), bundled as `SYSTEM`
+- `external/sdp-tools-cpp/` — SDP session description builder/parser (included but subdirectory commented out in CMake)
 
 ## Entry Points
 
-Entrypoint: main
+Entrypoint: Application Main
 - Location: `source/main.cpp`
-- Triggers: OS process startup
-- Responsibilities:
-  - Initialize GStreamer (`gst_init`)
-  - Declare and instantiate global state (`library app`, `g_transport_manager`, `g_stats_aggregator`)
-  - Create `ndi_input` with device monitor running in background thread
-  - Initialize and show FLTK UI, wire all callbacks (`init_ui_callbacks`)
-  - Set up stats callback on `g_stats_aggregator` that calls `ptr_encoder->set_encode_bitrate()`
-  - Enter FLTK event loop (`ui.run_ui()`)
-  - On start: spawn `run_loop` thread that creates `encode`, runs encode thread, pulls buffers, distributes via `g_transport_manager.get_distributor()`
-  - On stop: set `app.is_running = false`, call `g_transport_manager.stop_all()`
+- Triggers: Process launch (CLI)
+- Responsibilities: GStreamer initialization, global object instantiation, callback wiring (log callbacks, stats callbacks), NDI device monitoring startup, UI initialization and event loop execution
 
-Entrypoint: transport_manager::create_transport
-- Location: `source/transport/transport_manager.h` (implementation in `source/transport/transport_manager.cpp`)
-- Triggers: Called from `source/main.cpp::run_transport()` or from UI when user adds an output stream
-- Responsibilities: Dispatch to `rist_transport`, `srt_transport`, or `rtmp_transport` based on `stream_config.protocol`, add to internal registry, register with `buffer_distributor`
+Entrypoint: UI Event Loop
+- Location: `source/ui/ui.cpp` -> `user_interface::run_ui()` (calls `Fl::run()`)
+- Triggers: FLTK widget events (button clicks, choice selections, etc.)
+- Responsibilities: Process all user interactions, dispatch to callback functions bound via `init_ui_callbacks()`
 
-Entrypoint: encode::run_encode_thread
-- Location: `source/encode/encode.h` (implementation in `source/encode/encode.cpp`)
-- Triggers: Called from `source/main.cpp::run_loop`
-- Responsibilities: Build GStreamer pipeline, start encoding, create worker threads for encoding/polling
+## Data Flow (Canonical Flows)
 
-## Data Flow (One Or Two Canonical Flows)
+Flow: Encode -> Transport Pipeline
+1. `main.cpp` launches `run_loop()` thread which creates `encode` and calls `encoder.run_encode_thread()`
+2. `encode` builds and starts a GStreamer pipeline, pulls encoded video frames via `pull_video_buffer()`
+3. `main.cpp` loop calls `g_transport_manager.get_distributor().distribute_legacy(vidbuf)` for each frame
+4. `buffer_distributor` converts `buffer_data` to `shared_buffer` (zero-copy via shared_ptr with release deleter)
+5. `buffer_distributor` iterates all connected transports, calls `transport->send_buffer(shared_buffer_ptr)` on each
+6. Each concrete transport (`rist_transport`, etc.) sends data over the network via its protocol implementation
+7. Transport stats callbacks fire, notifying `statistics_aggregator` which computes consensus bitrate and calls back to `encode::set_encode_bitrate()`
 
-Flow: Video Encoding to Network Transport
-1. **Input** (`source/ndi_input/ndi_input.h` or `source/encode/encode.cpp` test source) feeds raw video into a GStreamer pipeline built by `encode` (`source/encode/encode.h`)
-2. **Encode** (`source/encode/encode.h`) builds a pipeline with source -> video/audio encoder -> payloader -> appsink, runs it in a background thread, and exposes `pull_video_buffer()` to fetch encoded frames as `buffer_data`
-3. **Main loop** (`source/main.cpp::run_loop`) polls `encoder.pull_video_buffer()` every iteration; when `vidbuf.buf_size > 0`, converts the legacy `buffer_data` to `shared_buffer` via `g_transport_manager.get_distributor().distribute_legacy(vidbuf)`
-4. **Buffer distributor** (`source/transport/buffer_distributor.h`) holds `shared_ptr<shared_buffer>` references, distributes to all registered `transport_base` instances with a mutex-protected iteration
-5. **Transport implementations** (`source/transport/rist_transport.h`, `source/transport/srt_transport.h`, `source/transport/rtmp_transport.h`) each send buffers over their respective protocol, run a stats thread that reports `stream_stats`
-6. **Statistics aggregator** (`source/stats/statistics_aggregator.h`) receives per-stream stats updates, computes consensus bitrate, and fires a callback that calls `ptr_encoder->set_encode_bitrate()` to close the adaptive loop
-
-Flow: UI Configuration to Runtime
-1. **User** interacts with FLTK widgets in `source/ui/ui.h` (choices, inputs, buttons)
-2. **Callbacks** (wired via `init_ui_callbacks` in `source/main.cpp`) read/write `input_config`, `encode_config`, `output_config` in `library app`
-3. **Transport selection** — user selects protocol from menu, UI stores via `user_data()` casting enum to `long` (`source/ui/ui.h`)
-4. **Start/Stop** — `btn_start_encode` triggers `run()` (spawns `run_loop` thread); `btn_stop_encode` triggers `stop()` (sets `app.is_running = false`, stops transports)
-5. **Log displays** — background threads call `ui.encode_log_append()` / `ui.transport_log_append()` which are thread-safe wrappers around `Fl::lock()/Fl::unlock()/Fl::awake()`
+Flow: Configuration to Pipeline
+1. User selects input protocol via `choice_input_protocol` menu in UI
+2. UI callback sets `app.input_config.selected_input_mode`
+3. On "Start Encode", `run()` creates `encode` instance with current `app.input_config` and `app.encode_config`
+4. `encode::build_pipeline()` reads these configs to construct GStreamer pipeline string
+5. `encode::parse_pipeline()` parses and launches the pipeline
 
 State management:
-- All mutable shared state is global in `source/main.cpp`: `library app` (config + running flag), `g_transport_manager` (transport registry + buffer distributor), `g_stats_aggregator` (statistics + bitrate consensus), `ptr_encoder` (encoder pointer for bitrate callback), `ui` (GUI)
-- `library::is_running` is `std::atomic_bool` — accessed by encode thread, main loop, and UI stop callback
-- `buffer_distributor` uses `shared_ptr<shared_buffer>` for zero-copy fan-out; the underlying data buffer is copied once during `distribute_legacy()`
-- Each `transport_base` implementation maintains its own `m_connected` (atomic bool) and `m_stats` (mutex-protected) state
+- Global mutable state via `library app` instance in `main.cpp` — config structs and runtime stats
+- Encoder and transport access via global pointers (`ptr_encoder`, `g_transport_manager`)
+- Thread synchronization via `Fl::lock()` for UI and mutexes in `buffer_distributor`, `transport_manager`, `statistics_aggregator`
 
 ## Key Abstractions
 
-Abstraction: transport_base (Strategy Pattern)
-- Purpose: Common interface that abstracts RIST, SRT, and RTMP transport protocols
-- Examples: `source/transport/rist_transport.h`, `source/transport/srt_transport.h`, `source/transport/rtmp_transport.h`
-- Pattern: Virtual abstract class with `initialize()`, `start()`, `stop()`, `send_buffer()`, `is_connected()`, `get_stream_id()`, `get_protocol()`, `get_stats()`. Each implementation manages its own threads, connections, and stats polling. `transport_manager` is the factory and registry.
+Abstraction: Transport Protocol Strategy
+- Purpose: Abstract network delivery protocol so buffer distributor works identically regardless of RIST/SRT/RTMP
+- Examples: `source/transport/transport_base.h`, `source/transport/rist_transport.h`, `source/transport/srt_transport.h`, `source/transport/rtmp_transport.h`
+- Pattern: Strategy pattern — `transport_base` defines virtual interface (`initialize`, `start`, `stop`, `send_buffer`, `is_connected`, `get_stats`), factory in `transport_manager` creates concrete type based on `transport_protocol` enum
 
-Abstraction: buffer_distributor (Publisher-Subscriber with Zero-Copy)
-- Purpose: Fan out a single encoded video buffer to zero or more transport outputs
-- Examples: `source/transport/buffer_distributor.h`
-- Pattern: Maintains a list of `shared_ptr<transport_base>`. `distribute()` takes `shared_buffer_ptr` and forwards to all. `distribute_legacy()` wraps `buffer_data` in a `shared_ptr` first. Mutex-protected iteration during distribution. Connection callback notifies UI on transport connect/disconnect.
+Abstraction: Buffer Distribution
+- Purpose: Fan-out a single encoded stream to multiple output destinations
+- Examples: `source/transport/buffer_distributor.h`, `source/transport/buffer_distributor.cpp`
+- Pattern: Pub-sub / multicast with `shared_ptr` for zero-copy buffer sharing across concurrent consumers
 
-Abstraction: statistics_aggregator (Consensus Engine)
-- Purpose: Collect per-stream statistics and compute a consensus bitrate recommendation
-- Examples: `source/stats/statistics_aggregator.h`
-- Pattern: Maintains `vector<shared_ptr<stream_stats>>`. On each update, prunes stale streams (threshold: 10s), recalculates aggregated stats, fires callback if bitrate should change. `calculate_consensus_bitrate()` computes weighted average across streams bounded by min/max.
-
-Abstraction: library (Global Config Container)
-- Purpose: Single shared container for all application state and configuration
-- Examples: `source/lib/lib.h`
-- Pattern: `struct library` aggregates `input_config`, `encode_config`, `output_config`, `cumulative_stats stats`, `vector<stream_config> streams`, `atomic_bool is_running`, `vector<thread> threads`. Instantiated as global `app` in `source/main.cpp`.
+Abstraction: NDI Input Source
+- Purpose: Discover and preview NDI sources on the network
+- Examples: `source/ndi_input/ndi_input.h`, `source/ndi_input/ndi_input.cpp`
+- Pattern: GStreamer device monitor running in background thread, device list refreshed on demand
 
 ## Error Handling Strategy
 
-Strategy: Callback-based error logging with GStreamer bus message handlers.
-- Encoding errors: `encode::handle_gst_message_error()` parses `GstMessage` and logs via `log_func` callback (`source/encode/encode.h`)
-- Transport errors: Each transport implementation sets error state on `m_connected`; `buffer_distributor` monitors connection state and fires connection callback
-- Network errors: Handled internally by each transport protocol library (RISTNetSender, SRT library, RTMP library); logged through `transport_base::log_message()` callback
-- UI errors: Callbacks like `rist_log_cb` and `transport_log` in `source/main.cpp` route messages through `ui.transport_log_append()` (thread-safe)
-- No exceptions thrown — all error paths use status codes (`bool` return values on `initialize()`, `start()`) and logging callbacks
+Strategy: Log-through-callbacks with pipeline error reporting
+- GStreamer errors are captured in `encode::handle_gst_message_error()` which calls the `log_func` callback
+- Log functions route to `ui.encode_log_append()` or `ui.transport_log_append()` via global function pointers
+- Transport implementations use `log_message()` which routes through `m_log_callback` function object
+- Examples: `source/encode/encode.cpp:446` (GST errors), `source/transport/transport_base.cpp:21` (transport logs), `main.cpp:27` (encode_log), `main.cpp:32` (transport_log)
+
+Strategy: Callback-based error recovery
+- Transport send failures report via `send_callback` with `success` boolean and error message
+- Statistics callback reports per-stream quality for bitrate auto-adjustment
 
 ## Cross-Cutting Concerns
 
 Logging:
-- Every major component accepts a log callback (function pointer or `std::function`)
-- `encode` uses `log_func_ptr` (`void (*)(const std::string&)`) — `source/encode/encode.h`
-- `transport_base` uses `std::function<void(const std::string&)>` — `source/transport/transport_base.h`
-- RIST C library uses C callback (`int (*)(void*, enum rist_log_level, const char*)`) — `source/transport/transport.h`
-- All callbacks funnel through `ui.encode_log_append()` / `ui.transport_log_append()` which handle thread safety
-
-Threading:
-- `source/main.cpp` runs encode in a background thread, device monitor in a background thread
-- Each transport (`rist_transport`, `srt_transport`, `rtmp_transport`) runs its own stats thread
-- FLTK UI must use `Fl::lock()` / `Fl::unlock()` / `Fl::awake()` pattern for all UI updates from background threads — `source/ui/ui.h` declares `lock()` and `unlock()` methods that wrap these calls
-- Never call `ui.lock()` — always call `Fl::lock()` directly (per project convention in AGENTS.md)
+- Log function pointer type (`log_func_ptr`) passed through component constructors
+- Transport layer uses `std::function<void(const std::string&)>` callbacks
+- Examples: `source/encode/encode.cpp:519`, `source/transport/transport_base.cpp:21`, `main.cpp:27-35`
 
 Validation:
-- Input validation is minimal — `stream_config` fields are strings parsed at transport initialization time
-- URL parsing delegated to `homer6::url` in `source/url/url.h`
-- Encoder config validated implicitly by GStreamer pipeline construction failures
+- Minimal input validation — mostly relies on GStreamer pipeline parsing errors
+- URL parsing done via `homer6::url` in transport layer
+- Transport protocol selection via enum (type-safe at compile time)
+
+Threading:
+- Main thread: UI event loop (`Fl::run()`)
+- Background threads: encode pipeline thread, NDI monitor thread, transport stats threads
+- All UI thread cross-talk uses `Fl::lock()` -> update -> `Fl::unlock()` -> `Fl::awake()` pattern (see `source/ui/ui.cpp:490-499`)
 
 ## Change Routing (Where To Add New Code)
 
@@ -209,30 +184,82 @@ When making a change, follow these rules:
 
 | Change type | Add/modify here | Do NOT do this | Example paths |
 |---|---|---|---|
-| New transport protocol (e.g., WebRTC) | Add class in `source/transport/` extending `transport_base`, register in `transport_manager::create_transport()` | Add in `main.cpp` or `encode.cpp` | `source/transport/webrtc_transport.h`, `source/transport/transport_manager.cpp` |
-| New encoder backend (e.g., VA-API) | Add `pipeline_build_*` method in `source/encode/encode.h/.cpp`, add enum in `source/lib/lib.h::encoder` | Add new class outside `source/encode/` | `source/encode/encode.h` (add method), `source/lib/lib.h` (add enum) |
-| New UI widget / screen | Add widget members and callback in `source/ui/ui.h`, wire in `source/ui/ui.cpp` | Add widgets in `main.cpp` | `source/ui/ui.h`, `source/ui/ui.cpp` |
-| New statistics metric | Add field to `stream_stats` or `cumulative_stats` in `source/lib/lib.h`, update `statistics_aggregator` in `source/stats/` | Add stats tracking in transport implementations directly | `source/lib/lib.h`, `source/stats/statistics_aggregator.h` |
-| New input source (e.g., file) | Add `input_mode` enum value in `source/lib/lib.h`, add handler in `source/ndi_input/ndi_input.h` or new `source/input/` directory | Add input logic in `source/encode/encode.cpp` | `source/lib/lib.h`, `source/ndi_input/ndi_input.h` |
-| New config field | Add field to appropriate struct in `source/lib/lib.h` (`input_config`, `encode_config`, `output_config`, `stream_config`) | Add fields in multiple places or in transport/encode headers | `source/lib/lib.h` |
-| New FFI function | Add declaration in `source/encoder_wrapper/encoder_wrapper.h`, implement in `source/encoder_wrapper/encoder_wrapper.cpp` | Add FFI in `main.cpp` or transport headers | `source/encoder_wrapper/encoder_wrapper.h` |
-| Callback wiring for new component | Wire in `source/main.cpp` `init_ui_callbacks()` or `run_transport()` | Wire in UI class directly | `source/main.cpp` |
+| New input source (e.g. SRT input, RTP input) | New class in `source/` (e.g. `source/srt_input/srt_input.h`) or extend `encode::pipeline_build_source()` | Add to `ndi_input` or mix input logic into `encode` | `source/srt_input/srt_input.h`, `source/encode/encode.cpp:35` |
+| New encoder (e.g. new hardware encoder) | Add enum variant to `encoder` in `source/lib/lib.h`, add `pipeline_build_*_encoder()` and codec combo methods in `source/encode/encode.cpp`, add menu item in `source/ui/ui.cpp` | Change existing encoder implementations | `source/lib/lib.h:26`, `source/encode/encode.cpp:223-323`, `source/ui/ui.cpp:113-150` |
+| New codec (e.g. new video format) | Add enum variant to `codec` in `source/lib/lib.h`, add combo method in `source/encode/encode.cpp`, add menu item in `source/ui/ui.cpp` | Change codec logic outside the switch dispatchers | `source/lib/lib.h:19`, `source/encode/encode.cpp:155-221` |
+| New transport protocol | Implement new class extending `transport_base` in `source/transport/`, register in `transport_manager::create_transport()` switch, add enum to `transport_protocol` in `source/lib/lib.h` | Hardcode protocol-specific logic outside the strategy hierarchy | `source/transport/webrtc_transport.h`, `source/transport/transport_manager.cpp:17` |
+| New output stream widget / UI element | Add `Fl_*` widget to `user_interface` class members in `source/ui/ui.h`, construct in `source/ui/ui.cpp` constructor, add callback in `init_ui_callbacks()` | Add widgets outside the `user_interface` class | `source/ui/ui.h:58-69`, `source/ui/ui.cpp:284-427` |
+| New stats metric | Add field to `stream_stats` and `cumulative_stats` in `source/lib/lib.h`, update `statistics_aggregator`, update UI display | Add stats fields scattered across transport headers | `source/lib/lib.h:80-91`, `source/stats/statistics_aggregator.cpp:205` |
+| New bitrate adjustment strategy | Modify `calculate_consensus_bitrate()` in `source/stats/statistics_aggregator.cpp` | Modify bitrate logic in `stats.cpp` (single-stream legacy path) | `source/stats/statistics_aggregator.cpp:96-144` |
+| Shared type change (new struct/enum) | Modify `source/lib/lib.h` only | Define types in multiple headers (causes duplication with `include/common.h`) | `source/lib/lib.h` |
+| GStreamer pipeline change | Modify methods in `source/encode/encode.cpp` (`pipeline_build_*` methods) | Build pipelines outside the `encode` class | `source/encode/encode.cpp:351-367` |
+| Test addition | Add `TEST_CASE` in `test/source/open-broadcast-encoder_test.cpp` | Test inside source files | `test/source/open-broadcast-encoder_test.cpp` |
 
 ## Golden Files Per Layer
 
-For each architectural layer, the most-instructive file is identified by inbound reference frequency (how many other files import/reference it):
+To find the most-imported file in each layer, inbound `#include` count was used as the signal: the more files import a header, the more stable and centrally understood that abstraction is.
 
-| Layer | Golden File | Why |
-|-------|-------------|-----|
-| Configuration & Data Types | `source/lib/lib.h` | Referenced by every other layer — the single source of all enums, config structs, data structs, and the `library` global |
-| Presentation (FLTK GUI) | `source/ui/ui.h` | Referenced by `main.cpp` for initialization and callbacks, by `ndi_input.h` for NDI refresh, by `stats.h` for UI updates |
-| Application Entry Point | `source/main.cpp` | The sole top-level orchestrator — references every other header, declares all global state, wires all callbacks |
-| Encoding | `source/encode/encode.h` | Referenced by `main.cpp` for pipeline creation and buffer pulling, the central pipeline builder |
-| Transport Strategy | `source/transport/transport_base.h` | The abstraction point — all transport implementations inherit from it, `buffer_distributor` and `transport_manager` reference it, making it the hub of the strategy pattern |
-| Buffer Distribution | `source/transport/buffer_distributor.h` | Referenced by `main.cpp` (buffer delivery), `transport_manager.h` (lifecycle), each transport implementation (connection state) |
-| Statistics | `source/stats/statistics_aggregator.h` | Referenced by `main.cpp` for consensus bitrate, the aggregator of per-stream metrics |
-| Statistics Helper | `source/stats/stats.h` | Referenced by `main.cpp` for legacy RIST statistics processing, small but essential bridge |
-| Input Discovery | `source/ndi_input/ndi_input.h` | Referenced by `main.cpp` for device monitoring and preview, the gateway for NDI input |
+| Layer | Golden File | Inbound Import Count | Why |
+|-------|-------------|---------------------|-----|
+| Configuration / Shared Types | `source/lib/lib.h` | 10+ | Defines every enum and struct used across the entire codebase; imported by every subsystem (encode, transport, stats, ui, ndi_input, main) |
+| Encode | `source/encode/encode.h` | 1 (main.cpp) | Only main.cpp imports it directly, but it is the sole interface to the GStreamer encoding subsystem; all pipeline logic flows through this class |
+| Transport | `source/transport/transport_base.h` | 4 (rist/srt/rtmp_transport + buffer_distributor) | Abstract interface that all concrete transports implement; most-included transport file, defines the strategy contract |
+| Transport Lifecycle | `source/transport/transport_manager.h` | 1 (ui/ui.cpp) | Factory + coordinator for transports, holds the buffer_distributor; single import but central orchestration role |
+| Buffer Distribution | `source/transport/buffer_distributor.h` | 1 (transport_manager) | Core fan-out logic; imported by transport_manager but the conceptual heart of multi-output |
+| Statistics | `source/stats/stats.h` | 2 (main.cpp, stats.cpp) | Single-stream RIST stat processing with UI updates; gateway between transport stats and encoding bitrate |
+| Stats Aggregation | `source/stats/statistics_aggregator.h` | 1 (main.cpp) | Multi-stream consensus computation; new aggregation layer replacing legacy single-stream stats |
+| UI | `source/ui/ui.h` | 1 (main.cpp) | The entire FLTK interface; all UI state and callback bindings flow through this class |
+| Input | `source/ndi_input/ndi_input.h` | 1 (main.cpp) | NDI-specific input source; only main.cpp uses it directly |
+| Utility | `source/url/url.h` | 2 (transport.cpp, rist_transport.cpp) | URL parsing used by transport layer; narrow but essential interface |
+
+## Architecture Diagram (Textual)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    source/main.cpp                       │
+│  Global state: library app, g_transport_manager,        │
+│  g_stats_aggregator, ui, ndi_input, ptr_encoder         │
+└──────┬──────────────┬──────────────┬────────────────────┘
+       │              │              │
+       ▼              ▼              ▼
+┌──────────┐   ┌────────────┐  ┌──────────────┐
+│  UI       │   │  Encode     │  │ NDI Input    │
+│ FLTK      │   │ GStreamer   │  │ Device monitor│
+│ Widget    │   │ Pipeline    │  │ Preview      │
+│ Event Loop│   │ Appsink     │  └──────────────┘
+└──────┬────┘   │     ▲        └──────────────┬─┘
+       │        │                           │
+       │        ▼                           │
+       │  ┌──────────┐                      │
+       │  │buffer_data│                     │
+       │  └────┬─────┘                      │
+       │       │ distribute_legacy()        │
+       │       ▼                            │
+       │  ┌──────────────────────────┐      │
+       │  │ buffer_distributor       │      │
+       │  │ shared_buffer (zero-copy)│      │
+       │  └───┬────┬────┬───────────┘      │
+       │      │    │    │                   │
+       ▼└──────┼────┼────┼───────────────────┘
+       │      │    │    │
+       ▼      ▼    ▼    ▼
+┌────────────────────────────────────────────┐
+│           Transport Layer                   │
+│  risttransport_base (abstract interface)       │
+│   ├── rist_transport  (RISTNetSender)       │
+│   ├── srt_transport   (stub)               │
+│   └── rtmp_transport  (stub)               │
+└──────────────────┬─────────────────────────┘
+                   │ stats callbacks
+                   ▼
+┌────────────────────────────────────────────┐
+│        Statistics & Bitrate Control          │
+│  statistics_aggregator                      │
+│    ├── update_stream_stats()               │
+│    ├── calculate_consensus_bitrate()       │
+│    └── callback -> encode::set_bitrate()   │
+└────────────────────────────────────────────┘
+```
 
 ---
 
