@@ -1,0 +1,72 @@
+{
+  "frameworkVersion": "v1.4",
+  "generatedAt": "2026-04-27T08:00:41.080Z",
+  "templates": {
+    "delegates": {
+      "approach-explorer.md": "15f55a58d35f19eb725e749159a9e89f753bbf14d721b0f70face9678556bf19",
+      "mapper-arch.md": "ff5fa54839bbcb4744c41bfef66bcf48482cc8bf4e3af71a340bcbdcef721786",
+      "mapper-concerns.md": "a0b0e1c3e7962ccea3c5b1e52ae6a5ff4b4358441f7a8a20d1ac189a2a0b3666",
+      "mapper-quality.md": "ad0a9cc76ad69d588db9cf2c059acd517d16c1a7f90b10a5a26a88514b44e4b9",
+      "mapper-tech.md": "f8b66a7c5d2d267effcf81171c6c3b90012378ff819f3736a194595e897ea182",
+      "plan-checker.md": "0af3ca27e5aeb0cd245c3e6ebfb8fc302e5fa2ec392f3e6ba71550867f78f7e7",
+      "researcher-architecture.md": "c8417b95f9e5eb8466f97e5fd9b2436d43cc3cdbfeb6ed92e0163edbaafee599",
+      "researcher-features.md": "af5e1aad5c4b36af26eaaebb73f352ff3df5704f5ce40bfb19770b1db2911672",
+      "researcher-pitfalls.md": "5d0c9907782169ce5b5483a30adee0e7e54fcf6e6294225975b9da6386f27cba",
+      "researcher-stack.md": "56af815086abbf3db25a50b42063fbe8790f09849ee299967c0fe569fc62e686",
+      "researcher-synthesizer.md": "32201fd57beeccd96efc240aaaa8177255df9b80dcd8143fce79f8462d283eb3"
+    },
+    "research": {
+      "architecture.md": "6913ce6d8e39e2735b879a7848002421374fee2ea601f42d982c650140037cab",
+      "features.md": "e6ef59a80e162af604d9144a511f2920f7c0ae1d195d958ef33a9eff68596311",
+      "pitfalls.md": "2162c70378e9a251cf18c7393a47e62a94985be65c89e0bb0687c3fa1e813290",
+      "stack.md": "68fdb86e616871e434679fb1579ceac315ef023df699c426b53f185a4ffe54a0",
+      "summary.md": "f3a43d24171902f9e911d05e85a2da45e2efdad7f7a3fd033c7ba5bcf4db2218"
+    },
+    "codebase": {
+      "architecture.md": "cf01f67a6a9fcd09d6ffa2835699e42b4cf09d9e156d5986e4ba69969b2056be",
+      "concerns.md": "75aa53aaee0ab2765a3dfeeaf4d5965ad32ad5bd29ac02598f998b4fa696d912",
+      "conventions.md": "1e062d22905e9f156c836cb58687cf08fd5219d739409a05d044d05f160bd0a2",
+      "stack.md": "3b4a3e32e3f604b74a33a22fb689b4d099dff8ec9158ff972c38cceb5fd2bbed"
+    },
+    "brownfieldChange": {
+      "CHANGE.md": "ebe087b13ca7e1d21d2705eb727bb23b0e7950703a9a9472ac8473fc1ca0d8b6",
+      "HANDOFF.md": "1412991a6f9ae1ab1a26dcaa6381d53e31e2536e1b444c1fecd65881ac8ce1a7",
+      "VERIFICATION.md": "084c46c389dde80567c81ed5de5b5c4e0c9ea9426954724df331d7b6fef11641"
+    },
+    "root": {
+      "agents.block.md": "b8ddf752449c0eaa57e215257b2e073224230488aad5577da3956bf504c461cb",
+      "agents.md": "96da876f5c7f13bcb25379152d66198fb231a11245a7a875e0eb57fbe4cd8fbc",
+      "approach.md": "2ae3224a6179ef5bdcd97d3f2c6c5c279ed4e2d82b80d13e07502e77106ebf7b",
+      "auth-matrix.md": "ec888bf9f76b179fd1f61283c115f7263e11881eb3f2700953fbc5dd8025eede",
+      "roadmap.md": "ae9c73153d95ce0757db5ccb29c4dd707e6d5bf653fbfe628411f093b1b608e2",
+      "spec.md": "7735d54b0ef55e9c870c353185d6dd2cdf19fe7ea35adcde8df2346214387dc3"
+    }
+  },
+  "roles": {
+    "DISTILLATION.md": "f228f9c2440396c34f66cf19f7aa2475733c4aa2f348ed3a9e489cafdb747084",
+    "approach-explorer.md": "92af9122accac6adecc4410ee713e7e3dc1ff785fed18e2eefd4e33094307b5b",
+    "debugger.md": "d26a4f90e73b72a24750c28dcae71023496667e1f4551ba82ac9880cf652c5cf",
+    "executor.md": "83467fa1b876a737cf97c31be7bd00a893842d23de81b5b5945ce73ae60c9756",
+    "integration-checker.md": "634519031c20b20cbfc124ce3e2cf7662c328e2642832fd9cb8e694719fc76c3",
+    "mapper.md": "e04b8a1c24e2630bbfc6d57d5d0d53f34545fd4106007612283dcfae7c1b38e2",
+    "planner.md": "ef4e97fbe981bde1aed58ed4b7c39f6efc6bf7d17a5d2648e7fedba5ed80c35a",
+    "researcher.md": "7c0e62693a9e2230e012a6b936ced6ab206527ebf021b3c5118062bacd336344",
+    "roadmapper.md": "caa508ffc4b7695b8d18f65266ca7154a50be5b2f42a91d0fdc8d55d72488ae0",
+    "synthesizer.md": "ce3b93970324f0ecad596af2d32e4f31fc01a82d893dcd3a2c8d48c18f4aaf8a",
+    "verifier.md": "8d357bcaf63271befbf096a16080db09730e168a0f15b4b10d961209fbf248a5"
+  },
+  "runtimeHelpers": {
+    "bin/gsdd": "41e0384c217548b26de4f507367f5424cb5868810f4634a5886ac5dd3de6abae",
+    "bin/gsdd.cmd": "0af836d186b4bf71be08f69786dc9606d45341419e1d5c93ad84d4d2f5d6b5a6",
+    "bin/gsdd.mjs": "7a629bd1ab72ef977796a2ac1ef7f0901ef0e8ce756a9605504028016f6431ad",
+    "bin/gsdd.ps1": "91f03d5ce7b60828adfe1dfd14d787e35d6172b79d3c7ba7ce85730f2ba0f271",
+    "bin/lib/cli-utils.mjs": "dfe32340660a6dde7fb6a14e8edbeb16770c5b40691e4fa54ce910c48efe575d",
+    "bin/lib/evidence-contract.mjs": "407affe143f87879008300d53954a6d1bbaf7519b9e992c921dd5cd8fc639663",
+    "bin/lib/file-ops.mjs": "23028282737a880e7406381bff80595bd113c929e0408bf597e35f6eaa49ddaa",
+    "bin/lib/lifecycle-preflight.mjs": "be32722e2b74cc592e5bc670c22a70f5236e200c9a4f95d3b10165a5156e9ac7",
+    "bin/lib/lifecycle-state.mjs": "4661aef78e859d83c24080894739fbd4bc61f1eda6c2d45497b0d98fc14df318",
+    "bin/lib/phase.mjs": "988fc7624b9d2659db7c3cdf97d9a9eda63f16863b6420b7d3a912c9274dfe2a",
+    "bin/lib/session-fingerprint.mjs": "c941eced2785c2ca47135da42238bb67bae0bc2ae2491b9986b5c1cdd0ef8b67",
+    "bin/lib/workspace-root.mjs": "d28af2af5dbd46f993eb5d0fd4d57f468a11e98180c1752f7d88e5c877b692de"
+  }
+}
