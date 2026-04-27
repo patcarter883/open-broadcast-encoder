@@ -1,5 +1,6 @@
 #include "stats.h"
 #include "ui/ui.h"
+#include "lib/lib.h"
 #include <numeric>
 #include <string>
 
@@ -8,7 +9,7 @@ auto stats::got_rist_statistics(const rist_stats& statistics, cumulative_stats *
   int bitrateDelta = 0;
   double qualDiffPct;
   int adjBitrate;
-  double maxBitrate = std::stoi(encode_config.bitrate);
+  double maxBitrate = safe_parse_int(encode_config.bitrate, 4300);
   bool returnVal = false;
 
   if (stats->previous_quality > 0

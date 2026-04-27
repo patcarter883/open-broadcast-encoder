@@ -163,3 +163,15 @@ struct library
   
   void log_append(const std::string &msg) const;
 };
+
+inline int safe_parse_int(const std::string& s, int default_val)
+{
+  try {
+    size_t pos;
+    int val = std::stoi(s, &pos);
+    if (pos != s.size()) return default_val;
+    return val;
+  } catch (const std::exception&) {
+    return default_val;
+  }
+}

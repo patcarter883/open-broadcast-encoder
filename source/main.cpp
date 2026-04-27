@@ -198,7 +198,7 @@ auto main(int argc, char** argv) -> int
   // Set up stats aggregator callback for bitrate adjustment
   g_stats_aggregator.set_stats_callback([](const cumulative_stats& stats) {
     if (ptr_encoder != nullptr) {
-      int max_bitrate = std::stoi(app.encode_config.bitrate);
+      int max_bitrate = safe_parse_int(app.encode_config.bitrate, 4300);
       int new_bitrate = g_stats_aggregator.calculate_consensus_bitrate(max_bitrate);
       if (new_bitrate != app.stats.current_bitrate) {
         ptr_encoder->set_encode_bitrate(new_bitrate);

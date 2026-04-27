@@ -465,20 +465,26 @@ void user_interface::layout()
 
 void user_interface::transport_log_append(const std::string& msg) const
 {
-  // Fl::lock();
+  Fl::lock();
   transport_log_display->insert(msg.c_str());
-  // Fl::unlock();
-  // Fl::awake();
+  Fl::unlock();
+  Fl::awake();
 }
 
 void user_interface::encode_log_append_cb(const std::string& msg) const
 {
+  Fl::lock();
   encode_log_display->insert(msg.c_str());
+  Fl::unlock();
+  Fl::awake();
 }
 
 void user_interface::encode_log_append(const std::string& msg) const
 {
+  Fl::lock();
   encode_log_display->insert(msg.c_str());
+  Fl::unlock();
+  Fl::awake();
 }
 
 void user_interface::init_ui()

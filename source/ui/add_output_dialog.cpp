@@ -1,4 +1,5 @@
 #include "add_output_dialog.h"
+#include "lib/lib.h"
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Button.H>
 #include <format>
@@ -156,7 +157,7 @@ stream_config add_output_dialog::get_config() const
 
   config.protocol = m_selected_protocol;
   config.address = std::string(m_address_input->value()) + ":" + std::string(m_port_input->value());
-  config.streams = std::stoi(m_streams_input->value());
+  config.streams = safe_parse_int(m_streams_input->value(), 1);
   config.bandwidth = m_bandwidth_input->value();
   config.buffer_min = m_buffer_min_input->value();
   config.buffer_max = m_buffer_max_input->value();

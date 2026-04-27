@@ -91,7 +91,9 @@ void buffer_distributor::distribute(transport_base::shared_buffer_ptr buffer)
 void buffer_distributor::distribute_legacy(const buffer_data& buf)
 {
   auto shared = std::make_shared<shared_buffer>();
-  shared->data = std::shared_ptr<uint8_t[]>(buf.buf_data, [](uint8_t*) {});
+  shared->data = std::shared_ptr<uint8_t[]>(
+      std::make_unique<uint8_t[]>(buf.buf_size).release());
+  std::copy(buf.buf_data, buf.buf_data + buf.buf_size, shared->data.get());
   shared->size = buf.buf_size;
   shared->seq = buf.seq;
   shared->ts_ntp = buf.ts_ntp;

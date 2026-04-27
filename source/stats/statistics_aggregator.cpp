@@ -1,4 +1,5 @@
 #include "statistics_aggregator.h"
+#include "lib.h"
 #include <algorithm>
 #include <numeric>
 
@@ -145,7 +146,7 @@ int statistics_aggregator::calculate_consensus_bitrate(int max_bitrate, int min_
 
 bool statistics_aggregator::should_adjust_bitrate(const encode_config& config) const
 {
-  int max_bitrate = std::stoi(config.bitrate);
+  int max_bitrate = safe_parse_int(config.bitrate, 4300);
   int target_bitrate = calculate_consensus_bitrate(max_bitrate);
 
   int diff = std::abs(target_bitrate - m_aggregated.current_bitrate);
