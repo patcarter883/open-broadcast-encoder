@@ -1,0 +1,18 @@
+{
+  "researchDepth": "balanced",
+  "workflow": {
+    "research": true,
+    "discuss": false,
+    "planCheck": true,
+    "verifier": true
+  },
+  "modelProfile": "quality",
+  "parallelization": true,
+  "commitDocs": true,
+  "gitProtocol": {
+    "branch": "Follow the existing repo or team branching convention. Use a feature branch for significant changes when no convention exists.",
+    "commit": "Group changes logically and follow the existing repo conventions. Do not mention phase, plan, or task IDs unless explicitly requested.",
+    "pr": "Follow the existing repo or team review workflow. Do not assume PR creation, timing, or naming unless explicitly requested."
+  },
+  "initVersion": "v1.1"
+}
