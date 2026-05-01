@@ -153,15 +153,15 @@
     },
     {
       "name": "ci-macos",
-      "inherits": ["ci-build", "ci-darwin", "dev-mode", "ci-multi-config", "vcpkg"]
+      "inherits": ["ci-build", "ci-darwin", "dev-mode", "ci-multi-config"]
     },
     {
       "name": "ci-ubuntu",
-      "inherits": ["ci-build", "ci-linux", "clang-tidy", "vcpkg", "cppcheck", "dev-mode"]
+      "inherits": ["ci-build", "ci-linux", "clang-tidy", "cppcheck", "dev-mode"]
     },
     {
       "name": "ci-windows",
-      "inherits": ["ci-build", "ci-win64", "dev-mode", "ci-multi-config", "vcpkg", "vcpkg-win64-static"]
+      "inherits": ["ci-build", "ci-win64", "dev-mode", "ci-multi-config"]
     }
   ]
 }

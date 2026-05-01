@@ -59,18 +59,18 @@ struct input_config {
 struct encode_config {
   codec codec = codec::h264;
   encoder encoder = encoder::software;
-  std::string bitrate = "4300";
+  int bitrate = 4300;
 };
 
 struct output_config {
   std::string address = "127.0.0.1:5000";
   int streams = 1;
-  std::string buffer_min = "245";
-  std::string buffer_max = "5000";
-  std::string rtt_min = "40";
-  std::string rtt_max = "500";
-  std::string reorder_buffer = "240";
-  std::string bandwidth = "6000";
+  int buffer_min = 245;
+  int buffer_max = 5000;
+  int rtt_min = 40;
+  int rtt_max = 500;
+  int reorder_buffer = 240;
+  int bandwidth = 6000;
 };
 
 struct library
@@ -84,7 +84,7 @@ struct library
   // std::future<void> encode_thread_future;
   // std::future<void> transport_thread_future;
 
-  std::atomic_bool is_running;
+  std::atomic_bool is_running {false};
 
   std::vector<std::thread> threads;
 

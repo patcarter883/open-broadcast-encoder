@@ -8,11 +8,11 @@ using std::string;
 
 encode::encode(const input_config& input_config,
                const encode_config& encode_config,
-               std::atomic_bool* run_flag,
-               log_func_ptr log_func)
-    : encoder_running {std::atomic<bool>(false)}
-    , run_flag {run_flag}
-    , log_func {log_func}
+               std::shared_ptr<std::atomic<bool>> run_flag,
+               std::function<void(const std::string&)> log_func)
+    : encoder_running {false}
+    , run_flag {std::move(run_flag)}
+    , log_func {std::move(log_func)}
     , input_c {input_config}
     , encode_c {encode_config}
 {
@@ -378,7 +378,7 @@ void encode::play_pipeline()
 {
   encoder_running = true;
   std::chrono::milliseconds duration(1);
-  while (*run_flag) {
+  while (run_flag && *run_flag) {
     GstMessage* msg = gst_bus_timed_pop(this->bus, GST_MSECOND);
     if (msg != nullptr) {
       this->handle_gstreamer_message(msg);
@@ -500,7 +500,7 @@ void encode::set_encode_bitrate(int new_bitrate)
 
 void encode::log(const std::string& msg) const
 {
-  if (log_func != nullptr) {
+  if (log_func) {
     log_func(msg);
   }
 }

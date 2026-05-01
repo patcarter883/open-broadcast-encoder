@@ -4,7 +4,9 @@
 #include <chrono>
 #include <cstddef>
 #include <format>
+#include <functional>
 #include <future>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -12,8 +14,6 @@
 #include <gst/gst.h>
 
 #include "lib/lib.h"
-
-using log_func_ptr = void (*)(const std::string& msg);
 
 class encode
 {
@@ -26,14 +26,14 @@ public:
   void set_encode_bitrate(int new_bitrate);
   explicit encode(const input_config& input_config,
                   const encode_config& encode_config,
-                  std::atomic_bool* run_flag,
-                  log_func_ptr log_func);
+                  std::shared_ptr<std::atomic<bool>> run_flag,
+                  std::function<void(const std::string&)> log_func);
   ~encode();
 
 private:
   std::vector<std::thread> threads;
-  std::atomic_bool* run_flag;
-  log_func_ptr log_func = nullptr;
+  std::shared_ptr<std::atomic<bool>> run_flag;
+  std::function<void(const std::string&)> log_func;
   const input_config& input_c;
   const encode_config& encode_c;
   std::string pipeline_str;

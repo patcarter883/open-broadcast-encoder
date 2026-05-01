@@ -1,7 +1,8 @@
 #include "ui.h"
 
 #include "FL/fl_callback_macros.H"
-#include "common.h"
+
+#include "lib/lib.h"
 
 void user_interface::choose_input_protocol(input_config& input_config)
 {

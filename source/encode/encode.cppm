@@ -147,8 +147,8 @@ void encode::pipeline_build_source()
 void encode::pipeline_build_sink()
 {
   this->pipeline_str +=
+      " appsink name=audio_sink "
       " appsink name=video_sink "
-      // " appsink name=audio_sink  ";
       "mpegtsmux alignment=7 name=tsmux ! video_sink. ";
 }
 
@@ -294,9 +294,10 @@ void encode::pipeline_build_amd_h265_encoder()
   this->pipeline_str += std::format(
       "amfh265enc name=videncoder bitrate={} rate-control=cbr "
       "usage=low-latency preset=quality pre-encode=true pa-hqmb-mode=auto ! "
-      "video/x-h265,framerate=60/1 ! h264parse config-interval=1 ",
+      "video/x-h265,framerate=60/1 ! h265parse config-interval=1 ",
       encode_c.bitrate);
 }
+
 
 void encode::pipeline_build_amd_av1_encoder()
 {
@@ -321,7 +322,7 @@ void encode::pipeline_build_qsv_h265_encoder()
 {
   this->pipeline_str += std::format(
       "qsvh265enc name=videncoder bitrate={} rate-control=cbr "
-      "target-usage=1 ! video/x-h265,framerate=60/1  ! h264parse "
+      "target-usage=1 ! video/x-h265,framerate=60/1  ! h265parse "
       "config-interval=1 ",
       encode_c.bitrate);
 }
@@ -353,8 +354,8 @@ void encode::pipeline_build_nvenc_h265_encoder()
 void encode::pipeline_build_nvenc_av1_encoder()
 {
   this->pipeline_str += std::format(
-      "x264enc name=videncoder speed-preset=fast tune=zerolatency "
-      "bitrate={} ! h264parse config-interval=1 ",
+      "nvv4l2av1enc name=videncoder bitrate={} rc-mode=cbr-hq "
+      "preset=low-latency-hq ! av1parse config-interval=1 ",
       encode_c.bitrate);
 }
 
@@ -370,7 +371,7 @@ void encode::pipeline_build_software_h265_encoder()
 {
   this->pipeline_str += std::format(
       "x265enc name=videncoder bitrate={} "
-      "speed-preset=fast tune=zerolatency ! h264parse config-interval=1 ",
+      "speed-preset=fast tune=zerolatency ! h265parse config-interval=1 ",
       encode_c.bitrate);
 }
 
@@ -541,8 +542,10 @@ auto encode::pull_video_buffer() -> buffer_data
   if (buffer != nullptr) {
     GstMapInfo info;
     gst_buffer_map(buffer, &info, GST_MAP_READ);
+    buffer_data result {.buf_size = info.size, .buf_data = info.data};
+    gst_buffer_unmap(buffer, &info);
     gst_sample_unref(sample);
-    return buffer_data {.buf_size = info.size, .buf_data = info.data};
+    return result;
   }
 
   gst_sample_unref(sample);
@@ -557,8 +560,10 @@ auto encode::pull_audio_buffer() -> buffer_data
   if (buffer != nullptr) {
     GstMapInfo info;
     gst_buffer_map(buffer, &info, GST_MAP_READ);
+    buffer_data result {.buf_size = info.size, .buf_data = info.data};
+    gst_buffer_unmap(buffer, &info);
     gst_sample_unref(sample);
-    return buffer_data {.buf_size = info.size, .buf_data = info.data};
+    return result;
   }
 
   gst_sample_unref(sample);

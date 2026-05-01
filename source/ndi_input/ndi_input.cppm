@@ -135,6 +135,7 @@ auto ndi_input::preview() -> void
         g_main_loop_run(loop);
 
         /* Free resources */
+        g_main_loop_destroy(loop);
         gst_object_unref(bus);
         gst_element_set_state(pipeline, GST_STATE_NULL);
         gst_object_unref(pipeline);

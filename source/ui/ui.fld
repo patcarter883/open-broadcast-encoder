@@ -2,7 +2,7 @@
 version 1.0401
 header_name {.h}
 code_name {.cxx}
-decl {\#include "common.h"} {public global
+decl {\#include "lib/lib.h"} {public global
 }
 
 class user_interface {open

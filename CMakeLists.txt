@@ -15,6 +15,7 @@ project(
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_BUILD_PARALLEL_LEVEL 16)
 
 # include(cmake/project-is-top-level.cmake)
 include(cmake/variables.cmake)
