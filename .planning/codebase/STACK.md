@@ -1,103 +1,116 @@
 # Codebase Stack
 
-**Analysis Date:** 2026-04-28
+**Analysis Date:** 2026-05-02
 
 ## Languages
 
 Primary:
-- C++ [20] - all source files use `.cppm` extension for C++20 modules; entry point `source/main.cpp`; modules defined in `source/*/` with `export module` directives
+- C++20 - all source files use `cxx_std_20` (CMakeLists.txt:53, CMakePresets.json:52), used in: `source/` (all subdirectories), `include/` (empty), `test/`
 
 Secondary:
-- CMake [3.28+ required] - build system, all project configuration lives in `CMakeLists.txt` and `cmake/*.cmake`
+- C99 - used by rist-cpp external submodule for librist build (external/rist-cpp/CMakeLists.txt:4)
+- Python 3.12 - CI scripts (codespell, m.css docs) (.github/workflows/ci.yml:23, :184)
+- CMake 3.28+ - build system (CMakeLists.txt:1)
+- Shell/Bash - CI and developer scripts (.github/workflows/ci.yml, cmake/*.cmake)
 
 ## Runtime
 
 Environment:
-- Linux (primary target), macOS, Windows (MSVC) - CI matrix in `.github/workflows/ci.yml` covers `macos-14`, `ubuntu-22.04`, `windows-2022`
+- Native desktop Linux/macOS/Windows (multi-platform via CMake presets)
 
 Package manager:
-- vcpkg - `[vcpkg.json]` with `builtin-baseline: "eba7c6a894fce24146af4fdf161fef8e90dd6be3"`
-- pkg-config - GStreamer sub-components resolved via `pkg_search_module` in `CMakeLists.txt:32-36`
-- Lockfile: missing - vcpkg uses `builtin-baseline` in `vcpkg.json` rather than a separate lockfile
+- vcpkg 2024 (git commit `eba7c6a894fce24146af4fdf161fef8e90dd6be3`) - vcpkg.json:22
+- Lockfile: missing - vcpkg.json:1 (no vcpkg.lock present; `builtin-baseline` pins the vcpkg port tree revision)
 
 ## Frameworks And Tooling
 
 Core framework(s):
-- GStreamer 1.28+ - media pipeline framework; drives all encoding, demuxing, and transport logic; found in `source/encode/encode.cppm` with 578 lines of pipeline construction; sub-components: `gstreamer-1.0`, `gstreamer-sdp-1.0`, `gstreamer-rtp-1.0`, `gstreamer-app-1.0`, `gstreamer-video-1.0` (all via `pkg_search_module` in `CMakeLists.txt:32-36`)
-- FLTK (external submodule) - GUI toolkit; embedded at `external/fltk`; used exclusively in `source/ui/ui.cppm` for the 1373x667 main window with input/select/encode/stats/log panels
-- rist-cpp (external submodule) - C++ wrapper around librist for RIST protocol; embedded at `external/rist-cpp`; used in `source/transport/transport.cppm` to send encoded video over RIST network
+- **FLTK** (git submodule `external/fltk`) - desktop GUI toolkit, builds from source via `add_subdirectory` (CMakeLists.txt:26), UI layer: `source/ui/` (ui.h:7-18 uses FL/Fl*.h headers)
+- **GStreamer 1.28+** (system pkg-config) - multimedia pipeline framework, provides video encoding/decoding/demuxing. Required: `gstreamer-1.0`, `gstreamer-sdp-1.0`, `gstreamer-rtp-1.0`, `gstreamer-app-1.0`, `gstreamer-video-1.0` (CMakeLists.txt:32-36). Used in: `source/encode/` (encode.h:13-14), `source/ndi_input/` (ndi_input.h:6-8)
+- **rist-cpp** (git submodule `external/rist-cpp`) - RIST protocol C++ wrapper, wraps librist via Meson build (external/rist-cpp/CMakeLists.txt:73), provides transport layer: `source/transport/` (transport.h:9 includes RISTNet.h)
+- **NDI (NewTek)** (system package via FindNDI.cmake) - Network Video transport, used in NDI input monitoring: `source/ndi_input/` (ndi_input.cpp uses gst ndisrc element)
 
 Testing:
-- Catch2 3.7+ - testing framework declared in `vcpkg.json` feature `"test"`; test targets in `test/CMakeLists.txt` (currently commented out in `cmake/dev-mode.cmake:4-6`)
-- ctest - CMake test runner used in CI (`ci.yml:153`)
+- **Catch2 3.7.0+** (vcpkg) - unit testing framework, test feature in vcpkg.json:12-19. Test config: `test/CMakeLists.txt:9-10`
+- **CTest** (CMake built-in) - test runner invoked via `ctest` (CMakePresets.json:100, ci.yml:66)
 
 Build / dev:
-- CMake 3.28+ - build system; `CMakeLists.txt` at project root; developer presets in `CMakePresets.json` with 18+ named presets (ci-linux, ci-macos, ci-windows, ci-sanitize, ci-coverage, clang-tidy, cppcheck)
-- Ninja generator - default for Linux CI (`CMakePresets.json:86`)
-- Clang 14 - primary compiler on Linux CI (`ci.yml:82`)
-- clang-tidy - static analysis in `ci-clang-tidy` preset (`CMakePresets.json:40-44`)
-- cppcheck - static analysis in `ci-cppcheck` preset (`CMakePresets.json:33-37`)
-- lcov + codecov - code coverage pipeline (`ci.yml:36-75`)
-- Address/UndefinedBehaviorSanitizer - sanitizer build preset (`ci.yml:77-108`)
-- codespell - spell checking via `cmake/spell.cmake` (`ci.yml:32-33`)
-- clang-format 14 - lint tool (`ci.yml:29`); configuration at `.clang-format`; column limit 80, indent width 2, pointer alignment left
+- **CMake 3.28+** - primary build system, uses presets (`CMakePresets.json`), developer mode (`cmake/dev-mode.cmake`), custom module path (`cmake/modules/`)
+- **Ninja** (Linux CI generator, CMakePresets.json:86)
+- **Xcode** (macOS CI generator, CMakePresets.json:98)
+- **Visual Studio 17 2022** (Windows CI generator, CMakePresets.json:106)
+- **Meson** - build system for librist (external/rist-cpp/CMakeLists.txt:52, :73)
+- **vcpkg** - C/C++ package manager, toolchain file: `${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake` (CMakePresets.json:22)
+- **cppcheck** - static analysis, invoked via `cppcheck;--inline-suppr` (CMakePresets.json:36)
+- **lcov** - code coverage (ci.yml:51)
+
+Lint / format:
+- **clang-format 14** - formatting, config: `.clang-format` (80-char limit, 2-space indent, custom brace wrapping)
+- **clang-tidy** - static analysis, config: `.clang-tidy` (CMakePresets.json:43), all checks enabled with exclusions
+- **codespell** - spell checking, config: `.codespellrc`
+
+CI/CD:
+- **GitHub Actions** - `.github/workflows/ci.yml` (jobs: lint, coverage, sanitize, test, docs)
+- **CodeCov** - coverage reporting (ci.yml:72, uses `codecov/codecov-action@v4`)
+- **GitHub Pages** - docs deployment via `peaceiris/actions-gh-pages@v4` (ci.yml:198)
 
 ## Key Dependencies (Only What Drives Architecture)
 
 Critical libraries:
-- GStreamer >= 1.28 - core media framework; every pipeline (input demux, encoding, output mux) is built as a GStreamer element graph; found in `source/encode/encode.cppm` with 15 encoder variants (amd/qsv/nvenc/software x h264/h265/av1); all pipeline construction uses `gst_parse_launch()` (`encode.cppm:430`)
-- rist-cpp (submodule at `external/rist-cpp`) - wraps librist for RIST Advanced profile transport; provides `RISTNetSender` class; used in `source/transport/transport.cppm` to send video buffers over network with adaptive bitrate support; statistics callback wired at `main.cpp:50-55`
-- fmt >= 11.0.2 - string formatting library via vcpkg; used extensively with `std::format` across all modules for pipeline string construction, URL formatting, and log messages
-- NDI SDK (system dependency, `find_package(NDI REQUIRED)` in `CMakeLists.txt:29`) - enables NDI input source; device discovery via `GstDeviceMonitor` in `source/ndi_input/ndi_input.cppm`; pipeline uses `ndisrc` and `ndisrcdemux` elements
-- homer6/url (header-only at `source/url/url.h`) - RFC 3986-compliant URL parser; used by `source/transport/transport.cppm` to parse RIST destination URLs; v0.3.0 MIT licensed
-- sdp-tools-cpp (submodule at `external/sdp-tools-cpp`) - SDP parsing tools; included in `CMakeLists.txt:25` but currently commented out; used for SDP/RTP input mode
+- **GStreamer 1.28+** (pkg-config, `CMakeLists.txt:32-36`) - core video processing pipeline; all encoding, demuxing, and input handling flows through GStreamer elements. Pipeline construction: `source/encode/encode.cpp:53-307`
+- **FLTK** (submodule, `CMakeLists.txt:26`) - single GUI thread model; all UI updates from background threads require `Fl::lock()`/`Fl::unlock()` pattern. UI definition: `source/ui/ui.fld` (FLUID form), generated code: `source/ui/ui_func.cxx`
+- **rist-cpp / librist** (submodule, `external/rist-cpp/CMakeLists.txt:91-104`) - RIST network transport; builds librist via ExternalProject with Meson. Provides `RISTNetSender` class used in `source/transport/transport.cpp`
+- **NDI SDK** (system, `FindNDI.cmake` in `cmake/modules/FindNDI.cmake`) - NDI source discovery and preview; uses GStreamer `ndisrc` element in `source/ndi_input/ndi_input.cpp:64`
+- **fmt 11.0.2+** (vcpkg, `vcpkg.json:6-8`) - formatting library; project uses `std::format` (C++20) primarily but fmt is available as vcpkg dependency (likely used transitively by GStreamer or rist)
+- **Catch2 3.7.0+** (vcpkg, `vcpkg.json:16-18`) - testing framework; single test file at `test/source/open-broadcast-encoder_test.cpp`
+- **homer6/url** (in-tree, `source/url/url.h:1`) - URL parsing for RIST addresses; MIT-licensed, standalone header+source. Used by transport module: `source/transport/transport.cpp:45`
 
 Infra/observability:
-- CI/CD: GitHub Actions (`.github/workflows/ci.yml`) - 5 jobs: lint, coverage, sanitize, test (3-platform matrix), docs; codecov integration for coverage reporting
-- vcpkg baseline pin (`vcpkg.json:22`) - reproducible dependency versions locked to git commit `eba7c6a894fce24146af4fdf161fef8e90dd6be3`
+- **GStreamer plugins** (system, not listed in vcpkg) - hardware encoder plugins (AMF, QSV, NVENC) required at runtime. Pipeline construction selects elements like `amfh264enc`, `h264_qsv`, `nvenc` (encode.h:52-67)
 
 ## Must-Know Packages
 
-- GStreamer - why critical: the entire encoding pipeline is built as a dynamic GStreamer element graph; pipeline strings are assembled via `std::format` and parsed at runtime with `gst_parse_launch()`; a malformed pipeline string produces silent parse failures - risk: high - common mistake: forgetting that `gst_bin_get_by_name()` returns `nullptr` if the element was never created by `gst_parse_launch()`, leading to null pointer dereferences at `encode.cppm:439-444`
-- rist-cpp / librist - why critical: manages the RIST network transport with adaptive bitrate; statistics callbacks drive real-time bitrate adjustment; callback misuse causes silent data loss - risk: high - common mistake: forgetting that RIST PROFILE_ADVANCED (`transport.cppm:109`) changes protocol behavior vs the default profile; also, `rist_sender->sendData()` at `transport.cppm:117` takes a raw pointer with no ownership transfer, so buffer lifetime must be guaranteed
-- FLTK - why critical: all UI updates from background threads must use `Fl::lock()`/`Fl::unlock()`/`Fl::awake()` pattern; without proper locking, the GUI freezes or crashes - risk: medium - common mistake: calling UI widget methods directly from the stats callback thread (`stats.cppm:67-86`) without acquiring `Fl::lock()` first, or calling `Fl::unlock()` without `Fl::awake()` to wake the main thread event loop
-- CMake (developer presets) - why critical: developer mode must be explicitly enabled via `CMakeUserPresets.json` or `open-broadcast-encoder_DEVELOPER_MODE` cache variable; test targets and dev tools (clang-tidy, cppcheck, format, coverage) are only available in dev mode - risk: low - common mistake: running `cmake --build build` without configuring via a dev preset first, resulting in missing `format-fix` and `coverage` targets
-- vcpkg (builtin-baseline) - why critical: dependency versions are pinned to a specific vcpkg git commit; `vcpkg.json:22` uses `builtin-baseline` which replaces the traditional lockfile mechanism - risk: low - common mistake: expecting a `vcpkg.json.lock` file; vcpkg resolves versions from the baseline commit on each configure, so reproducible builds depend on network access to the vcpkg registry at baseline time
+Flag 3-5 packages that new contributors must understand before making changes. These are not necessarily the most-used packages - they are the ones where misuse causes hard-to-debug problems.
+
+- **GStreamer** — the entire video pipeline is built from runtime-constructed pipeline strings; a single element name typo or missing plugin causes silent pipeline parse failures. Risk: high — common mistake: building pipeline strings without checking for required GStreamer plugin installation; use `GST_DEBUG=GST_PIPELINE:5` to inspect constructed pipelines at runtime
+- **FLTK** — single-threaded UI event loop; all cross-thread UI updates must use `Fl::lock()`/`Fl::unlock()`/`Fl::awake()`. Risk: high — common mistake: calling UI widget methods directly from GStreamer callback threads without locking, causing deadlocks or crashes
+- **rist-cpp / librist** — wraps the C librist library via Meson ExternalProject; the rist submodule is built from source via `origin/master` branch (external/rist-cpp/CMakeLists.txt:69), not a tagged release. Risk: medium — common mistake: expecting a stable librist version; the master branch may introduce breaking API changes that break RISTNet.cpp
+- **NDI SDK** — system dependency with complex licensing; stub headers at `external/ndi-stub/include/` provide compile-time interface while the runtime SDK is installed separately. Risk: medium — common mistake: assuming NDI works without the full NDI SDK installed on the build host; stub headers allow compilation but linking fails at runtime if `libndi.so` is missing
 
 ## How To Run
 
 Install:
-- `git submodule update --init --recursive` - initializes FLTK, rist-cpp submodules
-- Install system deps: GStreamer 1.28+ dev packages (gstreamer-1.0, gstreamer-sdp-1.0, gstreamer-rtp-1.0, gstreamer-app-1.0, gstreamer-video-1.0), NDI SDK, clang-14 (Linux)
-- Install vcpkg at a location pointed to by `VCPKG_ROOT` environment variable
+- System deps: `pkg-config gstreamer-1.0 gstreamer-sdp-1.0 gstreamer-rtp-1.0 gstreamer-app-1.0 gstreamer-video-1.0 libndi-dev clang-tidy-14 cppcheck` (Ubuntu)
+- vcpkg: install from https://github.com/microsoft/vcpkg, set `VCPKG_ROOT` env var
+- Submodules: `git submodule update --init --recursive`
 
 Dev:
-- Configure: `cmake --preset=dev` (requires user-created `CMakeUserPresets.json` inheriting from `dev-mode`, `vcpkg`, `ci-linux`)
+- Configure: `cmake --preset=dev` (requires `CMakeUserPresets.json` with OS-specific preset)
 - Build: `cmake --build --preset=dev`
-- Format check: `cmake --build build -t format-check`
-- Format fix: `cmake --build build -t format-fix`
+- Run: `cmake --build --preset=dev -t run-exe`
+- Test: `ctest --preset=dev`
 
 Test:
-- Configure with dev mode (enables test features via `VCPKG_MANIFEST_FEATURES=test`)
-- Build tests: `cmake --build build`
-- Run: `ctest --preset=dev` (requires `test/` CMakeLists.txt uncommented in `cmake/dev-mode.cmake:4-6`)
+- All platforms: `cmake --preset=ci-linux && cmake --build build -j 16 && ctest --output-on-failure -j 16`
+- Sanitizer build: `cmake --preset=ci-sanitize && cmake --build build/sanitize -j 2 && ctest --output-on-failure --no-tests=error -j 2`
+- Coverage: `cmake --preset=ci-coverage && cmake --build build/coverage -j 2 && cmake --build build/coverage -t coverage`
 
 Build:
 - Release: `cmake -S . -B build -D CMAKE_BUILD_TYPE=Release && cmake --build build`
-- Run exe: `cmake --build build -t run-exe` (target defined in `cmake/dev-mode.cmake:9-13`, currently commented out)
+- Multi-config (MSVC): `cmake -S . -B build && cmake --build build --config Release`
+- Install: `cmake --install build --config Release --prefix prefix`
 
 ## Configuration
 
 Env:
-- How configured: CMake cache variables, environment variables (`VCPKG_ROOT`), CMakePresets.json
-- Key config files: `CMakePresets.json` (18 presets for CI/dev), `vcpkg.json` (dependencies), `.clang-format` (code style), `.clang-tidy` (static analysis)
-- No runtime config file - all configuration happens through UI widget inputs (IP address, port, codec selection, encoder selection, bitrate)
+- How configured: vcpkg via `VCPKG_ROOT` env var, compiler via `CMAKE_CXX_COMPILER`/`CMAKE_C_COMPILER` in presets
+- Key config files: `CMakeLists.txt` (main build), `CMakePresets.json` (CI/dev presets), `vcpkg.json` (vcpkg dependencies), `.clang-format` (formatting), `.clang-tidy` (static analysis), `.codespellrc` (spell check)
+- `cmake/modules/FindGStreamer.cmake` and `cmake/modules/FindNDI.cmake` — custom CMake find modules
 
 CI/CD:
 - CI location: `.github/workflows/ci.yml`
-- Main checks: lint (clang-format + codespell), test (3-platform matrix: macos-14, ubuntu-22.04, windows-2022), sanitize (ASAN+UBSAN on ubuntu), coverage (Ubuntu with lcov+codecov), docs (Doxygen+m.css deploy to gh-pages)
-- Lint job runs on all PRs and pushes to `master`; other jobs gated on lint success; coverage and docs require `github.repository_owner` match (disabled in fork)
+- Main checks: lint (clang-format + codespell on Ubuntu 22.04), sanitize (ASAN/UBSAN on clang++-14), test (matrix: macOS 14, Ubuntu 22.04, Windows 2022), docs (Doxygen + m.css, gated on push to master)
 
 ---
 
-*Stack analysis: 2026-04-28*
+*Stack analysis: 2026-05-02*
