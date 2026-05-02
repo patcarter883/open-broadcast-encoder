@@ -1,17 +1,21 @@
-#include "ndi_input/ndi_input.h"
+#include <chrono>
 #include <format>
 #include <thread>
-#include <chrono>
+
+#include "ndi_input/ndi_input.h"
+
 #include <gst/gst.h>
 #include <gst/gstbus.h>
 #include <gst/gstcaps.h>
 #include <gst/gstdevice.h>
 #include <gst/gstdevicemonitor.h>
 
-ndi_input::ndi_input(const input_config& input_config, const log_func_ptr log_func): 
-log_func {log_func},
-input_c {input_config}
-{}
+ndi_input::ndi_input(const input_config& input_config,
+                     const log_func_ptr log_func)
+    : log_func {log_func}
+    , input_c {input_config}
+{
+}
 
 auto ndi_input::run_device_monitor() -> void
 {
@@ -27,7 +31,6 @@ auto ndi_input::run_device_monitor() -> void
 
         gst_device_monitor_start(device_monitor);
 
-
         std::chrono::seconds duration(1);
         while (run_monitor) {
           std::this_thread::yield();
@@ -41,14 +44,16 @@ auto ndi_input::refresh_devices() const -> std::vector<char*>
   auto device_names = std::vector<char*>();
   GList* devices = gst_device_monitor_get_devices(device_monitor);
 
-  for (GList* list_item = devices; list_item != nullptr; list_item = list_item->next) {
+  for (GList* list_item = devices; list_item != nullptr;
+       list_item = list_item->next)
+  {
     auto* device = static_cast<GstDevice*>(list_item->data);
 
-  char* device_name = gst_device_get_display_name(device);
-  device_names.emplace_back(device_name);
-  gst_object_unref(device);
-}
-return device_names;
+    char* device_name = gst_device_get_display_name(device);
+    device_names.emplace_back(device_name);
+    gst_object_unref(device);
+  }
+  return device_names;
 }
 
 auto ndi_input::stop_device_monitor() -> void
@@ -68,11 +73,11 @@ auto ndi_input::preview() -> void
             "queue "
             "! audioconvert ! autoaudiosink",
             input_c.selected_input);
-        auto *pipeline = gst_parse_launch(pipeline_string.c_str(), nullptr);
-        auto *bus = gst_element_get_bus(pipeline);
+        auto* pipeline = gst_parse_launch(pipeline_string.c_str(), nullptr);
+        auto* bus = gst_element_get_bus(pipeline);
 
         gst_element_set_state(pipeline, GST_STATE_PLAYING);
-        auto *msg = gst_bus_timed_pop_filtered(
+        auto* msg = gst_bus_timed_pop_filtered(
             bus,
             GST_CLOCK_TIME_NONE,
             static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_EOS));
@@ -86,10 +91,10 @@ auto ndi_input::preview() -> void
               log(pipeline_string);
               gst_message_parse_error(msg, &err, &debug_info);
               log(std::format("Error received from element {}: {}\n",
-                                         GST_OBJECT_NAME(msg->src),
-                                         err->message));
+                              GST_OBJECT_NAME(msg->src),
+                              err->message));
               log(std::format("Debugging information: {}\n",
-                                         (debug_info != nullptr) ? debug_info : "none"));
+                              (debug_info != nullptr) ? debug_info : "none"));
               g_clear_error(&err);
               g_free(debug_info);
               break;
@@ -104,12 +109,9 @@ auto ndi_input::preview() -> void
           gst_message_unref(msg);
         }
 
-        auto* loop = g_main_loop_new(nullptr, FALSE);
-        g_main_loop_run(loop);
-
         /* Free resources */
-        gst_object_unref(bus);
         gst_element_set_state(pipeline, GST_STATE_NULL);
+        gst_object_unref(bus);
         gst_object_unref(pipeline);
       });
 }

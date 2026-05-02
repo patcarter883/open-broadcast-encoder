@@ -19,6 +19,7 @@ class encode
 {
 public:
   std::atomic<bool> encoder_running;
+  bool pipeline_cleaned_up = false;
   void run_encode_thread();
   void stop_encode_thread();
   auto pull_video_buffer() -> buffer_data;

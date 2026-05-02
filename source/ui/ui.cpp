@@ -1,8 +1,10 @@
-#include "ui/ui.h"
 #include <algorithm>
+#include <functional>
 #include <string>
 #include <vector>
-#include <functional>
+
+#include "ui/ui.h"
+
 #include <FL/Fl.H>
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Button.H>
@@ -14,10 +16,11 @@
 #include <FL/Fl_Output.H>
 #include <FL/Fl_Text_Display.H>
 #include <stdint.h>
+
 #include "FL/fl_callback_macros.H"
 
 Fl_Menu_Item user_interface::menu_choice_input_protocol[] = {
-    {.text = " ",
+    {.text = "Test Source",
      .shortcut_ = 0,
      .callback_ = 0,
      .user_data_ = (void*)(0),
@@ -26,7 +29,7 @@ Fl_Menu_Item user_interface::menu_choice_input_protocol[] = {
      .labelfont_ = 0,
      .labelsize_ = 14,
      .labelcolor_ = 0},
-    {.text = "SDP / RTP",
+    {.text = "MPEGTS",
      .shortcut_ = 0,
      .callback_ = 0,
      .user_data_ = (void*)(1),
@@ -35,7 +38,7 @@ Fl_Menu_Item user_interface::menu_choice_input_protocol[] = {
      .labelfont_ = 0,
      .labelsize_ = 14,
      .labelcolor_ = 0},
-    {.text = "NDI",
+    {.text = "SDP / RTP",
      .shortcut_ = 0,
      .callback_ = 0,
      .user_data_ = (void*)(2),
@@ -44,7 +47,7 @@ Fl_Menu_Item user_interface::menu_choice_input_protocol[] = {
      .labelfont_ = 0,
      .labelsize_ = 14,
      .labelcolor_ = 0},
-    {.text = "MPEGTS",
+    {.text = "NDI",
      .shortcut_ = 0,
      .callback_ = 0,
      .user_data_ = (void*)(3),
@@ -62,11 +65,13 @@ Fl_Menu_Item user_interface::menu_choice_input_protocol[] = {
      .labelfont_ = 0,
      .labelsize_ = 0,
      .labelcolor_ = 0}};
-Fl_Menu_Item* user_interface::select_sdp_input =
-    user_interface::menu_choice_input_protocol + 1;
-Fl_Menu_Item* user_interface::select_ndi_input =
-    user_interface::menu_choice_input_protocol + 2;
+Fl_Menu_Item* user_interface::select_test_input =
+    user_interface::menu_choice_input_protocol + 0;
 Fl_Menu_Item* user_interface::select_mpegts_input =
+    user_interface::menu_choice_input_protocol + 1;
+Fl_Menu_Item* user_interface::select_sdp_input =
+    user_interface::menu_choice_input_protocol + 2;
+Fl_Menu_Item* user_interface::select_ndi_input =
     user_interface::menu_choice_input_protocol + 3;
 
 Fl_Menu_Item user_interface::menu_choice_codec[] = {
@@ -246,9 +251,10 @@ user_interface::user_interface()
         {
           Fl_Flex* o = new Fl_Flex(470, 25, 433, 309, "Output");
           o->box(FL_BORDER_BOX);
-          { input_rist_address = new Fl_Input(476, 51, 421, 25, "RIST Address");
+          {
+            input_rist_address = new Fl_Input(476, 51, 421, 25, "RIST Address");
             input_rist_address->align(Fl_Align(FL_ALIGN_TOP_LEFT));
-          } // Fl_Input* input_rist_address
+          }  // Fl_Input* input_rist_address
           {
             Fl_Flex* o = new Fl_Flex(475, 50, 423, 25);
             o->type(1);
@@ -413,10 +419,12 @@ user_interface::user_interface()
       {
         flx_bottom = new Fl_Flex(25, 442, 1323, 200);
         flx_bottom->type(1);
-        { transport_log_display = new Fl_Text_Display(25, 442, 662, 200);
-        } // Fl_Text_Display* transport_log_display
-        { encode_log_display = new Fl_Text_Display(687, 442, 661, 200);
-        } // Fl_Text_Display* encode_log_display
+        {
+          transport_log_display = new Fl_Text_Display(25, 442, 662, 200);
+        }  // Fl_Text_Display* transport_log_display
+        {
+          encode_log_display = new Fl_Text_Display(687, 442, 661, 200);
+        }  // Fl_Text_Display* encode_log_display
         flx_bottom->end();
       }  // Fl_Flex* flx_bottom
       pack->margin(25, 25, 25, 25);
@@ -442,20 +450,18 @@ void user_interface::layout()
 
 void user_interface::transport_log_append(const std::string& msg) const
 {
-  // Fl::lock();
+  Fl::lock();
   transport_log_display->insert(msg.c_str());
-  // Fl::unlock();
-  // Fl::awake();
-}
-
-void user_interface::encode_log_append_cb(const std::string& msg) const
-{
-  encode_log_display->insert(msg.c_str());
+  Fl::unlock();
+  Fl::awake();
 }
 
 void user_interface::encode_log_append(const std::string& msg) const
 {
+  Fl::lock();
   encode_log_display->insert(msg.c_str());
+  Fl::unlock();
+  Fl::awake();
 }
 
 void user_interface::init_ui()
@@ -480,12 +486,37 @@ int user_interface::run_ui()
   return Fl::run();
 }
 
-void user_interface::choose_input_protocol(input_config* input_config, FuncPtr refresh_ndi_funcptr)
+void user_interface::choose_input_protocol(input_config* input_config,
+                                           FuncPtr refresh_ndi_funcptr)
 {
   switch (
       reinterpret_cast<uintptr_t>(choice_input_protocol->mvalue()->user_data()))
   {
+    case 0: {
+      input_config->selected_input_mode = input_mode::testsrc;
+      Fl::lock();
+      mpegts_options_group->hide();
+      sdp_options_group->hide();
+      ndi_options_group->hide();
+      layout();
+      Fl::unlock();
+      Fl::awake();
+      break;
+    }
+
     case 1: {
+      input_config->selected_input_mode = input_mode::mpegts;
+      Fl::lock();
+      mpegts_options_group->show();
+      ndi_options_group->hide();
+      sdp_options_group->hide();
+      layout();
+      Fl::unlock();
+      Fl::awake();
+      break;
+    }
+
+    case 2: {
       input_config->selected_input_mode = input_mode::sdp;
       Fl::lock();
       sdp_options_group->show();
@@ -497,7 +528,7 @@ void user_interface::choose_input_protocol(input_config* input_config, FuncPtr r
       break;
     }
 
-    case 2: {
+    case 3: {
       input_config->selected_input_mode = input_mode::ndi;
       Fl::lock();
       ndi_options_group->show();
@@ -507,18 +538,6 @@ void user_interface::choose_input_protocol(input_config* input_config, FuncPtr r
       Fl::unlock();
       Fl::awake();
       refresh_ndi_funcptr();
-      break;
-    }
-
-    case 3: {
-      input_config->selected_input_mode = input_mode::mpegts;
-      Fl::lock();
-      mpegts_options_group->show();
-      ndi_options_group->hide();
-      sdp_options_group->hide();
-      layout();
-      Fl::unlock();
-      Fl::awake();
       break;
     }
 
@@ -566,9 +585,13 @@ void user_interface::input_listen_port_cb(input_config* input_config)
   input_config->selected_input = input_listen_port->value();
 }
 
-void user_interface::input_rist_address_cb(output_config* output_config, FuncPtr input_rist_address_funcptr)
+void user_interface::input_rist_address_cb(output_config* output_config,
+                                           FuncPtr input_rist_address_funcptr)
 {
   output_config->address = input_rist_address->value();
+  auto [h, p] = parse_address(output_config->address);
+  output_config->host = h;
+  output_config->port = p;
   input_rist_address_funcptr();
 }
 
@@ -634,7 +657,7 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        input_config*,
                        input_c,
                        FuncPtr,
-                      ndi_refresh_funcptr);
+                       ndi_refresh_funcptr);
 
   FL_METHOD_CALLBACK_1(choice_ndi_input,
                        user_interface,
@@ -673,12 +696,12 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        FuncPtr,
                        input_rist_address_funcptr);
 
-    FL_METHOD_CALLBACK_1(btn_preview_input,
-                          user_interface,
-                          this,
-                          btn_preview_input_cb,
-                          FuncPtr,
-                          preview_src_funcptr);
+  FL_METHOD_CALLBACK_1(btn_preview_input,
+                       user_interface,
+                       this,
+                       btn_preview_input_cb,
+                       FuncPtr,
+                       preview_src_funcptr);
 
   FL_METHOD_CALLBACK_1(
       btn_start_encode, user_interface, this, start, FuncPtr, start_funcptr);

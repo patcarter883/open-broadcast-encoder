@@ -1,13 +1,20 @@
 #pragma once
 #include <atomic>
+#include <memory>
 #include <thread>
 #include <string>
 #include <vector>
 #include <cstdint>
 #include <exception>
 
+struct encode;
+struct transport;
+struct ndi_input;
+class user_interface;
+
 enum class input_mode : std::uint8_t
 {
+  testsrc,
   mpegts,
   sdp,
   ndi,
@@ -64,6 +71,8 @@ struct encode_config {
 
 struct output_config {
   std::string address = "127.0.0.1:5000";
+  std::string host = "127.0.0.1";
+  int port = 5000;
   int streams = 1;
   int buffer_min = 245;
   int buffer_max = 5000;
@@ -72,6 +81,25 @@ struct output_config {
   int reorder_buffer = 240;
   int bandwidth = 6000;
 };
+
+inline std::pair<std::string, int> parse_address(const std::string& addr)
+{
+  auto colon = addr.find(':');
+  if (colon == std::string::npos) {
+    return {"127.0.0.1", 5000};
+  }
+  std::string h = addr.substr(0, colon);
+  if (h.empty()) {
+    h = "127.0.0.1";
+  }
+  std::string p = addr.substr(colon + 1);
+  try {
+    int port = std::stoi(p);
+    return {h, port};
+  } catch (...) {
+    return {h, 5000};
+  }
+}
 
 struct library
 {
@@ -85,8 +113,9 @@ struct library
   // std::future<void> transport_thread_future;
 
   std::atomic_bool is_running {false};
+   std::shared_ptr<std::atomic<bool>> run_flag;
 
-  std::vector<std::thread> threads;
+   std::vector<std::thread> threads;
 
 
   input_config input_config;
@@ -95,6 +124,16 @@ struct library
 
   cumulative_stats stats;
 
+  std::shared_ptr<encode> encoder_ptr;
+
   
   void log_append(const std::string &msg) const;
+};
+
+struct app_context
+{
+  library lib;
+  user_interface* ui = nullptr;
+  std::unique_ptr<transport> transporter;
+  std::unique_ptr<ndi_input> ndi;
 };

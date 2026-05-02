@@ -1,8 +1,10 @@
+#include <chrono>
+#include <thread>
+
 #include "encode/encode.h"
+
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
-#include <thread>
-#include <chrono>
 
 using std::string;
 
@@ -20,10 +22,14 @@ encode::encode(const input_config& input_config,
 
 encode::~encode()
 {
-  gst_element_set_state(this->datasrc_pipeline, GST_STATE_NULL);
-  gst_object_unref(GST_OBJECT(this->datasrc_pipeline));
-  gst_object_unref(this->bus);
-  log("Stopping pipeline.\n");
+  if (this->datasrc_pipeline != nullptr && !this->pipeline_cleaned_up) {
+    gst_element_set_state(this->datasrc_pipeline, GST_STATE_NULL);
+    gst_object_unref(GST_OBJECT(this->datasrc_pipeline));
+    gst_object_unref(this->bus);
+    log("Stopping pipeline.\n");
+  }
+
+  this->pipeline_cleaned_up = true;
 
   for (auto& t : threads) {
     if (t.joinable()) {
@@ -34,34 +40,42 @@ encode::~encode()
 
 void encode::pipeline_build_source()
 {
-
-  const auto *const sdp = "v=0\n"
-       "o=- 1443716955 1443716955 IN IP4 127.0.0.1\n"
-        "s=st2110 stream\n"
-        "t=0 0\n"
-        "a=recvonly\n"
-        "\n"
-        "m=video 20000 RTP/AVP 102\n"
-        "c=IN IP4 127.0.0.1/8\n"
-        "a=rtpmap:102 raw/90000\n"
-        "a=fmtp:102 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=30000/1000; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2017; TP=2110TPN;\n"
-        "a=mediaclk:direct=0\n"
-        "a=ts-refclk:ptp=IEEE1588-2008:00-02-c5-ff-fe-21-60-5c:127\n";
+  const auto* const sdp =
+      "v=0\n"
+      "o=- 1443716955 1443716955 IN IP4 127.0.0.1\n"
+      "s=st2110 stream\n"
+      "t=0 0\n"
+      "a=recvonly\n"
+      "\n"
+      "m=video 20000 RTP/AVP 102\n"
+      "c=IN IP4 127.0.0.1/8\n"
+      "a=rtpmap:102 raw/90000\n"
+      "a=fmtp:102 sampling=YCbCr-4:2:2; width=1920; height=1080; "
+      "exactframerate=30000/1000; depth=10; TCS=SDR; colorimetry=BT709; "
+      "PM=2110GPM; SSN=ST2110-20:2017; TP=2110TPN;\n"
+      "a=mediaclk:direct=0\n"
+      "a=ts-refclk:ptp=IEEE1588-2008:00-02-c5-ff-fe-21-60-5c:127\n";
 
   switch (input_c.selected_input_mode) {
+    case input_mode::testsrc:
+      this->pipeline_str =
+          "audiotestsrc is-live=true ! audioconvert ! "
+          "videotestsrc pattern=smptebars ! videoconvert ! ";
+      break;
     case input_mode::mpegts:
       this->pipeline_str = std::format(
-          "udpsrc port={} buffer-size=1000000 mtu=45000 ! tsparse set-timestamps=true ! tsdemux latency=10 "
+          "udpsrc port={} buffer-size=1000000 mtu=45000 ! tsparse "
+          "set-timestamps=true ! tsdemux latency=10 "
           "name=demux ",
           input_c.selected_input);
       break;
     case input_mode::sdp:
-    
-    this->pipeline_str = std::format(
-      "sdpsrc sdp=\"{}\" "
-      "name=demux ",
-      sdp);
-  break;
+
+      this->pipeline_str = std::format(
+          "sdpsrc sdp=\"{}\" "
+          "name=demux ",
+          sdp);
+      break;
     case input_mode::ndi:
       this->pipeline_str = std::format(
           "ndisrc do-timestamp=true ndi-name=\"{}\" ! ndisrcdemux name=demux ",
@@ -83,11 +97,15 @@ void encode::pipeline_build_sink()
 void encode::pipeline_build_video_demux()
 {
   switch (input_c.selected_input_mode) {
+    case input_mode::testsrc:
+      this->pipeline_str += " ! ";
+      break;
     case input_mode::ndi:
       this->pipeline_str += " demux.video ! queue silent=true ! videoconvert !";
       break;
     case input_mode::sdp:
-      this->pipeline_str += " demux. ! rtpvrawdepay ! queue silent=true ! videoconvert !";
+      this->pipeline_str +=
+          " demux. ! rtpvrawdepay ! queue silent=true ! videoconvert !";
       break;
     default:
       this->pipeline_str +=
@@ -99,12 +117,17 @@ void encode::pipeline_build_video_demux()
 void encode::pipeline_build_audio_demux()
 {
   switch (input_c.selected_input_mode) {
+    case input_mode::testsrc:
+      this->pipeline_str += " ! avenc_aac ! aacparse ! tsmux. ";
+      break;
     case input_mode::ndi:
       this->pipeline_str +=
           " demux.audio ! queue silent=true ! audioresample ! audioconvert !";
       break;
-      case input_mode::sdp:
-      this->pipeline_str += " demux. ! rtpL24depay ! queue silent=true ! audioresample ! audioconvert !";
+    case input_mode::sdp:
+      this->pipeline_str +=
+          " demux. ! rtpL24depay ! queue silent=true ! audioresample ! "
+          "audioconvert !";
       break;
     default:
       this->pipeline_str +=
@@ -401,28 +424,28 @@ void encode::run_encode_thread()
 
 void encode::stop_encode_thread()
 {
-  gst_element_set_state(this->datasrc_pipeline, GST_STATE_NULL);
-  gst_object_unref(GST_OBJECT(this->datasrc_pipeline));
-  gst_object_unref(this->bus);
-  log("Stopping pipeline.\n");
+  if (this->run_flag) {
+    *this->run_flag = false;
+  }
 
-  encoder_running = false;
+  for (auto& t : this->threads) {
+    if (t.joinable()) {
+      t.join();
+    }
+  }
 
-  // std::future_status status;
+  this->encoder_running = false;
 
-  // if (app.encode_thread_future->valid())
-  // {
-  //     switch (status =
-  //     app.encode_thread_future->wait_for(std::chrono::seconds(1)); status)
-  //     {
-  //     case std::future_status::timeout:
-  //         log("Waiting for encoder stop has timed out.");
-  //         break;
-  //     case std::future_status::ready:
-  //         log("encoder stopped.");
-  //         break;
-  //     }
-  // }
+  if (this->datasrc_pipeline != nullptr && !this->pipeline_cleaned_up) {
+    gst_element_set_state(this->datasrc_pipeline, GST_STATE_NULL);
+    gst_object_unref(GST_OBJECT(this->datasrc_pipeline));
+    gst_object_unref(this->bus);
+    log("Stopping pipeline.\n");
+    this->datasrc_pipeline = nullptr;
+    this->bus = nullptr;
+  }
+
+  this->pipeline_cleaned_up = true;
 }
 
 void encode::handle_gst_message_error(GstMessage* message)

@@ -30,6 +30,7 @@ public:
   Fl_Flex* flx_input;
   Fl_Choice* choice_input_protocol;
   static Fl_Menu_Item menu_choice_input_protocol[];
+  static Fl_Menu_Item* select_test_input;
   static Fl_Menu_Item* select_sdp_input;
   static Fl_Menu_Item* select_ndi_input;
   static Fl_Menu_Item* select_mpegts_input;
@@ -73,10 +74,8 @@ public:
                          FuncPtr ndi_refresh_funcptr,
                          FuncPtr input_rist_address_funcptr,
                          FuncPtr preview_src_funcptr);
-  void transport_log_append_cb(const std::string& msg) const;
   void transport_log_append(const std::string& msg) const;
-  void encode_log_append_cb(const std::string& msg) const;
-  void encode_log_append(const std::string& msg) const;
+   void encode_log_append(const std::string& msg) const;
   void init_ui();
   int run_ui();
   void add_ndi_choices(std::vector<char*> choice_names);
