@@ -13,6 +13,8 @@ transport::transport()
 {
   this->rist_sender->statisticsCallback =
       std::bind_front(&transport::stats_cb_func, this);
+  this->rist_sender->networkOOBDataCallback =
+      std::bind_front(&transport::oob_cb_func, this);
 }
 
 transport::~transport()
@@ -34,10 +36,27 @@ void transport::set_statistics_callback(
   this->statistics_callback = statistics_callback_func;
 }
 
+void transport::set_oob_callback(
+    void (*oob_callback_func)(const uint8_t*, size_t))
+{
+  this->oob_callback = oob_callback_func;
+}
+
 void transport::stats_cb_func(const rist_stats& stats)
 {
   if (this->statistics_callback != nullptr) {
     this->statistics_callback(stats);
+  }
+}
+
+void transport::oob_cb_func(
+    const uint8_t* buf,
+    size_t size,
+    std::shared_ptr<RISTNetSender::NetworkConnection>& /*connection*/,
+    rist_peer* /*peer*/)
+{
+  if (this->oob_callback != nullptr) {
+    this->oob_callback(buf, size);
   }
 }
 
@@ -71,8 +90,8 @@ void transport::setup_rist_sender(output_config& output_c)
   this->rist_sender->initSender(interface_list_sender, my_send_configuration);
 }
 
-void transport::send_buffer(buffer_data& buf, u_int16_t virt_dst_port)
+void transport::send_buffer(const std::vector<uint8_t>& data,
+                            u_int16_t virt_dst_port)
 {
-  this->rist_sender->sendData(
-      buf.buf_data, buf.buf_size, 0, virt_dst_port);  //, buf.seq, buf.ts_ntp);
+  this->rist_sender->sendData(data.data(), data.size(), 0, virt_dst_port);
 }

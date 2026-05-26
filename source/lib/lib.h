@@ -1,11 +1,12 @@
 #pragma once
 #include <atomic>
-#include <memory>
-#include <thread>
-#include <string>
-#include <vector>
 #include <cstdint>
+#include <deque>
 #include <exception>
+#include <memory>
+#include <string>
+#include <thread>
+#include <vector>
 
 struct encode;
 struct transport;
@@ -39,37 +40,55 @@ enum class encoder : std::uint8_t
 struct buffer_data
 {
   size_t buf_size {0};
-  uint8_t* buf_data {};
-  uint64_t seq {0};
-  uint64_t ts_ntp {0};
+  std::vector<uint8_t> buf_data;
 };
+
+enum class bitrate_source : std::uint8_t
+{
+  local,
+  remote_oob
+};
+
+struct __attribute__((packed)) wan_telemetry
+{
+  uint8_t link_quality;
+  uint32_t worst_case_rtt;  // network byte order on the wire
+};
+static_assert(sizeof(wan_telemetry) == 5,
+              "wan_telemetry must be exactly 5 bytes");
 
 struct cumulative_stats
 {
-  std::vector<int> bandwidth;
-  std::vector<int> retransmitted_packets;
-  std::vector<int> total_packets;
-  std::vector<int> encode_bitrate;
+  std::deque<int> bandwidth;
+  std::deque<int> retransmitted_packets;
+  std::deque<int> total_packets;
+  std::deque<int> encode_bitrate;
   int bandwidth_avg = 0;
   int retransmitted_packets_sum = 0;
   int total_packets_sum = 0;
   int encode_bitrate_avg = 0;
-  int current_bitrate;
-  double previous_quality;
+  int current_bitrate = 0;
+  double previous_quality = 0.0;
+  int wan_quality = 0;
+  uint32_t wan_rtt = 0;
 };
 
-struct input_config {
+struct input_config
+{
   std::string selected_input;
   input_mode selected_input_mode = input_mode::none;
 };
 
-struct encode_config {
-  codec codec = codec::h264;
-  encoder encoder = encoder::software;
+struct encode_config
+{
+  codec selected_codec = codec::h264;
+  encoder selected_encoder = encoder::software;
   int bitrate = 4300;
+  bitrate_source scaling_source = bitrate_source::local;
 };
 
-struct output_config {
+struct output_config
+{
   std::string address = "127.0.0.1:5000";
   std::string host = "127.0.0.1";
   int port = 5000;
@@ -107,27 +126,25 @@ struct library
    * @brief Simply initializes the name member to the name of the project
    */
   library() noexcept;
-  
+
   // std::future<void> input_thread_future;
   // std::future<void> encode_thread_future;
   // std::future<void> transport_thread_future;
 
   std::atomic_bool is_running {false};
-   std::shared_ptr<std::atomic<bool>> run_flag;
+  std::shared_ptr<std::atomic<bool>> run_flag;
 
-   std::vector<std::thread> threads;
+  std::vector<std::thread> threads;
 
-
-  input_config input_config;
-  encode_config encode_config;
-  output_config output_config;
+  input_config input_cfg;
+  encode_config encode_cfg;
+  output_config output_cfg;
 
   cumulative_stats stats;
 
   std::shared_ptr<encode> encoder_ptr;
 
-  
-  void log_append(const std::string &msg) const;
+  void log_append(const std::string& msg) const;
 };
 
 struct app_context

@@ -104,6 +104,27 @@ Fl_Menu_Item user_interface::menu_choice_codec[] = {
      0},
     {0, 0, 0, 0, 0, 0, 0, 0, 0}};
 
+Fl_Menu_Item user_interface::menu_choice_bitrate_source[] = {
+    {"Local",
+     0,
+     0,
+     (void*)(static_cast<long>(bitrate_source::local)),
+     0,
+     (uchar)FL_NORMAL_LABEL,
+     0,
+     14,
+     0},
+    {"Remote (OOB)",
+     0,
+     0,
+     (void*)(static_cast<long>(bitrate_source::remote_oob)),
+     0,
+     (uchar)FL_NORMAL_LABEL,
+     0,
+     14,
+     0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0}};
+
 Fl_Menu_Item user_interface::menu_choice_encoder[] = {
     {"AMD",
      0,
@@ -238,11 +259,19 @@ user_interface::user_interface()
               input_encode_bitrate = new Fl_Input(31, 261, 421, 25, "Bitrate");
               input_encode_bitrate->align(Fl_Align(FL_ALIGN_TOP_LEFT));
             }  // Fl_Input* input_encode_bitrate
+            {
+              choice_bitrate_source =
+                  new Fl_Choice(31, 311, 421, 25, "Scaling Source");
+              choice_bitrate_source->down_box(FL_BORDER_BOX);
+              choice_bitrate_source->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+              choice_bitrate_source->menu(menu_choice_bitrate_source);
+            }  // Fl_Choice* choice_bitrate_source
             o->margin(5, 25, 5, 5);
             o->gap(25);
             o->fixed(o->child(0), 25);
             o->fixed(o->child(1), 25);
             o->fixed(o->child(2), 25);
+            o->fixed(o->child(3), 25);
             o->end();
           }  // Fl_Flex* o
           o->gap(25);
@@ -408,8 +437,25 @@ user_interface::user_interface()
               cell->minimum_size(20, 20);
             grid_stats->end();
           }  // Fl_Grid* grid_stats
+          {
+            flx_wan_stats = new Fl_Flex(915, 286, 433, 25);
+            flx_wan_stats->type(1);
+            {
+              wan_quality_output =
+                  new Fl_Output(1060, 286, 144, 25, "WAN Quality");
+              wan_quality_output->align(Fl_Align(FL_ALIGN_LEFT));
+            }  // Fl_Output* wan_quality_output
+            {
+              wan_rtt_output = new Fl_Output(1204, 286, 144, 25, "WAN RTT");
+              wan_rtt_output->align(Fl_Align(FL_ALIGN_LEFT));
+            }  // Fl_Output* wan_rtt_output
+            flx_wan_stats->gap(80);
+            flx_wan_stats->end();
+          }  // Fl_Flex* flx_wan_stats
           o->margin(5, 0, 5, 0);
+          o->gap(5);
           o->fixed(o->child(0), 256);
+          o->fixed(o->child(1), 25);
           o->end();
         }  // Fl_Flex* o
         flx_top->margin(0, 0, 0, 12);
@@ -599,7 +645,7 @@ void user_interface::select_codec(encode_config* encode_config)
 {
   auto user_data =
       reinterpret_cast<uintptr_t>(choice_codec->mvalue()->user_data());
-  encode_config->codec = static_cast<codec>(user_data);
+  encode_config->selected_codec = static_cast<codec>(user_data);
 }
 
 void user_interface::select_encoder(encode_config* encode_config)
@@ -607,7 +653,18 @@ void user_interface::select_encoder(encode_config* encode_config)
   auto user_data =
       reinterpret_cast<uintptr_t>(choice_encoder->mvalue()->user_data());
 
-  encode_config->encoder = static_cast<encoder>(user_data);
+  encode_config->selected_encoder = static_cast<encoder>(user_data);
+}
+
+void user_interface::select_bitrate_source(
+    encode_config* encode_config, FuncPtr scaling_source_changed_funcptr)
+{
+  auto user_data =
+      reinterpret_cast<uintptr_t>(choice_bitrate_source->mvalue()->user_data());
+  encode_config->scaling_source = static_cast<bitrate_source>(user_data);
+  if (scaling_source_changed_funcptr != nullptr) {
+    scaling_source_changed_funcptr();
+  }
 }
 
 void user_interface::start(void (*start_funcptr)())
@@ -638,14 +695,16 @@ void user_interface::btn_preview_input_cb(FuncPtr preview_src_funcptr)
   preview_src_funcptr();
 }
 
-void user_interface::init_ui_callbacks(input_config* input_c,
-                                       encode_config* encode_c,
-                                       output_config* output_c,
-                                       FuncPtr start_funcptr,
-                                       FuncPtr stop_funcptr,
-                                       FuncPtr ndi_refresh_funcptr,
-                                       FuncPtr input_rist_address_funcptr,
-                                       FuncPtr preview_src_funcptr)
+void user_interface::init_ui_callbacks(
+    input_config* input_c,
+    encode_config* encode_c,
+    output_config* output_c,
+    FuncPtr start_funcptr,
+    FuncPtr stop_funcptr,
+    FuncPtr ndi_refresh_funcptr,
+    FuncPtr input_rist_address_funcptr,
+    FuncPtr preview_src_funcptr,
+    FuncPtr scaling_source_changed_funcptr)
 {
   transport_log_display->buffer(transport_log_buffer);
   encode_log_display->buffer(encode_log_buffer);
@@ -686,6 +745,15 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        select_encoder,
                        encode_config*,
                        encode_c);
+
+  FL_METHOD_CALLBACK_2(choice_bitrate_source,
+                       user_interface,
+                       this,
+                       select_bitrate_source,
+                       encode_config*,
+                       encode_c,
+                       FuncPtr,
+                       scaling_source_changed_funcptr);
 
   FL_METHOD_CALLBACK_2(input_rist_address,
                        user_interface,

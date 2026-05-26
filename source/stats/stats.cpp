@@ -5,10 +5,9 @@
 
 #include "ui/ui.h"
 
-auto stats::got_rist_statistics(const rist_stats& statistics,
-                                cumulative_stats* stats,
-                                const encode_config& encode_config,
-                                user_interface& ui) -> bool
+auto stats::scale_encoder_bitrate(double quality,
+                                  cumulative_stats* stats,
+                                  const encode_config& encode_config) -> bool
 {
   int bitrateDelta = 0;
   double qualDiffPct;
@@ -17,17 +16,15 @@ auto stats::got_rist_statistics(const rist_stats& statistics,
   bool returnVal = false;
 
   if (stats->previous_quality > 0
-      && (int)statistics.stats.sender_peer.quality
-          != (int)stats->previous_quality)
+      && (int)quality != (int)stats->previous_quality)
   {
-    qualDiffPct =
-        statistics.stats.sender_peer.quality / stats->previous_quality;
+    qualDiffPct = quality / stats->previous_quality;
     adjBitrate = (int)(stats->current_bitrate * qualDiffPct);
     bitrateDelta = adjBitrate - stats->current_bitrate;
   }
 
   if (static_cast<int>(stats->previous_quality) == 100
-      && static_cast<int>(statistics.stats.sender_peer.quality) == 100
+      && static_cast<int>(quality) == 100
       && stats->current_bitrate < maxBitrate)
   {
     qualDiffPct = (stats->current_bitrate / maxBitrate);
@@ -43,11 +40,36 @@ auto stats::got_rist_statistics(const rist_stats& statistics,
     returnVal = true;
   }
 
+  stats->previous_quality = quality;
+
+  return returnVal;
+}
+
+auto stats::got_rist_statistics(const rist_stats& statistics,
+                                cumulative_stats* stats,
+                                const encode_config& encode_config,
+                                user_interface& ui) -> bool
+{
+  bool returnVal = false;
+
+  if (encode_config.scaling_source == bitrate_source::local) {
+    returnVal = scale_encoder_bitrate(
+        statistics.stats.sender_peer.quality, stats, encode_config);
+  }
+
   stats->bandwidth.push_back(statistics.stats.sender_peer.bandwidth);
+  if (stats->bandwidth.size() > 1000)
+    stats->bandwidth.erase(stats->bandwidth.begin());
   stats->encode_bitrate.push_back(stats->current_bitrate);
+  if (stats->encode_bitrate.size() > 1000)
+    stats->encode_bitrate.erase(stats->encode_bitrate.begin());
   stats->retransmitted_packets.push_back(
       statistics.stats.sender_peer.retransmitted);
+  if (stats->retransmitted_packets.size() > 1000)
+    stats->retransmitted_packets.erase(stats->retransmitted_packets.begin());
   stats->total_packets.push_back(statistics.stats.sender_peer.sent);
+  if (stats->total_packets.size() > 1000)
+    stats->total_packets.erase(stats->total_packets.begin());
 
   stats->bandwidth_avg = std::accumulate(stats->bandwidth.begin(),
                                          stats->bandwidth.end(),
@@ -65,8 +87,6 @@ auto stats::got_rist_statistics(const rist_stats& statistics,
                       0);
   stats->total_packets_sum = std::accumulate(
       stats->total_packets.begin(), stats->total_packets.end(), 0);
-
-  stats->previous_quality = statistics.stats.sender_peer.quality;
 
   ui.lock();
   ui.bandwidth_output->value(

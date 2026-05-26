@@ -1,9 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <functional>
 #include <string>
 #include <vector>
-#include <functional>
+
 #include <FL/Fl.H>
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Button.H>
@@ -15,6 +16,7 @@
 #include <FL/Fl_Output.H>
 #include <FL/Fl_Text_Display.H>
 #include <stdint.h>
+
 #include "FL/fl_callback_macros.H"
 #include "lib/lib.h"
 
@@ -47,7 +49,7 @@ public:
   Fl_Choice* choice_encoder;
   static Fl_Menu_Item menu_choice_encoder[];
   Fl_Input* input_encode_bitrate;
-  Fl_Input *input_rist_address;
+  Fl_Input* input_rist_address;
   Fl_Button* btn_start_encode;
   Fl_Button* btn_stop_encode;
   Fl_Grid* grid_stats;
@@ -61,9 +63,14 @@ public:
   Fl_Output* cumulative_retransmitted_packets_output;
   Fl_Output* cumulative_total_packets_output;
   Fl_Output* cumulative_encode_bitrate_output;
+  Fl_Flex* flx_wan_stats;
+  Fl_Output* wan_quality_output;
+  Fl_Output* wan_rtt_output;
+  Fl_Choice* choice_bitrate_source;
+  static Fl_Menu_Item menu_choice_bitrate_source[];
   Fl_Flex* flx_bottom;
-  Fl_Text_Display *transport_log_display;
-  Fl_Text_Display *encode_log_display;
+  Fl_Text_Display* transport_log_display;
+  Fl_Text_Display* encode_log_display;
   void show(int argc, char** argv) const;
   void layout();
   void init_ui_callbacks(input_config* input_c,
@@ -73,9 +80,10 @@ public:
                          FuncPtr stop_funcptr,
                          FuncPtr ndi_refresh_funcptr,
                          FuncPtr input_rist_address_funcptr,
-                         FuncPtr preview_src_funcptr);
+                         FuncPtr preview_src_funcptr,
+                         FuncPtr scaling_source_changed_funcptr);
   void transport_log_append(const std::string& msg) const;
-   void encode_log_append(const std::string& msg) const;
+  void encode_log_append(const std::string& msg) const;
   void init_ui();
   int run_ui();
   void add_ndi_choices(std::vector<char*> choice_names);
@@ -87,11 +95,15 @@ private:
   Fl_Text_Buffer transport_log_buffer;
   Fl_Text_Buffer encode_log_buffer;
   void choose_ndi_input(input_config* input_config);
-  void choose_input_protocol(input_config* input_config, FuncPtr refresh_ndi_funcptr);
+  void choose_input_protocol(input_config* input_config,
+                             FuncPtr refresh_ndi_funcptr);
   void input_listen_port_cb(input_config* input_config);
-  void input_rist_address_cb(output_config* output_config, FuncPtr input_rist_address_funcptr);
+  void input_rist_address_cb(output_config* output_config,
+                             FuncPtr input_rist_address_funcptr);
   void select_codec(encode_config* encode_config);
   void select_encoder(encode_config* encode_config);
+  void select_bitrate_source(encode_config* encode_config,
+                             FuncPtr scaling_source_changed_funcptr);
   void start(FuncPtr start_funcptr);
   void stop(FuncPtr stop_funcptr);
   void refresh_ndi_devices(FuncPtr refresh_ndi_funcptr);
