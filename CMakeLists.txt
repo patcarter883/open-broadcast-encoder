@@ -2,29 +2,22 @@ cmake_minimum_required(VERSION 3.28)
 
 
 include(cmake/prelude.cmake)
-include(ExternalProject)
-include(FetchContent)
 
 project(
     open-broadcast-encoder
     VERSION 0.1.0
     DESCRIPTION "Streaming Broadcast Video Encoder"
     HOMEPAGE_URL "https://example.com/"
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_BUILD_PARALLEL_LEVEL 16)
 
-# include(cmake/project-is-top-level.cmake)
 include(cmake/variables.cmake)
 
-# include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
-
-# add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/external/sdp-tools-cpp)
-add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/external/fltk SYSTEM)
-add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/external/rist-cpp SYSTEM)
+include(cmake/ExternalBuilds.cmake)
 
 find_package(NDI REQUIRED)
 
@@ -69,7 +62,8 @@ target_link_libraries(open-broadcast-encoder_exe PRIVATE
 
 
 target_include_directories(open-broadcast-encoder_exe PUBLIC SYSTEM
-${rist-cpp_SOURCE_DIR} 
+${RIST_INSTALL_DIR}/include
+${RIST_INSTALL_DIR}/include/rist-cpp
 ${GSTREAMER_INCLUDE_DIRS}
 ${NDI_INCLUDE_DIRS})
 
