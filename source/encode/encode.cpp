@@ -144,7 +144,7 @@ void encode::pipeline_build_audio_encoder()
 
 void encode::pipeline_build_video_encoder()
 {
-  switch (encode_c.encoder) {
+  switch (encode_c.selected_encoder) {
     case encoder::amd:
       pipeline_build_amd_encoder();
       break;
@@ -165,7 +165,7 @@ void encode::pipeline_build_video_encoder()
 
 void encode::pipeline_build_amd_encoder()
 {
-  switch (encode_c.codec) {
+  switch (encode_c.selected_codec) {
     case codec::h265:
       pipeline_build_amd_h265_encoder();
       break;
@@ -182,7 +182,7 @@ void encode::pipeline_build_amd_encoder()
 
 void encode::pipeline_build_qsv_encoder()
 {
-  switch (encode_c.codec) {
+  switch (encode_c.selected_codec) {
     case codec::h265:
       pipeline_build_qsv_h265_encoder();
       break;
@@ -199,7 +199,7 @@ void encode::pipeline_build_qsv_encoder()
 
 void encode::pipeline_build_nvenc_encoder()
 {
-  switch (encode_c.codec) {
+  switch (encode_c.selected_codec) {
     case codec::h265:
       pipeline_build_nvenc_h265_encoder();
       break;
@@ -216,7 +216,7 @@ void encode::pipeline_build_nvenc_encoder()
 
 void encode::pipeline_build_software_encoder()
 {
-  switch (encode_c.codec) {
+  switch (encode_c.selected_codec) {
     case codec::h265:
       pipeline_build_software_h265_encoder();
       break;
@@ -245,7 +245,7 @@ void encode::pipeline_build_amd_h265_encoder()
   this->pipeline_str += std::format(
       "amfh265enc name=videncoder bitrate={} rate-control=cbr "
       "usage=low-latency preset=quality pre-encode=true pa-hqmb-mode=auto ! "
-      "video/x-h265,framerate=60/1 ! h264parse config-interval=1 ",
+      "video/x-h265,framerate=60/1 ! h265parse config-interval=1 ",
       encode_c.bitrate);
 }
 
@@ -272,7 +272,7 @@ void encode::pipeline_build_qsv_h265_encoder()
 {
   this->pipeline_str += std::format(
       "qsvh265enc name=videncoder bitrate={} rate-control=cbr "
-      "target-usage=1 ! video/x-h265,framerate=60/1  ! h264parse "
+      "target-usage=1 ! video/x-h265,framerate=60/1  ! h265parse "
       "config-interval=1 ",
       encode_c.bitrate);
 }
@@ -297,15 +297,15 @@ void encode::pipeline_build_nvenc_h265_encoder()
 {
   this->pipeline_str += std::format(
       "nvh265enc name=videncoder bitrate={} rc-mode=cbr-hq "
-      "preset=low-latency-hq ! h264parse config-interval=1 ",
+      "preset=low-latency-hq ! h265parse config-interval=1 ",
       encode_c.bitrate);
 }
 
 void encode::pipeline_build_nvenc_av1_encoder()
 {
   this->pipeline_str += std::format(
-      "x264enc name=videncoder speed-preset=fast tune=zerolatency "
-      "bitrate={} ! h264parse config-interval=1 ",
+      "nvav1enc name=videncoder bitrate={} rc-mode=cbr preset=low-latency-hq "
+      "! av1parse config-interval=1 ",
       encode_c.bitrate);
 }
 
@@ -321,7 +321,7 @@ void encode::pipeline_build_software_h265_encoder()
 {
   this->pipeline_str += std::format(
       "x265enc name=videncoder bitrate={} "
-      "speed-preset=fast tune=zerolatency ! h264parse config-interval=1 ",
+      "speed-preset=fast tune=zerolatency ! h265parse config-interval=1 ",
       encode_c.bitrate);
 }
 
@@ -342,7 +342,7 @@ void encode::pipeline_build_video_payloader()
 {
   std::string payloader;
 
-  switch (encode_c.codec) {
+  switch (encode_c.selected_codec) {
     case codec::h265:
       payloader = "rtph265pay";
       break;
@@ -492,8 +492,17 @@ auto encode::pull_video_buffer() -> buffer_data
   if (buffer != nullptr) {
     GstMapInfo info;
     gst_buffer_map(buffer, &info, GST_MAP_READ);
+    gpointer raw = nullptr;
+    gsize raw_size = 0;
+    gst_buffer_extract_dup(buffer, 0, info.size, &raw, &raw_size);
+    gst_buffer_unmap(buffer, &info);
     gst_sample_unref(sample);
-    return buffer_data {.buf_size = info.size, .buf_data = info.data};
+    buffer_data result;
+    result.buf_size = raw_size;
+    result.buf_data = std::vector<uint8_t>(
+        static_cast<uint8_t*>(raw), static_cast<uint8_t*>(raw) + raw_size);
+    g_free(raw);
+    return result;
   }
 
   gst_sample_unref(sample);
@@ -508,8 +517,17 @@ auto encode::pull_audio_buffer() -> buffer_data
   if (buffer != nullptr) {
     GstMapInfo info;
     gst_buffer_map(buffer, &info, GST_MAP_READ);
+    gpointer raw = nullptr;
+    gsize raw_size = 0;
+    gst_buffer_extract_dup(buffer, 0, info.size, &raw, &raw_size);
+    gst_buffer_unmap(buffer, &info);
     gst_sample_unref(sample);
-    return buffer_data {.buf_size = info.size, .buf_data = info.data};
+    buffer_data result;
+    result.buf_size = raw_size;
+    result.buf_data = std::vector<uint8_t>(
+        static_cast<uint8_t*>(raw), static_cast<uint8_t*>(raw) + raw_size);
+    g_free(raw);
+    return result;
   }
 
   gst_sample_unref(sample);
