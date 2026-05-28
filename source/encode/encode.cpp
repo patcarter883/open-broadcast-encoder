@@ -1,4 +1,5 @@
 #include <chrono>
+#include <mutex>
 #include <thread>
 
 #include "encode/encode.h"
@@ -22,20 +23,56 @@ encode::encode(const input_config& input_config,
 
 encode::~encode()
 {
-  if (this->datasrc_pipeline != nullptr && !this->pipeline_cleaned_up) {
-    gst_element_set_state(this->datasrc_pipeline, GST_STATE_NULL);
-    gst_object_unref(GST_OBJECT(this->datasrc_pipeline));
-    gst_object_unref(this->bus);
-    log("Stopping pipeline.\n");
+  if (this->run_flag) {
+    *this->run_flag = false;
   }
-
-  this->pipeline_cleaned_up = true;
+  this->encoder_running = false;
 
   for (auto& t : threads) {
     if (t.joinable()) {
       t.join();
     }
   }
+
+  this->clear_pipeline_state();
+}
+
+void encode::clear_pipeline_state()
+{
+  std::lock_guard<std::mutex> guard(this->pipeline_mutex);
+  if (this->pipeline_cleaned_up.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  if (this->datasrc_pipeline != nullptr) {
+    gst_element_set_state(this->datasrc_pipeline, GST_STATE_NULL);
+  }
+
+  // Unref in reverse-dependency order. Elements first (each holds a ref from
+  // gst_bin_get_by_name), bus next, then the pipeline itself.
+  if (this->video_encoder != nullptr) {
+    gst_object_unref(this->video_encoder);
+    this->video_encoder = nullptr;
+  }
+  if (this->video_sink != nullptr) {
+    gst_object_unref(this->video_sink);
+    this->video_sink = nullptr;
+  }
+  if (this->audio_sink != nullptr) {
+    gst_object_unref(this->audio_sink);
+    this->audio_sink = nullptr;
+  }
+  if (this->bus != nullptr) {
+    gst_object_unref(this->bus);
+    this->bus = nullptr;
+  }
+  if (this->datasrc_pipeline != nullptr) {
+    gst_object_unref(GST_OBJECT(this->datasrc_pipeline));
+    this->datasrc_pipeline = nullptr;
+    log("Stopping pipeline.\n");
+  }
+
+  this->pipeline_cleaned_up.store(true, std::memory_order_release);
 }
 
 void encode::pipeline_build_source()
@@ -373,6 +410,7 @@ void encode::build_pipeline()
 
 void encode::parse_pipeline()
 {
+  std::lock_guard<std::mutex> guard(this->pipeline_mutex);
   this->datasrc_pipeline = nullptr;
   GError* error = nullptr;
 
@@ -385,6 +423,7 @@ void encode::parse_pipeline()
   }
   if (this->datasrc_pipeline == nullptr) {
     log("*** Bad datasrc_pipeline ***\n");
+    return;
   }
 
   this->video_encoder =
@@ -395,19 +434,31 @@ void encode::parse_pipeline()
       gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), "audio_sink");
 
   this->bus = gst_element_get_bus(this->datasrc_pipeline);
+  this->pipeline_cleaned_up.store(false, std::memory_order_release);
 }
 
 void encode::play_pipeline()
 {
   encoder_running = true;
-  std::chrono::milliseconds duration(1);
-  while (run_flag && *run_flag) {
-    GstMessage* msg = gst_bus_timed_pop(this->bus, GST_MSECOND);
+  const std::chrono::milliseconds duration(1);
+  while (run_flag && run_flag->load() && encoder_running.load()) {
+    GstBus* local_bus = nullptr;
+    {
+      std::lock_guard<std::mutex> guard(this->pipeline_mutex);
+      if (this->bus != nullptr) {
+        local_bus = this->bus;
+        gst_object_ref(local_bus);
+      }
+    }
+    if (local_bus == nullptr) {
+      break;
+    }
+    GstMessage* msg = gst_bus_timed_pop(local_bus, GST_MSECOND);
+    gst_object_unref(local_bus);
     if (msg != nullptr) {
       this->handle_gstreamer_message(msg);
       gst_message_unref(msg);
     } else {
-      std::this_thread::yield();
       std::this_thread::sleep_for(duration);
     }
   }
@@ -417,9 +468,16 @@ void encode::run_encode_thread()
 {
   this->build_pipeline();
   this->parse_pipeline();
+  if (this->datasrc_pipeline == nullptr) {
+    log("Refusing to start: pipeline failed to parse.\n");
+    return;
+  }
   log("Playing pipeline.\n");
+  if (this->run_flag) {
+    *this->run_flag = true;
+  }
   gst_element_set_state(this->datasrc_pipeline, GST_STATE_PLAYING);
-  threads.emplace_back([&] { play_pipeline(); });
+  threads.emplace_back([this] { play_pipeline(); });
 }
 
 void encode::stop_encode_thread()
@@ -427,25 +485,16 @@ void encode::stop_encode_thread()
   if (this->run_flag) {
     *this->run_flag = false;
   }
+  this->encoder_running = false;
 
   for (auto& t : this->threads) {
     if (t.joinable()) {
       t.join();
     }
   }
+  this->threads.clear();
 
-  this->encoder_running = false;
-
-  if (this->datasrc_pipeline != nullptr && !this->pipeline_cleaned_up) {
-    gst_element_set_state(this->datasrc_pipeline, GST_STATE_NULL);
-    gst_object_unref(GST_OBJECT(this->datasrc_pipeline));
-    gst_object_unref(this->bus);
-    log("Stopping pipeline.\n");
-    this->datasrc_pipeline = nullptr;
-    this->bus = nullptr;
-  }
-
-  this->pipeline_cleaned_up = true;
+  this->clear_pipeline_state();
 }
 
 void encode::handle_gst_message_error(GstMessage* message)
@@ -486,57 +535,108 @@ void encode::handle_gstreamer_message(GstMessage* message)
 
 auto encode::pull_video_buffer() -> buffer_data
 {
-  GstSample* sample = gst_app_sink_pull_sample(GST_APP_SINK(this->video_sink));
-  GstBuffer* buffer = gst_sample_get_buffer(sample);
-
-  if (buffer != nullptr) {
-    GstMapInfo info;
-    gst_buffer_map(buffer, &info, GST_MAP_READ);
-    gpointer raw = nullptr;
-    gsize raw_size = 0;
-    gst_buffer_extract_dup(buffer, 0, info.size, &raw, &raw_size);
-    gst_buffer_unmap(buffer, &info);
-    gst_sample_unref(sample);
-    buffer_data result;
-    result.buf_size = raw_size;
-    result.buf_data = std::vector<uint8_t>(
-        static_cast<uint8_t*>(raw), static_cast<uint8_t*>(raw) + raw_size);
-    g_free(raw);
-    return result;
+  GstElement* sink = nullptr;
+  {
+    std::lock_guard<std::mutex> guard(this->pipeline_mutex);
+    sink = this->video_sink;
+    if (sink != nullptr) {
+      gst_object_ref(sink);
+    }
+  }
+  if (sink == nullptr) {
+    return buffer_data {};
   }
 
+  GstSample* sample = gst_app_sink_pull_sample(GST_APP_SINK(sink));
+  gst_object_unref(sink);
+
+  if (sample == nullptr) {
+    return buffer_data {};
+  }
+  GstBuffer* buffer = gst_sample_get_buffer(sample);
+  if (buffer == nullptr) {
+    gst_sample_unref(sample);
+    return buffer_data {};
+  }
+
+  GstMapInfo info;
+  if (gst_buffer_map(buffer, &info, GST_MAP_READ) == 0) {
+    gst_sample_unref(sample);
+    return buffer_data {};
+  }
+  gpointer raw = nullptr;
+  gsize raw_size = 0;
+  gst_buffer_extract_dup(buffer, 0, info.size, &raw, &raw_size);
+  gst_buffer_unmap(buffer, &info);
   gst_sample_unref(sample);
-  return buffer_data {};
+
+  buffer_data result;
+  result.buf_size = raw_size;
+  if (raw != nullptr && raw_size > 0) {
+    result.buf_data = std::vector<uint8_t>(
+        static_cast<uint8_t*>(raw), static_cast<uint8_t*>(raw) + raw_size);
+  }
+  g_free(raw);
+  return result;
 }
 
 auto encode::pull_audio_buffer() -> buffer_data
 {
-  GstSample* sample = gst_app_sink_pull_sample(GST_APP_SINK(this->audio_sink));
-  GstBuffer* buffer = gst_sample_get_buffer(sample);
-
-  if (buffer != nullptr) {
-    GstMapInfo info;
-    gst_buffer_map(buffer, &info, GST_MAP_READ);
-    gpointer raw = nullptr;
-    gsize raw_size = 0;
-    gst_buffer_extract_dup(buffer, 0, info.size, &raw, &raw_size);
-    gst_buffer_unmap(buffer, &info);
-    gst_sample_unref(sample);
-    buffer_data result;
-    result.buf_size = raw_size;
-    result.buf_data = std::vector<uint8_t>(
-        static_cast<uint8_t*>(raw), static_cast<uint8_t*>(raw) + raw_size);
-    g_free(raw);
-    return result;
+  GstElement* sink = nullptr;
+  {
+    std::lock_guard<std::mutex> guard(this->pipeline_mutex);
+    sink = this->audio_sink;
+    if (sink != nullptr) {
+      gst_object_ref(sink);
+    }
+  }
+  if (sink == nullptr) {
+    return buffer_data {};
   }
 
+  GstSample* sample = gst_app_sink_pull_sample(GST_APP_SINK(sink));
+  gst_object_unref(sink);
+
+  if (sample == nullptr) {
+    return buffer_data {};
+  }
+  GstBuffer* buffer = gst_sample_get_buffer(sample);
+  if (buffer == nullptr) {
+    gst_sample_unref(sample);
+    return buffer_data {};
+  }
+
+  GstMapInfo info;
+  if (gst_buffer_map(buffer, &info, GST_MAP_READ) == 0) {
+    gst_sample_unref(sample);
+    return buffer_data {};
+  }
+  gpointer raw = nullptr;
+  gsize raw_size = 0;
+  gst_buffer_extract_dup(buffer, 0, info.size, &raw, &raw_size);
+  gst_buffer_unmap(buffer, &info);
   gst_sample_unref(sample);
-  return buffer_data {};
+
+  buffer_data result;
+  result.buf_size = raw_size;
+  if (raw != nullptr && raw_size > 0) {
+    result.buf_data = std::vector<uint8_t>(
+        static_cast<uint8_t*>(raw), static_cast<uint8_t*>(raw) + raw_size);
+  }
+  g_free(raw);
+  return result;
 }
 
 void encode::set_encode_bitrate(int new_bitrate)
 {
-  g_object_set(G_OBJECT(this->video_encoder), "bitrate", new_bitrate, NULL);
+  if (new_bitrate <= 0) {
+    return;
+  }
+  std::lock_guard<std::mutex> guard(this->pipeline_mutex);
+  if (this->video_encoder == nullptr) {
+    return;
+  }
+  g_object_set(G_OBJECT(this->video_encoder), "bitrate", new_bitrate, nullptr);
 }
 
 void encode::log(const std::string& msg) const

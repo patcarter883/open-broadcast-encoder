@@ -11,3 +11,4 @@
 | 007 | Split output_config address into host/port (Tech Debt 7) | 2026-05-02 | passed | [007-split-output-config-address](./007-split-output-config-address/) |
 | 008 | Add test source input (videotestsrc smptebars) | 2026-05-02 | passed | [008-test-source-input](./008-test-source-input/) |
 | 009 | Add preview input support for test source, mpegts, sdp | 2026-05-02 | passed | [009-add-preview-for-test-mpegts-sdp](./009-add-preview-for-test-mpegts-sdp/) |
+| 010 | Add close application button | 2026-05-02 | passed | [010-add-close-button](./010-add-close-button/) |

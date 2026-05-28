@@ -1,3 +1,5 @@
+#include <cmath>
+#include <mutex>
 #include <numeric>
 #include <string>
 
@@ -9,33 +11,48 @@ auto stats::scale_encoder_bitrate(double quality,
                                   cumulative_stats* stats,
                                   const encode_config& encode_config) -> bool
 {
+  if (stats == nullptr) {
+    return false;
+  }
+  if (encode_config.bitrate <= 0) {
+    return false;
+  }
+  if (std::isnan(quality) || std::isinf(quality)) {
+    return false;
+  }
+
+  std::lock_guard<std::mutex> guard(stats->mutex);
+
   int bitrateDelta = 0;
-  double qualDiffPct;
-  int adjBitrate;
-  double maxBitrate = static_cast<double>(encode_config.bitrate);
+  double qualDiffPct = 0.0;
+  int adjBitrate = 0;
+  const double maxBitrate = static_cast<double>(encode_config.bitrate);
   bool returnVal = false;
 
-  if (stats->previous_quality > 0
-      && (int)quality != (int)stats->previous_quality)
+  if (stats->previous_quality > 0.0
+      && static_cast<int>(quality) != static_cast<int>(stats->previous_quality))
   {
     qualDiffPct = quality / stats->previous_quality;
-    adjBitrate = (int)(stats->current_bitrate * qualDiffPct);
+    adjBitrate = static_cast<int>(stats->current_bitrate * qualDiffPct);
     bitrateDelta = adjBitrate - stats->current_bitrate;
   }
 
   if (static_cast<int>(stats->previous_quality) == 100
       && static_cast<int>(quality) == 100
-      && stats->current_bitrate < maxBitrate)
+      && static_cast<double>(stats->current_bitrate) < maxBitrate
+      && maxBitrate > 0.0)
   {
-    qualDiffPct = (stats->current_bitrate / maxBitrate);
-    adjBitrate = (int)(stats->current_bitrate * (1 + qualDiffPct));
+    qualDiffPct = static_cast<double>(stats->current_bitrate) / maxBitrate;
+    adjBitrate = static_cast<int>(stats->current_bitrate * (1.0 + qualDiffPct));
     bitrateDelta = adjBitrate - stats->current_bitrate;
   }
 
-  if (bitrateDelta != 0 || maxBitrate < stats->current_bitrate) {
-    int newBitrate = std::max(
-        std::min(stats->current_bitrate += bitrateDelta / 2, (int)maxBitrate),
-        static_cast<const int>(1000));
+  if (bitrateDelta != 0
+      || maxBitrate < static_cast<double>(stats->current_bitrate))
+  {
+    int candidate = stats->current_bitrate + bitrateDelta / 2;
+    int newBitrate =
+        std::max(std::min(candidate, static_cast<int>(maxBitrate)), 1000);
     stats->current_bitrate = newBitrate;
     returnVal = true;
   }
@@ -50,6 +67,10 @@ auto stats::got_rist_statistics(const rist_stats& statistics,
                                 const encode_config& encode_config,
                                 user_interface& ui) -> bool
 {
+  if (stats == nullptr) {
+    return false;
+  }
+
   bool returnVal = false;
 
   if (encode_config.scaling_source == bitrate_source::local) {
@@ -57,40 +78,60 @@ auto stats::got_rist_statistics(const rist_stats& statistics,
         statistics.stats.sender_peer.quality, stats, encode_config);
   }
 
-  stats->bandwidth.push_back(statistics.stats.sender_peer.bandwidth);
-  if (stats->bandwidth.size() > 1000)
-    stats->bandwidth.erase(stats->bandwidth.begin());
-  stats->encode_bitrate.push_back(stats->current_bitrate);
-  if (stats->encode_bitrate.size() > 1000)
-    stats->encode_bitrate.erase(stats->encode_bitrate.begin());
-  stats->retransmitted_packets.push_back(
-      statistics.stats.sender_peer.retransmitted);
-  if (stats->retransmitted_packets.size() > 1000)
-    stats->retransmitted_packets.erase(stats->retransmitted_packets.begin());
-  stats->total_packets.push_back(statistics.stats.sender_peer.sent);
-  if (stats->total_packets.size() > 1000)
-    stats->total_packets.erase(stats->total_packets.begin());
+  // Snapshot for UI display so we don't hold the stats lock across FLTK calls.
+  int bandwidth_snapshot = 0;
+  int bandwidth_avg_snapshot = 0;
+  int encode_bitrate_avg_snapshot = 0;
+  int retransmitted_sum_snapshot = 0;
+  int total_packets_sum_snapshot = 0;
 
-  stats->bandwidth_avg = std::accumulate(stats->bandwidth.begin(),
-                                         stats->bandwidth.end(),
-                                         0,
-                                         [n = 0](auto cma, auto i) mutable
-                                         { return cma + (i - cma) / ++n; });
-  stats->encode_bitrate_avg = std::accumulate(
-      stats->encode_bitrate.begin(),
-      stats->encode_bitrate.end(),
-      0,
-      [n = 0](auto cma, auto i) mutable { return cma + (i - cma) / ++n; });
-  stats->retransmitted_packets_sum =
-      std::accumulate(stats->retransmitted_packets.begin(),
-                      stats->retransmitted_packets.end(),
-                      0);
-  stats->total_packets_sum = std::accumulate(
-      stats->total_packets.begin(), stats->total_packets.end(), 0);
+  {
+    std::lock_guard<std::mutex> guard(stats->mutex);
+
+    stats->bandwidth.push_back(statistics.stats.sender_peer.bandwidth);
+    if (stats->bandwidth.size() > 1000) {
+      stats->bandwidth.pop_front();
+    }
+    stats->encode_bitrate.push_back(stats->current_bitrate);
+    if (stats->encode_bitrate.size() > 1000) {
+      stats->encode_bitrate.pop_front();
+    }
+    stats->retransmitted_packets.push_back(
+        statistics.stats.sender_peer.retransmitted);
+    if (stats->retransmitted_packets.size() > 1000) {
+      stats->retransmitted_packets.pop_front();
+    }
+    stats->total_packets.push_back(statistics.stats.sender_peer.sent);
+    if (stats->total_packets.size() > 1000) {
+      stats->total_packets.pop_front();
+    }
+
+    stats->bandwidth_avg = std::accumulate(stats->bandwidth.begin(),
+                                           stats->bandwidth.end(),
+                                           0,
+                                           [n = 0](auto cma, auto i) mutable
+                                           { return cma + (i - cma) / ++n; });
+    stats->encode_bitrate_avg = std::accumulate(
+        stats->encode_bitrate.begin(),
+        stats->encode_bitrate.end(),
+        0,
+        [n = 0](auto cma, auto i) mutable { return cma + (i - cma) / ++n; });
+    stats->retransmitted_packets_sum =
+        std::accumulate(stats->retransmitted_packets.begin(),
+                        stats->retransmitted_packets.end(),
+                        0);
+    stats->total_packets_sum = std::accumulate(
+        stats->total_packets.begin(), stats->total_packets.end(), 0);
+
+    bandwidth_snapshot = statistics.stats.sender_peer.bandwidth;
+    bandwidth_avg_snapshot = stats->bandwidth_avg;
+    encode_bitrate_avg_snapshot = stats->encode_bitrate_avg;
+    retransmitted_sum_snapshot = stats->retransmitted_packets_sum;
+    total_packets_sum_snapshot = stats->total_packets_sum;
+  }
 
   ui.lock();
-  ui.bandwidth_output->value(
-      std::to_string(statistics.stats.sender_peer.bandwidth / 1000).c_str());
+  ui.bandwidth_output->value(std::to_string(bandwidth_snapshot / 1000).c_str());
   ui.link_quality_output->value(
       std::to_string(statistics.stats.sender_peer.quality).c_str());
   ui.total_packets_output->value(
@@ -103,13 +144,13 @@ auto stats::got_rist_statistics(const rist_stats& statistics,
       std::to_string(encode_config.bitrate).c_str());
 
   ui.cumulative_bandwidth_output->value(
-      std::to_string(stats->bandwidth_avg / 1000).c_str());
+      std::to_string(bandwidth_avg_snapshot / 1000).c_str());
   ui.cumulative_encode_bitrate_output->value(
-      std::to_string(stats->encode_bitrate_avg).c_str());
+      std::to_string(encode_bitrate_avg_snapshot).c_str());
   ui.cumulative_retransmitted_packets_output->value(
-      std::to_string(stats->retransmitted_packets_sum).c_str());
+      std::to_string(retransmitted_sum_snapshot).c_str());
   ui.cumulative_total_packets_output->value(
-      std::to_string(stats->total_packets_sum).c_str());
+      std::to_string(total_packets_sum_snapshot).c_str());
 
   ui.unlock();
 

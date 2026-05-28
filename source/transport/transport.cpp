@@ -1,6 +1,9 @@
+#include <algorithm>
+#include <chrono>
 #include <format>
 #include <functional>
 #include <memory>
+#include <thread>
 #include <vector>
 
 #include "transport/transport.h"
@@ -19,6 +22,9 @@ transport::transport()
 
 transport::~transport()
 {
+  this->statistics_callback = nullptr;
+  this->oob_callback = nullptr;
+  this->wait_callbacks_drained();
   this->rist_sender->closeAllClientConnections();
   this->rist_sender->destroySender();
 }
@@ -36,17 +42,27 @@ void transport::set_statistics_callback(
   this->statistics_callback = statistics_callback_func;
 }
 
-void transport::set_oob_callback(
-    void (*oob_callback_func)(const uint8_t*, size_t))
+void transport::set_oob_callback(void (*oob_callback_func)(const uint8_t*,
+                                                           size_t))
 {
   this->oob_callback = oob_callback_func;
 }
 
+void transport::wait_callbacks_drained()
+{
+  while (this->in_flight_callbacks.load(std::memory_order_acquire) > 0) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+}
+
 void transport::stats_cb_func(const rist_stats& stats)
 {
-  if (this->statistics_callback != nullptr) {
-    this->statistics_callback(stats);
+  this->in_flight_callbacks.fetch_add(1, std::memory_order_acq_rel);
+  auto* cb = this->statistics_callback;
+  if (cb != nullptr) {
+    cb(stats);
   }
+  this->in_flight_callbacks.fetch_sub(1, std::memory_order_acq_rel);
 }
 
 void transport::oob_cb_func(
@@ -55,13 +71,27 @@ void transport::oob_cb_func(
     std::shared_ptr<RISTNetSender::NetworkConnection>& /*connection*/,
     rist_peer* /*peer*/)
 {
-  if (this->oob_callback != nullptr) {
-    this->oob_callback(buf, size);
+  this->in_flight_callbacks.fetch_add(1, std::memory_order_acq_rel);
+  auto* cb = this->oob_callback;
+  if (cb != nullptr) {
+    cb(buf, size);
   }
+  this->in_flight_callbacks.fetch_sub(1, std::memory_order_acq_rel);
 }
 
 void transport::setup_rist_sender(output_config& output_c)
 {
+  if (output_c.streams < 1) {
+    output_c.streams = 1;
+  }
+  output_c.port = std::clamp(output_c.port, 1, 65535);
+  if (output_c.bandwidth < 100) {
+    output_c.bandwidth = 100;
+  }
+  if (output_c.host.empty()) {
+    output_c.host = "127.0.0.1";
+  }
+
   RISTNetSender::RISTNetSenderSettings my_send_configuration;
 
   std::vector<std::tuple<string, int>> interface_list_sender;

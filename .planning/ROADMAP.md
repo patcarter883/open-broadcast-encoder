@@ -6,7 +6,7 @@ Phase 1 fixes critical stability bugs that prevent the encoder from producing va
 
 ## Phases (Status Legend: [ ] not started, [-] in progress, [x] complete)
 
-- [ ] **Phase 1: Memory Safety & Codec Correctness** - Fix use-after-free, dangling pointer, and wrong GStreamer elements
+- [-] **Phase 1: Memory Safety & Codec Correctness** - Fix use-after-free, dangling pointer, and wrong GStreamer elements
 - [ ] **Phase 2: Threading Compliance** - Wrap all UI updates in FLTK locks, verify with thread sanitizer
 
 ## Phase Details
@@ -14,7 +14,7 @@ Phase 1 fixes critical stability bugs that prevent the encoder from producing va
 ### Phase 1: Memory Safety & Codec Correctness
 
 **Goal**: Fix critical bugs that produce corrupted video and crash the application
-**Status**: [ ]
+**Status**: [-]
 **Requirements**: BUG-01, BUG-02, BUG-03, BUG-04, BUG-05
 **Success Criteria**:
 1. [Observable] `pull_video_buffer()` returns copied buffer data (not dangling pointer to unmapped memory)

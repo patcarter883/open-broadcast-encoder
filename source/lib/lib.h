@@ -4,12 +4,13 @@
 #include <deque>
 #include <exception>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
-struct encode;
-struct transport;
+class encode;
+class transport;
 struct ndi_input;
 class user_interface;
 
@@ -59,6 +60,9 @@ static_assert(sizeof(wan_telemetry) == 5,
 
 struct cumulative_stats
 {
+  // Guards every member below. Held by the RIST stats thread when writing the
+  // deques/aggregates and by readers (UI, scaling logic) when reading them.
+  mutable std::mutex mutex;
   std::deque<int> bandwidth;
   std::deque<int> retransmitted_packets;
   std::deque<int> total_packets;
@@ -114,6 +118,9 @@ inline std::pair<std::string, int> parse_address(const std::string& addr)
   std::string p = addr.substr(colon + 1);
   try {
     int port = std::stoi(p);
+    if (port < 1 || port > 65535) {
+      return {h, 5000};
+    }
     return {h, port};
   } catch (...) {
     return {h, 5000};
@@ -122,16 +129,15 @@ inline std::pair<std::string, int> parse_address(const std::string& addr)
 
 struct library
 {
-  /**
-   * @brief Simply initializes the name member to the name of the project
-   */
   library() noexcept;
-
-  // std::future<void> input_thread_future;
-  // std::future<void> encode_thread_future;
-  // std::future<void> transport_thread_future;
+  ~library();
+  library(const library&) = delete;
+  library& operator=(const library&) = delete;
+  library(library&&) = delete;
+  library& operator=(library&&) = delete;
 
   std::atomic_bool is_running {false};
+  std::atomic_bool preview_running {false};
   std::shared_ptr<std::atomic<bool>> run_flag;
 
   std::vector<std::thread> threads;
@@ -142,7 +148,9 @@ struct library
 
   cumulative_stats stats;
 
-  std::shared_ptr<encode> encoder_ptr;
+  // Accessed concurrently from the main thread (run_loop), stop(), and RIST
+  // callback threads. C++20 std::atomic<shared_ptr> serialises the swap.
+  std::atomic<std::shared_ptr<encode>> encoder_ptr;
 
   void log_append(const std::string& msg) const;
 };

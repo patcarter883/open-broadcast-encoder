@@ -1,4 +1,5 @@
-#include <arpa/inet.h>
+#include <atomic>
+#include <chrono>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -6,10 +7,10 @@
 #include <string>
 #include <thread>
 
+#include <arpa/inet.h>
 #include <gst/gst.h>
 #include <gst/video/video.h>
 
-// #include "common.h"
 #include "encode.h"
 #include "lib.h"
 #include "ndi_input.h"
@@ -41,11 +42,11 @@ static void refresh_ndi_devices()
   }
 }
 
-static auto rist_log_cb(void* arg,
-                        enum rist_log_level log_level,
+static auto rist_log_cb(void* /*arg*/,
+                        enum rist_log_level /*log_level*/,
                         const char* msg) -> int
 {
-  if (ctx.ui != nullptr) {
+  if (ctx.ui != nullptr && msg != nullptr) {
     ctx.ui->transport_log_append(msg);
   }
   return 1;
@@ -53,26 +54,40 @@ static auto rist_log_cb(void* arg,
 
 static auto rist_stats_cb(const rist_stats& stats)
 {
-  if (stats::got_rist_statistics(
-          stats, &ctx.lib.stats, ctx.lib.encode_cfg, *ctx.ui))
+  if (ctx.ui == nullptr) {
+    return;
+  }
+  auto encoder_snapshot = ctx.lib.encoder_ptr.load();
+  int new_bitrate = 0;
+  bool should_update = false;
   {
-    if (ctx.lib.encoder_ptr != nullptr) {
-      ctx.lib.encoder_ptr->set_encode_bitrate(ctx.lib.stats.current_bitrate);
+    if (stats::got_rist_statistics(
+            stats, &ctx.lib.stats, ctx.lib.encode_cfg, *ctx.ui))
+    {
+      std::lock_guard<std::mutex> guard(ctx.lib.stats.mutex);
+      new_bitrate = ctx.lib.stats.current_bitrate;
+      should_update = true;
     }
+  }
+  if (should_update && encoder_snapshot) {
+    encoder_snapshot->set_encode_bitrate(new_bitrate);
   }
 }
 
 static void rist_oob_cb(const uint8_t* data, size_t size)
 {
-  if (size != sizeof(wan_telemetry)) {
+  if (size != sizeof(wan_telemetry) || data == nullptr) {
     return;
   }
   wan_telemetry tel;
   std::memcpy(&tel, data, sizeof(tel));
   const uint32_t rtt_ms = ntohl(tel.worst_case_rtt);
 
-  ctx.lib.stats.wan_quality = tel.link_quality;
-  ctx.lib.stats.wan_rtt = rtt_ms;
+  {
+    std::lock_guard<std::mutex> guard(ctx.lib.stats.mutex);
+    ctx.lib.stats.wan_quality = tel.link_quality;
+    ctx.lib.stats.wan_rtt = rtt_ms;
+  }
 
   if (ctx.ui != nullptr) {
     ctx.ui->lock();
@@ -81,35 +96,52 @@ static void rist_oob_cb(const uint8_t* data, size_t size)
     ctx.ui->unlock();
   }
 
-  if (ctx.lib.encode_cfg.scaling_source == bitrate_source::remote_oob) {
-    if (stats::scale_encoder_bitrate(
-            static_cast<double>(tel.link_quality),
-            &ctx.lib.stats,
-            ctx.lib.encode_cfg))
-    {
-      if (ctx.lib.encoder_ptr != nullptr) {
-        ctx.lib.encoder_ptr->set_encode_bitrate(ctx.lib.stats.current_bitrate);
-      }
-    }
+  if (ctx.lib.encode_cfg.scaling_source != bitrate_source::remote_oob) {
+    return;
+  }
+
+  auto encoder_snapshot = ctx.lib.encoder_ptr.load();
+  int new_bitrate = 0;
+  bool should_update = false;
+  if (stats::scale_encoder_bitrate(static_cast<double>(tel.link_quality),
+                                   &ctx.lib.stats,
+                                   ctx.lib.encode_cfg))
+  {
+    std::lock_guard<std::mutex> guard(ctx.lib.stats.mutex);
+    new_bitrate = ctx.lib.stats.current_bitrate;
+    should_update = true;
+  }
+  if (should_update && encoder_snapshot) {
+    encoder_snapshot->set_encode_bitrate(new_bitrate);
   }
 }
 
 static void run_loop()
 {
   ctx.lib.is_running = true;
-  ctx.lib.stats.current_bitrate = ctx.lib.encode_cfg.bitrate;
-  ctx.lib.stats.previous_quality = 0.0;
-  ctx.lib.encoder_ptr = std::make_shared<encode>(
+  {
+    std::lock_guard<std::mutex> guard(ctx.lib.stats.mutex);
+    ctx.lib.stats.current_bitrate = ctx.lib.encode_cfg.bitrate;
+    ctx.lib.stats.previous_quality = 0.0;
+  }
+  auto encoder = std::make_shared<encode>(
       ctx.lib.input_cfg, ctx.lib.encode_cfg, ctx.lib.run_flag, &encode_log);
+  ctx.lib.encoder_ptr.store(encoder);
 
-  ctx.lib.encoder_ptr->run_encode_thread();
+  encoder->run_encode_thread();
 
-  ctx.transporter->set_statistics_callback(&rist_stats_cb);
+  if (ctx.transporter) {
+    ctx.transporter->set_statistics_callback(&rist_stats_cb);
+  }
 
-  while (ctx.lib.is_running) {
-    auto vidbuf = ctx.lib.encoder_ptr->pull_video_buffer();
-    if (!vidbuf.buf_data.empty()) {
+  while (ctx.lib.is_running.load(std::memory_order_acquire)) {
+    auto vidbuf = encoder->pull_video_buffer();
+    if (!vidbuf.buf_data.empty() && ctx.transporter) {
       ctx.transporter->send_buffer(vidbuf.buf_data, 0);
+    } else if (vidbuf.buf_data.empty()) {
+      // Pipeline torn down or returned no data; back off briefly to avoid
+      // spinning on a dead sink.
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
   }
 }
@@ -122,12 +154,21 @@ static void run()
 static void stop()
 {
   ctx.lib.is_running = false;
-  if (ctx.lib.encoder_ptr != nullptr) {
+  if (ctx.transporter) {
     ctx.transporter->set_statistics_callback(nullptr);
     ctx.transporter->set_oob_callback(nullptr);
-    ctx.lib.encoder_ptr->stop_encode_thread();
-    ctx.lib.encoder_ptr = nullptr;
+    ctx.transporter->wait_callbacks_drained();
   }
+  auto encoder = ctx.lib.encoder_ptr.exchange(nullptr);
+  if (encoder) {
+    encoder->stop_encode_thread();
+  }
+  for (auto& t : ctx.lib.threads) {
+    if (t.joinable()) {
+      t.join();
+    }
+  }
+  ctx.lib.threads.clear();
 }
 
 static void run_transport()
@@ -141,26 +182,31 @@ static void run_transport()
 
 static void scaling_source_changed()
 {
+  std::lock_guard<std::mutex> guard(ctx.lib.stats.mutex);
   ctx.lib.stats.previous_quality = 0.0;
   ctx.lib.stats.current_bitrate = ctx.lib.encode_cfg.bitrate;
 }
 
-static void run_preview_pipeline(std::string pipeline_str)
+static void run_preview_pipeline(const std::string& pipeline_str)
 {
   auto* pipeline = gst_parse_launch(pipeline_str.c_str(), nullptr);
-  if (!pipeline) {
+  if (pipeline == nullptr) {
     return;
   }
 
   auto* bus = gst_element_get_bus(pipeline);
   gst_element_set_state(pipeline, GST_STATE_PLAYING);
 
-  auto* msg = gst_bus_timed_pop_filtered(
-      bus,
-      GST_CLOCK_TIME_NONE,
-      static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_EOS));
-
-  if (msg != nullptr) {
+  ctx.lib.preview_running = true;
+  bool done = false;
+  while (!done && ctx.lib.preview_running.load(std::memory_order_acquire)) {
+    auto* msg = gst_bus_timed_pop_filtered(
+        bus,
+        static_cast<GstClockTime>(100 * GST_MSECOND),
+        static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_EOS));
+    if (msg == nullptr) {
+      continue;
+    }
     switch (GST_MESSAGE_TYPE(msg)) {
       case GST_MESSAGE_ERROR: {
         GError* err = nullptr;
@@ -178,11 +224,13 @@ static void run_preview_pipeline(std::string pipeline_str)
         break;
     }
     gst_message_unref(msg);
+    done = true;
   }
 
   gst_object_unref(bus);
   gst_element_set_state(pipeline, GST_STATE_NULL);
   gst_object_unref(pipeline);
+  ctx.lib.preview_running = false;
 }
 
 static void preview_input()
@@ -265,5 +313,19 @@ auto main(int argc, char** argv) -> int
                             &scaling_source_changed);
   ctx.ui->show(argc, argv);
   const int result = ctx.ui->run_ui();
+
+  // Tear down in reverse dependency order before the FLTK ui goes out of
+  // scope. Each component drains its own threads / callbacks.
+  stop();
+  ctx.lib.preview_running = false;
+  if (ctx.ndi) {
+    ctx.ndi->stop_preview();
+    ctx.ndi.reset();
+  }
+  if (ctx.transporter) {
+    ctx.transporter.reset();
+  }
+  ctx.ui = nullptr;
+
   return result;
 }

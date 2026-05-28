@@ -86,7 +86,7 @@ public:
   void encode_log_append(const std::string& msg) const;
   void init_ui();
   int run_ui();
-  void add_ndi_choices(std::vector<char*> choice_names);
+  void add_ndi_choices(const std::vector<std::string>& choice_names);
   void clear_ndi_choices();
   void lock();
   void unlock();
@@ -94,6 +94,9 @@ public:
 private:
   Fl_Text_Buffer transport_log_buffer;
   Fl_Text_Buffer encode_log_buffer;
+  // Owns the storage backing the user_data pointers attached to NDI
+  // Fl_Choice items so they remain valid for the lifetime of the choice.
+  std::vector<std::string> ndi_choice_storage;
   void choose_ndi_input(input_config* input_config);
   void choose_input_protocol(input_config* input_config,
                              FuncPtr refresh_ndi_funcptr);

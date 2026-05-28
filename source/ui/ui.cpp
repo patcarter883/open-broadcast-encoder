@@ -599,14 +599,16 @@ void user_interface::choose_input_protocol(input_config* input_config,
   }
 }
 
-void user_interface::add_ndi_choices(std::vector<char*> choice_names)
+void user_interface::add_ndi_choices(
+    const std::vector<std::string>& choice_names)
 {
   Fl::lock();
-  std::for_each(
-      choice_names.begin(),
-      choice_names.end(),
-      [&](char* choice_name)
-      { choice_ndi_input->add(choice_name, 0, nullptr, choice_name, 0); });
+  ndi_choice_storage.reserve(ndi_choice_storage.size() + choice_names.size());
+  for (const auto& name : choice_names) {
+    ndi_choice_storage.push_back(name);
+    char* user_data = ndi_choice_storage.back().data();
+    choice_ndi_input->add(user_data, 0, nullptr, user_data, 0);
+  }
 
   Fl::unlock();
   Fl::awake();
@@ -616,6 +618,7 @@ void user_interface::clear_ndi_choices()
 {
   Fl::lock();
   choice_ndi_input->clear();
+  ndi_choice_storage.clear();
   Fl::unlock();
   Fl::awake();
 }
@@ -628,7 +631,19 @@ void user_interface::choose_ndi_input(input_config* input_config)
 
 void user_interface::input_listen_port_cb(input_config* input_config)
 {
-  input_config->selected_input = input_listen_port->value();
+  const char* raw = input_listen_port->value();
+  if (raw == nullptr) {
+    return;
+  }
+  try {
+    int port = std::stoi(raw);
+    if (port < 1 || port > 65535) {
+      return;
+    }
+  } catch (...) {
+    return;
+  }
+  input_config->selected_input = raw;
 }
 
 void user_interface::input_rist_address_cb(output_config* output_config,
@@ -636,9 +651,14 @@ void user_interface::input_rist_address_cb(output_config* output_config,
 {
   output_config->address = input_rist_address->value();
   auto [h, p] = parse_address(output_config->address);
+  if (h.empty() || p < 1 || p > 65535) {
+    return;
+  }
   output_config->host = h;
   output_config->port = p;
-  input_rist_address_funcptr();
+  if (input_rist_address_funcptr != nullptr) {
+    input_rist_address_funcptr();
+  }
 }
 
 void user_interface::select_codec(encode_config* encode_config)
@@ -695,16 +715,15 @@ void user_interface::btn_preview_input_cb(FuncPtr preview_src_funcptr)
   preview_src_funcptr();
 }
 
-void user_interface::init_ui_callbacks(
-    input_config* input_c,
-    encode_config* encode_c,
-    output_config* output_c,
-    FuncPtr start_funcptr,
-    FuncPtr stop_funcptr,
-    FuncPtr ndi_refresh_funcptr,
-    FuncPtr input_rist_address_funcptr,
-    FuncPtr preview_src_funcptr,
-    FuncPtr scaling_source_changed_funcptr)
+void user_interface::init_ui_callbacks(input_config* input_c,
+                                       encode_config* encode_c,
+                                       output_config* output_c,
+                                       FuncPtr start_funcptr,
+                                       FuncPtr stop_funcptr,
+                                       FuncPtr ndi_refresh_funcptr,
+                                       FuncPtr input_rist_address_funcptr,
+                                       FuncPtr preview_src_funcptr,
+                                       FuncPtr scaling_source_changed_funcptr)
 {
   transport_log_display->buffer(transport_log_buffer);
   encode_log_display->buffer(encode_log_buffer);
