@@ -14,7 +14,7 @@ auto stats::scale_encoder_bitrate(double quality,
   if (stats == nullptr) {
     return false;
   }
-  if (encode_config.bitrate <= 0) {
+  if (encode_config.bitrate.load(std::memory_order_relaxed) <= 0) {
     return false;
   }
   if (std::isnan(quality) || std::isinf(quality)) {
@@ -26,7 +26,8 @@ auto stats::scale_encoder_bitrate(double quality,
   int bitrateDelta = 0;
   double qualDiffPct = 0.0;
   int adjBitrate = 0;
-  const double maxBitrate = static_cast<double>(encode_config.bitrate);
+  const double maxBitrate =
+      static_cast<double>(encode_config.bitrate.load(std::memory_order_relaxed));
   bool returnVal = false;
 
   if (stats->previous_quality > 0.0
@@ -73,7 +74,9 @@ auto stats::got_rist_statistics(const rist_stats& statistics,
 
   bool returnVal = false;
 
-  if (encode_config.scaling_source == bitrate_source::local) {
+  if (encode_config.scaling_source.load(std::memory_order_relaxed)
+      == bitrate_source::local)
+  {
     returnVal = scale_encoder_bitrate(
         statistics.stats.sender_peer.quality, stats, encode_config);
   }
@@ -141,7 +144,8 @@ auto stats::got_rist_statistics(const rist_stats& statistics,
   ui.rtt_output->value(
       std::to_string(statistics.stats.sender_peer.rtt).c_str());
   ui.encode_bitrate_output->value(
-      std::to_string(encode_config.bitrate).c_str());
+      std::to_string(encode_config.bitrate.load(std::memory_order_relaxed))
+          .c_str());
 
   ui.cumulative_bandwidth_output->value(
       std::to_string(bandwidth_avg_snapshot / 1000).c_str());

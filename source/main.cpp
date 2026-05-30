@@ -96,7 +96,9 @@ static void rist_oob_cb(const uint8_t* data, size_t size)
     ctx.ui->unlock();
   }
 
-  if (ctx.lib.encode_cfg.scaling_source != bitrate_source::remote_oob) {
+  if (ctx.lib.encode_cfg.scaling_source.load(std::memory_order_relaxed)
+      != bitrate_source::remote_oob)
+  {
     return;
   }
 
@@ -121,7 +123,8 @@ static void run_loop()
   ctx.lib.is_running = true;
   {
     std::lock_guard<std::mutex> guard(ctx.lib.stats.mutex);
-    ctx.lib.stats.current_bitrate = ctx.lib.encode_cfg.bitrate;
+    ctx.lib.stats.current_bitrate =
+        ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
     ctx.lib.stats.previous_quality = 0.0;
   }
   auto encoder = std::make_shared<encode>(
@@ -183,7 +186,8 @@ static void scaling_source_changed()
 {
   std::lock_guard<std::mutex> guard(ctx.lib.stats.mutex);
   ctx.lib.stats.previous_quality = 0.0;
-  ctx.lib.stats.current_bitrate = ctx.lib.encode_cfg.bitrate;
+  ctx.lib.stats.current_bitrate =
+      ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
 }
 
 static void run_preview_pipeline(const std::string& pipeline_str)

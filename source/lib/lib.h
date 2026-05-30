@@ -87,8 +87,8 @@ struct encode_config
 {
   codec selected_codec = codec::h264;
   encoder selected_encoder = encoder::software;
-  int bitrate = 4300;
-  bitrate_source scaling_source = bitrate_source::local;
+  std::atomic<int> bitrate {4300};
+  std::atomic<bitrate_source> scaling_source {bitrate_source::local};
 };
 
 struct output_config
@@ -107,9 +107,14 @@ struct output_config
 
 inline std::pair<std::string, int> parse_address(const std::string& addr)
 {
+  // Note: IPv6 addresses must use the bracketed [host]:port form for the
+  // port to parse; a bare IPv6 literal will be treated as host-only below.
   auto colon = addr.find(':');
   if (colon == std::string::npos) {
-    return {"127.0.0.1", 5000};
+    if (addr.empty()) {
+      return {"127.0.0.1", 5000};
+    }
+    return {addr, 5000};
   }
   std::string h = addr.substr(0, colon);
   if (h.empty()) {

@@ -681,7 +681,8 @@ void user_interface::select_bitrate_source(
 {
   auto user_data =
       reinterpret_cast<uintptr_t>(choice_bitrate_source->mvalue()->user_data());
-  encode_config->scaling_source = static_cast<bitrate_source>(user_data);
+  encode_config->scaling_source.store(static_cast<bitrate_source>(user_data),
+                                      std::memory_order_relaxed);
   if (scaling_source_changed_funcptr != nullptr) {
     scaling_source_changed_funcptr();
   }
