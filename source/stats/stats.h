@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <deque>
 
 #include "RISTNet.h"
 #include "lib/lib.h"
@@ -17,4 +19,14 @@ public:
   static bool scale_encoder_bitrate(double quality,
                                     cumulative_stats* stats,
                                     const encode_config& encode_config);
+
+  static inline void push_bounded(std::deque<int>& d,
+                                  int value,
+                                  std::size_t cap = 1000)
+  {
+    d.push_back(value);
+    if (d.size() > cap) {
+      d.pop_front();
+    }
+  }
 };

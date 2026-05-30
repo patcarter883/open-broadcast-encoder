@@ -91,23 +91,13 @@ auto stats::got_rist_statistics(const rist_stats& statistics,
   {
     std::lock_guard<std::mutex> guard(stats->mutex);
 
-    stats->bandwidth.push_back(statistics.stats.sender_peer.bandwidth);
-    if (stats->bandwidth.size() > 1000) {
-      stats->bandwidth.pop_front();
-    }
-    stats->encode_bitrate.push_back(stats->current_bitrate);
-    if (stats->encode_bitrate.size() > 1000) {
-      stats->encode_bitrate.pop_front();
-    }
-    stats->retransmitted_packets.push_back(
-        statistics.stats.sender_peer.retransmitted);
-    if (stats->retransmitted_packets.size() > 1000) {
-      stats->retransmitted_packets.pop_front();
-    }
-    stats->total_packets.push_back(statistics.stats.sender_peer.sent);
-    if (stats->total_packets.size() > 1000) {
-      stats->total_packets.pop_front();
-    }
+    stats::push_bounded(stats->bandwidth,
+                        statistics.stats.sender_peer.bandwidth);
+    stats::push_bounded(stats->encode_bitrate, stats->current_bitrate);
+    stats::push_bounded(stats->retransmitted_packets,
+                        statistics.stats.sender_peer.retransmitted);
+    stats::push_bounded(stats->total_packets,
+                        statistics.stats.sender_peer.sent);
 
     stats->bandwidth_avg = std::accumulate(stats->bandwidth.begin(),
                                            stats->bandwidth.end(),
