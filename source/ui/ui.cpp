@@ -738,6 +738,14 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        FuncPtr,
                        ndi_refresh_funcptr);
 
+  // The protocol dropdown has no value until the user actively selects an
+  // item, leaving mvalue() == nullptr and selected_input_mode == none. In that
+  // state Preview/Start silently no-op. Default to the first item (Test Source)
+  // and sync the model so the buttons act on a real input mode out of the box.
+  // The option groups already default to hidden, which matches testsrc.
+  choice_input_protocol->value(select_test_input);
+  input_c->selected_input_mode = input_mode::testsrc;
+
   FL_METHOD_CALLBACK_1(choice_ndi_input,
                        user_interface,
                        this,
