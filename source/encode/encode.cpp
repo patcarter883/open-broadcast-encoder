@@ -1,5 +1,8 @@
 #include <chrono>
+#include <format>
 #include <mutex>
+#include <string>
+#include <string_view>
 #include <thread>
 
 #include "encode/encode.h"
@@ -177,195 +180,118 @@ void encode::pipeline_build_audio_encoder()
   this->pipeline_str += " avenc_aac ! aacparse ";
 }
 
+namespace
+{
+// Video-encoder fragment templates indexed by [encoder][codec].
+//
+// Row order follows enum class encoder: amd, qsv, nvenc, software.
+// Column order follows enum class codec: h264, h265, av1.
+//
+// Each template is byte-for-byte identical to the string the corresponding
+// pipeline_build_<vendor>_<codec>_encoder() function previously emitted
+// (including incidental double-spaces). The single "{}" is the bitrate.
+constexpr int kEncoderCount = 4;
+constexpr int kCodecCount = 3;
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+constexpr std::string_view kEncoderTemplates[kEncoderCount][kCodecCount] = {
+    // encoder::amd
+    {
+        // codec::h264
+        "amfh264enc name=videncoder  bitrate={} rate-control=cbr "
+        "usage=low-latency preset=quality pre-encode=true pa-hqmb-mode=auto ! "
+        "video/x-h264,framerate=60/1,profile=high ! h264parse "
+        "config-interval=1 ",
+        // codec::h265
+        "amfh265enc name=videncoder bitrate={} rate-control=cbr "
+        "usage=low-latency preset=quality pre-encode=true pa-hqmb-mode=auto ! "
+        "video/x-h265,framerate=60/1 ! h265parse config-interval=1 ",
+        // codec::av1
+        "amfav1enc name=videncoder bitrate={} rate-control=cbr "
+        "usage=low-latency preset=high-quality  pre-encode=true "
+        "pa-hqmb-mode=auto ! video/x-av1,framerate=60/1 "
+        "! av1parse ",
+    },
+    // encoder::qsv
+    {
+        // codec::h264
+        "qsvh264enc name=videncoder  bitrate={} rate-control=cbr "
+        "target-usage=1 ! video/x-h264,framerate=60/1  ! h264parse "
+        "config-interval=1 ",
+        // codec::h265
+        "qsvh265enc name=videncoder bitrate={} rate-control=cbr "
+        "target-usage=1 ! video/x-h265,framerate=60/1  ! h265parse "
+        "config-interval=1 ",
+        // codec::av1
+        "qsvav1enc name=videncoder bitrate={} rate-control=cbr "
+        "target-usage=1 gop-size=120 ! video/x-av1,framerate=60/1 ! av1parse ",
+    },
+    // encoder::nvenc
+    {
+        // codec::h264
+        "nvh264enc name=videncoder bitrate={} rc-mode=cbr-hq "
+        "preset=low-latency-hq ! h264parse config-interval=1 ",
+        // codec::h265
+        "nvh265enc name=videncoder bitrate={} rc-mode=cbr-hq "
+        "preset=low-latency-hq ! h265parse config-interval=1 ",
+        // codec::av1
+        "nvav1enc name=videncoder bitrate={} rc-mode=cbr preset=low-latency-hq "
+        "! av1parse config-interval=1 ",
+    },
+    // encoder::software
+    {
+        // codec::h264
+        "x264enc name=videncoder bitrate={} "
+        "speed-preset=fast tune=zerolatency ! h264parse config-interval=1 ",
+        // codec::h265
+        "x265enc name=videncoder bitrate={} "
+        "speed-preset=fast tune=zerolatency ! h265parse config-interval=1 ",
+        // codec::av1
+        "rav1enc name=videncoder bitrate={} speed-preset=8 tile-cols=2 "
+        "tile-rows=2 ! av1parse ",
+    },
+};
+}  // namespace
+
 void encode::pipeline_build_video_encoder()
 {
+  // Map encoder enum to a row, with unknown encoders falling back to software
+  // (matches the old pipeline_build_video_encoder default branch).
+  int enc_index = 0;
   switch (encode_c.selected_encoder) {
     case encoder::amd:
-      pipeline_build_amd_encoder();
+      enc_index = 0;
       break;
-
     case encoder::qsv:
-      pipeline_build_qsv_encoder();
+      enc_index = 1;
       break;
-
     case encoder::nvenc:
-      pipeline_build_nvenc_encoder();
+      enc_index = 2;
       break;
-
     default:
-      pipeline_build_software_encoder();
+      enc_index = 3;  // software
       break;
   }
-}
 
-void encode::pipeline_build_amd_encoder()
-{
+  // Map codec enum to a column, with the 'default' codec falling back to h264
+  // (matches the old per-vendor dispatcher default branch).
+  int codec_index = 0;
   switch (encode_c.selected_codec) {
     case codec::h265:
-      pipeline_build_amd_h265_encoder();
+      codec_index = 1;
       break;
-
     case codec::av1:
-      pipeline_build_amd_av1_encoder();
+      codec_index = 2;
       break;
-
     default:
-      pipeline_build_amd_h264_encoder();
+      codec_index = 0;  // h264
       break;
   }
-}
 
-void encode::pipeline_build_qsv_encoder()
-{
-  switch (encode_c.selected_codec) {
-    case codec::h265:
-      pipeline_build_qsv_h265_encoder();
-      break;
-
-    case codec::av1:
-      pipeline_build_qsv_av1_encoder();
-      break;
-
-    default:
-      pipeline_build_qsv_h264_encoder();
-      break;
-  }
-}
-
-void encode::pipeline_build_nvenc_encoder()
-{
-  switch (encode_c.selected_codec) {
-    case codec::h265:
-      pipeline_build_nvenc_h265_encoder();
-      break;
-
-    case codec::av1:
-      pipeline_build_nvenc_av1_encoder();
-      break;
-
-    default:
-      pipeline_build_nvenc_h264_encoder();
-      break;
-  }
-}
-
-void encode::pipeline_build_software_encoder()
-{
-  switch (encode_c.selected_codec) {
-    case codec::h265:
-      pipeline_build_software_h265_encoder();
-      break;
-
-    case codec::av1:
-      pipeline_build_software_av1_encoder();
-      break;
-
-    default:
-      pipeline_build_software_h264_encoder();
-      break;
-  }
-}
-
-void encode::pipeline_build_amd_h264_encoder()
-{
-  this->pipeline_str += std::format(
-      "amfh264enc name=videncoder  bitrate={} rate-control=cbr "
-      "usage=low-latency preset=quality pre-encode=true pa-hqmb-mode=auto ! "
-      "video/x-h264,framerate=60/1,profile=high ! h264parse config-interval=1 ",
-      encode_c.bitrate.load(std::memory_order_relaxed));
-}
-
-void encode::pipeline_build_amd_h265_encoder()
-{
-  this->pipeline_str += std::format(
-      "amfh265enc name=videncoder bitrate={} rate-control=cbr "
-      "usage=low-latency preset=quality pre-encode=true pa-hqmb-mode=auto ! "
-      "video/x-h265,framerate=60/1 ! h265parse config-interval=1 ",
-      encode_c.bitrate.load(std::memory_order_relaxed));
-}
-
-void encode::pipeline_build_amd_av1_encoder()
-{
-  this->pipeline_str += std::format(
-      "amfav1enc name=videncoder bitrate={} rate-control=cbr "
-      "usage=low-latency preset=high-quality  pre-encode=true "
-      "pa-hqmb-mode=auto ! video/x-av1,framerate=60/1 "
-      "! av1parse ",
-      encode_c.bitrate.load(std::memory_order_relaxed));
-}
-
-void encode::pipeline_build_qsv_h264_encoder()
-{
-  this->pipeline_str += std::format(
-      "qsvh264enc name=videncoder  bitrate={} rate-control=cbr "
-      "target-usage=1 ! video/x-h264,framerate=60/1  ! h264parse "
-      "config-interval=1 ",
-      encode_c.bitrate.load(std::memory_order_relaxed));
-}
-
-void encode::pipeline_build_qsv_h265_encoder()
-{
-  this->pipeline_str += std::format(
-      "qsvh265enc name=videncoder bitrate={} rate-control=cbr "
-      "target-usage=1 ! video/x-h265,framerate=60/1  ! h265parse "
-      "config-interval=1 ",
-      encode_c.bitrate.load(std::memory_order_relaxed));
-}
-
-void encode::pipeline_build_qsv_av1_encoder()
-{
-  this->pipeline_str += std::format(
-      "qsvav1enc name=videncoder bitrate={} rate-control=cbr "
-      "target-usage=1 gop-size=120 ! video/x-av1,framerate=60/1 ! av1parse ",
-      encode_c.bitrate.load(std::memory_order_relaxed));
-}
-
-void encode::pipeline_build_nvenc_h264_encoder()
-{
-  this->pipeline_str += std::format(
-      "nvh264enc name=videncoder bitrate={} rc-mode=cbr-hq "
-      "preset=low-latency-hq ! h264parse config-interval=1 ",
-      encode_c.bitrate.load(std::memory_order_relaxed));
-}
-
-void encode::pipeline_build_nvenc_h265_encoder()
-{
-  this->pipeline_str += std::format(
-      "nvh265enc name=videncoder bitrate={} rc-mode=cbr-hq "
-      "preset=low-latency-hq ! h265parse config-interval=1 ",
-      encode_c.bitrate.load(std::memory_order_relaxed));
-}
-
-void encode::pipeline_build_nvenc_av1_encoder()
-{
-  this->pipeline_str += std::format(
-      "nvav1enc name=videncoder bitrate={} rc-mode=cbr preset=low-latency-hq "
-      "! av1parse config-interval=1 ",
-      encode_c.bitrate.load(std::memory_order_relaxed));
-}
-
-void encode::pipeline_build_software_h264_encoder()
-{
-  this->pipeline_str += std::format(
-      "x264enc name=videncoder bitrate={} "
-      "speed-preset=fast tune=zerolatency ! h264parse config-interval=1 ",
-      encode_c.bitrate.load(std::memory_order_relaxed));
-}
-
-void encode::pipeline_build_software_h265_encoder()
-{
-  this->pipeline_str += std::format(
-      "x265enc name=videncoder bitrate={} "
-      "speed-preset=fast tune=zerolatency ! h265parse config-interval=1 ",
-      encode_c.bitrate.load(std::memory_order_relaxed));
-}
-
-void encode::pipeline_build_software_av1_encoder()
-{
-  this->pipeline_str += std::format(
-      "rav1enc name=videncoder bitrate={} speed-preset=8 tile-cols=2 "
-      "tile-rows=2 ! av1parse ",
-      encode_c.bitrate.load(std::memory_order_relaxed));
+  const std::string_view tmpl = kEncoderTemplates[enc_index][codec_index];
+  const int bitrate_value = encode_c.bitrate.load(std::memory_order_relaxed);
+  this->pipeline_str +=
+      std::vformat(tmpl, std::make_format_args(bitrate_value));
 }
 
 void encode::pipeline_build_audio_payloader()
