@@ -157,7 +157,6 @@ static void stop()
   if (ctx.transporter) {
     ctx.transporter->set_statistics_callback(nullptr);
     ctx.transporter->set_oob_callback(nullptr);
-    ctx.transporter->wait_callbacks_drained();
   }
   auto encoder = ctx.lib.encoder_ptr.exchange(nullptr);
   if (encoder) {

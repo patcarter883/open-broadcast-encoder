@@ -1,9 +1,7 @@
 #include <algorithm>
-#include <chrono>
 #include <format>
 #include <functional>
 #include <memory>
-#include <thread>
 #include <vector>
 
 #include "transport/transport.h"
@@ -20,13 +18,15 @@ transport::transport()
       std::bind_front(&transport::oob_cb_func, this);
 }
 
+// destroySender() joins the RIST sender_thread (the only thread dispatching the
+// stats/OOB callbacks), so destroying the sender before clearing the callbacks
+// is the race-free teardown order.
 transport::~transport()
 {
-  this->statistics_callback = nullptr;
-  this->oob_callback = nullptr;
-  this->wait_callbacks_drained();
   this->rist_sender->closeAllClientConnections();
   this->rist_sender->destroySender();
+  this->statistics_callback = nullptr;
+  this->oob_callback = nullptr;
 }
 
 void transport::set_log_callback(int (*log_callback_func)(void*,
@@ -48,21 +48,12 @@ void transport::set_oob_callback(void (*oob_callback_func)(const uint8_t*,
   this->oob_callback = oob_callback_func;
 }
 
-void transport::wait_callbacks_drained()
-{
-  while (this->in_flight_callbacks.load(std::memory_order_acquire) > 0) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
-}
-
 void transport::stats_cb_func(const rist_stats& stats)
 {
-  this->in_flight_callbacks.fetch_add(1, std::memory_order_acq_rel);
   auto* cb = this->statistics_callback;
   if (cb != nullptr) {
     cb(stats);
   }
-  this->in_flight_callbacks.fetch_sub(1, std::memory_order_acq_rel);
 }
 
 void transport::oob_cb_func(
@@ -71,12 +62,10 @@ void transport::oob_cb_func(
     std::shared_ptr<RISTNetSender::NetworkConnection>& /*connection*/,
     rist_peer* /*peer*/)
 {
-  this->in_flight_callbacks.fetch_add(1, std::memory_order_acq_rel);
   auto* cb = this->oob_callback;
   if (cb != nullptr) {
     cb(buf, size);
   }
-  this->in_flight_callbacks.fetch_sub(1, std::memory_order_acq_rel);
 }
 
 void transport::setup_rist_sender(output_config& output_c)

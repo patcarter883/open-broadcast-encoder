@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <format>
 #include <functional>
 #include <memory>
@@ -31,17 +30,11 @@ public:
   void set_statistics_callback(void (*statistics_callback)(const rist_stats&));
   void set_oob_callback(void (*oob_callback)(const uint8_t*, size_t));
 
-  // Blocks until any in-flight callback dispatches have finished. Call after
-  // clearing the user callbacks but before destroying any state the callbacks
-  // may read.
-  void wait_callbacks_drained();
-
 private:
   std::unique_ptr<RISTNetSender> rist_sender = std::make_unique<RISTNetSender>();
   int (*log_callback)(void*, enum rist_log_level, const char*) = nullptr;
   void (*statistics_callback)(const rist_stats&) = nullptr;
   void (*oob_callback)(const uint8_t*, size_t) = nullptr;
-  std::atomic<int> in_flight_callbacks {0};
   void stats_cb_func(const rist_stats& stats);
   void oob_cb_func(const uint8_t* buf,
                    size_t size,
