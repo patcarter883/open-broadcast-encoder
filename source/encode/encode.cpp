@@ -95,9 +95,7 @@ void encode::pipeline_build_source()
 
   switch (input_c.selected_input_mode) {
     case input_mode::testsrc:
-      this->pipeline_str =
-          "audiotestsrc is-live=true ! audioconvert ! "
-          "videotestsrc pattern=smptebars ! videoconvert ! ";
+      this->pipeline_str = "";
       break;
     case input_mode::mpegts:
       this->pipeline_str = std::format(
@@ -135,7 +133,7 @@ void encode::pipeline_build_video_demux()
 {
   switch (input_c.selected_input_mode) {
     case input_mode::testsrc:
-      this->pipeline_str += " ! ";
+      this->pipeline_str += " videotestsrc is-live=true pattern=smpte ! videoconvert !";
       break;
     case input_mode::ndi:
       this->pipeline_str += " demux.video ! queue silent=true ! videoconvert !";
@@ -155,7 +153,7 @@ void encode::pipeline_build_audio_demux()
 {
   switch (input_c.selected_input_mode) {
     case input_mode::testsrc:
-      this->pipeline_str += " ! avenc_aac ! aacparse ! tsmux. ";
+      this->pipeline_str += " audiotestsrc is-live=true wave=sine ! audioconvert ! audioresample !";
       break;
     case input_mode::ndi:
       this->pipeline_str +=

@@ -238,9 +238,9 @@ static void preview_input()
   switch (ctx.lib.input_cfg.selected_input_mode) {
     case input_mode::testsrc: {
       run_preview_pipeline(
-          "audiotestsrc is-live=true ! audioconvert ! "
-          "videotestsrc pattern=smptebars ! videoconvert ! "
-          "autovideosink audiotestsrc is-live=true ! autoaudiosink");
+          "videotestsrc is-live=true pattern=smpte ! videoconvert ! "
+          "autovideosink  audiotestsrc is-live=true wave=sine ! audioconvert "
+          "! autoaudiosink");
       break;
     }
 
