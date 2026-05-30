@@ -375,22 +375,6 @@ void encode::pipeline_build_audio_payloader()
 
 void encode::pipeline_build_video_payloader()
 {
-  std::string payloader;
-
-  switch (encode_c.selected_codec) {
-    case codec::h265:
-      payloader = "rtph265pay";
-      break;
-
-    case codec::av1:
-      payloader = "rtpav1pay";
-      break;
-
-    default:
-      payloader = "rtph264pay";
-      break;
-  }
-
   this->pipeline_str += "! queue silent=true ! tsmux. ";
 }
 
@@ -531,12 +515,12 @@ void encode::handle_gstreamer_message(GstMessage* message)
   }
 }
 
-auto encode::pull_video_buffer() -> buffer_data
+auto encode::pull_from_sink(GstElement* encode::* sink_field) -> buffer_data
 {
   GstElement* sink = nullptr;
   {
     std::lock_guard<std::mutex> guard(this->pipeline_mutex);
-    sink = this->video_sink;
+    sink = this->*sink_field;
     if (sink != nullptr) {
       gst_object_ref(sink);
     }
@@ -562,67 +546,25 @@ auto encode::pull_video_buffer() -> buffer_data
     gst_sample_unref(sample);
     return buffer_data {};
   }
-  gpointer raw = nullptr;
-  gsize raw_size = 0;
-  gst_buffer_extract_dup(buffer, 0, info.size, &raw, &raw_size);
-  gst_buffer_unmap(buffer, &info);
-  gst_sample_unref(sample);
 
   buffer_data result;
-  result.buf_size = raw_size;
-  if (raw != nullptr && raw_size > 0) {
-    result.buf_data = std::vector<uint8_t>(
-        static_cast<uint8_t*>(raw), static_cast<uint8_t*>(raw) + raw_size);
+  result.buf_size = info.size;
+  if (info.data != nullptr && info.size > 0) {
+    result.buf_data.assign(info.data, info.data + info.size);
   }
-  g_free(raw);
+  gst_buffer_unmap(buffer, &info);
+  gst_sample_unref(sample);
   return result;
+}
+
+auto encode::pull_video_buffer() -> buffer_data
+{
+  return pull_from_sink(&encode::video_sink);
 }
 
 auto encode::pull_audio_buffer() -> buffer_data
 {
-  GstElement* sink = nullptr;
-  {
-    std::lock_guard<std::mutex> guard(this->pipeline_mutex);
-    sink = this->audio_sink;
-    if (sink != nullptr) {
-      gst_object_ref(sink);
-    }
-  }
-  if (sink == nullptr) {
-    return buffer_data {};
-  }
-
-  GstSample* sample = gst_app_sink_pull_sample(GST_APP_SINK(sink));
-  gst_object_unref(sink);
-
-  if (sample == nullptr) {
-    return buffer_data {};
-  }
-  GstBuffer* buffer = gst_sample_get_buffer(sample);
-  if (buffer == nullptr) {
-    gst_sample_unref(sample);
-    return buffer_data {};
-  }
-
-  GstMapInfo info;
-  if (gst_buffer_map(buffer, &info, GST_MAP_READ) == 0) {
-    gst_sample_unref(sample);
-    return buffer_data {};
-  }
-  gpointer raw = nullptr;
-  gsize raw_size = 0;
-  gst_buffer_extract_dup(buffer, 0, info.size, &raw, &raw_size);
-  gst_buffer_unmap(buffer, &info);
-  gst_sample_unref(sample);
-
-  buffer_data result;
-  result.buf_size = raw_size;
-  if (raw != nullptr && raw_size > 0) {
-    result.buf_data = std::vector<uint8_t>(
-        static_cast<uint8_t*>(raw), static_cast<uint8_t*>(raw) + raw_size);
-  }
-  g_free(raw);
-  return result;
+  return pull_from_sink(&encode::audio_sink);
 }
 
 void encode::set_encode_bitrate(int new_bitrate)

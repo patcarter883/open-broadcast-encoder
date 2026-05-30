@@ -52,6 +52,7 @@ private:
   GstElement* video_sink = nullptr;
   GstBus* bus = nullptr;
   void clear_pipeline_state();
+  auto pull_from_sink(GstElement* encode::* sink_field) -> buffer_data;
   void build_pipeline();
   void pipeline_build_source();
   void pipeline_build_sink();
