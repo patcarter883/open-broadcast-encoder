@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <functional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -18,6 +19,87 @@
 #include <stdint.h>
 
 #include "FL/fl_callback_macros.H"
+
+namespace
+{
+bool parse_proto(const std::string& s, output_proto& out)
+{
+  if (s == "rtmp") {
+    out = output_proto::rtmp;
+  } else if (s == "rtmps") {
+    out = output_proto::rtmps;
+  } else if (s == "srt") {
+    out = output_proto::srt;
+  } else if (s == "rist") {
+    out = output_proto::rist;
+  } else {
+    return false;
+  }
+  return true;
+}
+
+// Parse the receiver CONTROL address "host:port" / "[ipv6]:port" / "host".
+// Unlike parse_address() (RIST media, default port 5000), this defaults the
+// port to the control-plane default the caller supplies (8080) and handles the
+// bracketed IPv6 form.
+void parse_control_address(const std::string& in, std::string& host, int& port)
+{
+  std::size_t colon = std::string::npos;
+  const std::size_t bracket = in.rfind(']');
+  if (bracket != std::string::npos) {  // [ipv6]:port
+    host = in.substr(0, bracket + 1);
+    colon = in.find(':', bracket);
+  } else {
+    colon = in.rfind(':');
+    host = (colon != std::string::npos) ? in.substr(0, colon) : in;
+  }
+  if (colon != std::string::npos && colon + 1 < in.size()) {
+    try {
+      const int p = std::stoi(in.substr(colon + 1));
+      if (p >= 1 && p <= 65535) {
+        port = p;  // else keep the supplied default
+      }
+    } catch (...) {  // NOLINT(bugprone-empty-catch)
+    }
+  }
+  if (host.empty()) {
+    host = "127.0.0.1";
+  }
+}
+
+// Parse the destinations text area: one destination per line,
+// "<type> <url> [key...]" whitespace-separated. Invalid lines are skipped.
+std::vector<receiver_destination> parse_destinations(const char* text)
+{
+  std::vector<receiver_destination> dests;
+  if (text == nullptr) {
+    return dests;
+  }
+  std::istringstream stream(text);
+  std::string line;
+  while (std::getline(stream, line)) {
+    std::istringstream line_stream(line);
+    std::string type;
+    std::string url;
+    if (!(line_stream >> type >> url)) {
+      continue;  // need at least a type and a url
+    }
+    std::string key;
+    std::getline(line_stream, key);  // remainder = optional key/streamid
+    const std::size_t begin = key.find_first_not_of(" \t");
+    key = (begin == std::string::npos) ? std::string {} : key.substr(begin);
+
+    receiver_destination d;
+    if (!parse_proto(type, d.proto)) {
+      continue;
+    }
+    d.url = url;
+    d.stream_key = key;
+    dests.push_back(std::move(d));
+  }
+  return dests;
+}
+}  // namespace
 
 Fl_Menu_Item user_interface::menu_choice_input_protocol[] = {
     {.text = "Test Source",
@@ -167,10 +249,10 @@ Fl_Menu_Item user_interface::menu_choice_encoder[] = {
 user_interface::user_interface()
 {
   {
-    main_window = new Fl_Double_Window(1373, 667, "Open Broadcast Encoder");
+    main_window = new Fl_Double_Window(1373, 847, "Open Broadcast Encoder");
     main_window->user_data((void*)(this));
     {
-      pack = new Fl_Flex(0, 0, 1373, 667);
+      pack = new Fl_Flex(0, 0, 1373, 847);
       {
         flx_top = new Fl_Flex(25, 25, 1323, 417);
         flx_top->type(1);
@@ -228,6 +310,7 @@ user_interface::user_interface()
               }  // Fl_Button* btn_refresh_ndi_devices
               ndi_options_group->gap(12);
               ndi_options_group->fixed(ndi_options_group->child(0), 25);
+              ndi_options_group->fixed(ndi_options_group->child(1), 25);
               ndi_options_group->end();
             }  // Fl_Flex* ndi_options_group
             {
@@ -237,6 +320,7 @@ user_interface::user_interface()
             flx_input->margin(5, 25, 5, 5);
             flx_input->gap(25);
             flx_input->fixed(flx_input->child(0), 25);
+            flx_input->fixed(ndi_options_group, 62);
             flx_input->fixed(btn_preview_input, 25);
             flx_input->end();
           }  // Fl_Flex* flx_input
@@ -463,6 +547,67 @@ user_interface::user_interface()
         flx_top->end();
       }  // Fl_Flex* flx_top
       {
+        flx_receiver = new Fl_Flex(25, 442, 1323, 150, "Receiver / Restream");
+        flx_receiver->box(FL_BORDER_BOX);
+        {
+          Fl_Flex* row = new Fl_Flex(25, 464, 1323, 25);
+          row->type(1);
+          {
+            check_receiver_enabled =
+                new Fl_Check_Button(0, 0, 110, 25, "Enable receiver");
+          }  // Fl_Check_Button* check_receiver_enabled
+          {
+            input_control_address =
+                new Fl_Input(0, 0, 180, 25, "Receiver host:port");
+            input_control_address->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+            input_control_address->value("127.0.0.1:8080");
+          }  // Fl_Input* input_control_address
+          {
+            input_control_token = new Fl_Input(0, 0, 160, 25, "Token");
+            input_control_token->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+          }  // Fl_Input* input_control_token
+          {
+            check_reencode = new Fl_Check_Button(0, 0, 100, 25, "Reencode");
+          }  // Fl_Check_Button* check_reencode
+          {
+            choice_reencode_codec = new Fl_Choice(0, 0, 110, 25, "Codec");
+            choice_reencode_codec->down_box(FL_BORDER_BOX);
+            choice_reencode_codec->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+            choice_reencode_codec->menu(menu_choice_codec);
+          }  // Fl_Choice* choice_reencode_codec
+          {
+            choice_reencode_encoder = new Fl_Choice(0, 0, 110, 25, "Encoder");
+            choice_reencode_encoder->down_box(FL_BORDER_BOX);
+            choice_reencode_encoder->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+            choice_reencode_encoder->menu(menu_choice_encoder);
+          }  // Fl_Choice* choice_reencode_encoder
+          {
+            input_reencode_bitrate =
+                new Fl_Input(0, 0, 110, 25, "Bitrate kbps");
+            input_reencode_bitrate->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+            input_reencode_bitrate->value("8000");
+          }  // Fl_Input* input_reencode_bitrate
+          {
+            check_upscale = new Fl_Check_Button(0, 0, 120, 25, "Upscale 1440p");
+          }  // Fl_Check_Button* check_upscale
+          row->gap(10);
+          row->end();
+        }  // Fl_Flex* row
+        {
+          input_destinations = new Fl_Multiline_Input(
+              25,
+              487,
+              1323,
+              90,
+              "Destinations (one per line:  rtmp|rtmps|srt|rist  <url>  [key])");
+          input_destinations->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+        }  // Fl_Multiline_Input* input_destinations
+        flx_receiver->margin(8, 22, 8, 8);
+        flx_receiver->gap(22);
+        flx_receiver->fixed(flx_receiver->child(0), 25);
+        flx_receiver->end();
+      }  // Fl_Flex* flx_receiver
+      {
         flx_bottom = new Fl_Flex(25, 442, 1323, 200);
         flx_bottom->type(1);
         {
@@ -474,7 +619,8 @@ user_interface::user_interface()
         flx_bottom->end();
       }  // Fl_Flex* flx_bottom
       pack->margin(25, 25, 25, 25);
-      pack->fixed(pack->child(1), 200);
+      pack->fixed(flx_receiver, 150);
+      pack->fixed(flx_bottom, 200);
       pack->end();
     }  // Fl_Flex* pack
     main_window->resizable(pack);
@@ -688,6 +834,89 @@ void user_interface::select_bitrate_source(
   }
 }
 
+void user_interface::encode_bitrate_cb(encode_config* encode_config)
+{
+  const char* raw = input_encode_bitrate->value();
+  if (raw == nullptr) {
+    return;
+  }
+  try {
+    encode_config->bitrate.store(std::stoi(raw), std::memory_order_relaxed);
+  } catch (...) {
+  }
+}
+
+void user_interface::receiver_enabled_cb(receiver_control_config* rc)
+{
+  rc->enabled = check_receiver_enabled->value() != 0;
+}
+
+void user_interface::receiver_address_cb(receiver_control_config* rc)
+{
+  const char* raw = input_control_address->value();
+  if (raw == nullptr) {
+    return;
+  }
+  std::string host;
+  int port = 8080;  // control-plane default (NOT the RIST media default 5000)
+  parse_control_address(raw, host, port);
+  rc->control_host = host;
+  rc->control_port = port;
+}
+
+void user_interface::receiver_token_cb(receiver_control_config* rc)
+{
+  const char* raw = input_control_token->value();
+  rc->token = (raw != nullptr) ? raw : "";
+}
+
+void user_interface::receiver_reencode_cb(receiver_control_config* rc)
+{
+  rc->reencode = check_reencode->value() != 0;
+}
+
+void user_interface::receiver_codec_cb(receiver_control_config* rc)
+{
+  const Fl_Menu_Item* mv = choice_reencode_codec->mvalue();
+  if (mv == nullptr) {
+    return;
+  }
+  rc->video.out_codec =
+      static_cast<codec>(reinterpret_cast<uintptr_t>(mv->user_data()));
+}
+
+void user_interface::receiver_encoder_cb(receiver_control_config* rc)
+{
+  const Fl_Menu_Item* mv = choice_reencode_encoder->mvalue();
+  if (mv == nullptr) {
+    return;
+  }
+  rc->video.enc =
+      static_cast<encoder>(reinterpret_cast<uintptr_t>(mv->user_data()));
+}
+
+void user_interface::receiver_bitrate_cb(receiver_control_config* rc)
+{
+  const char* raw = input_reencode_bitrate->value();
+  if (raw == nullptr) {
+    return;
+  }
+  try {
+    rc->video.bitrate = std::stoi(raw);
+  } catch (...) {  // NOLINT(bugprone-empty-catch) — keep previous value
+  }
+}
+
+void user_interface::receiver_upscale_cb(receiver_control_config* rc)
+{
+  rc->video.upscale = check_upscale->value() != 0;
+}
+
+void user_interface::receiver_destinations_cb(receiver_control_config* rc)
+{
+  rc->destinations = parse_destinations(input_destinations->value());
+}
+
 void user_interface::start(void (*start_funcptr)())
 {
   lock();
@@ -719,6 +948,7 @@ void user_interface::btn_preview_input_cb(FuncPtr preview_src_funcptr)
 void user_interface::init_ui_callbacks(input_config* input_c,
                                        encode_config* encode_c,
                                        output_config* output_c,
+                                       receiver_control_config* receiver_c,
                                        FuncPtr start_funcptr,
                                        FuncPtr stop_funcptr,
                                        FuncPtr ndi_refresh_funcptr,
@@ -726,6 +956,8 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                                        FuncPtr preview_src_funcptr,
                                        FuncPtr scaling_source_changed_funcptr)
 {
+  main_window->callback([](Fl_Widget* w, void*) { w->hide(); });
+
   transport_log_display->buffer(transport_log_buffer);
   encode_log_display->buffer(encode_log_buffer);
 
@@ -783,6 +1015,15 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        FuncPtr,
                        scaling_source_changed_funcptr);
 
+  input_encode_bitrate->value("4300");
+  input_encode_bitrate->when(FL_WHEN_CHANGED);
+  FL_METHOD_CALLBACK_1(input_encode_bitrate,
+                       user_interface,
+                       this,
+                       encode_bitrate_cb,
+                       encode_config*,
+                       encode_c);
+
   FL_METHOD_CALLBACK_2(input_rist_address,
                        user_interface,
                        this,
@@ -811,4 +1052,79 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        refresh_ndi_devices,
                        FuncPtr,
                        ndi_refresh_funcptr);
+
+  // ---- Receiver / restream control section ----
+  // Default the reencode codec/encoder choices so the model matches the
+  // displayed selection (h264 / software) before the user touches them.
+  choice_reencode_codec->value(0);     // h264 (index 0 of menu_choice_codec)
+  choice_reencode_encoder->value(3);   // Software (index 3 of menu_choice_encoder)
+
+  // Update the model live as the user types/toggles.
+  input_control_address->when(FL_WHEN_CHANGED);
+  input_control_token->when(FL_WHEN_CHANGED);
+  input_reencode_bitrate->when(FL_WHEN_CHANGED);
+  input_destinations->when(FL_WHEN_CHANGED);
+
+  FL_METHOD_CALLBACK_1(check_receiver_enabled,
+                       user_interface,
+                       this,
+                       receiver_enabled_cb,
+                       receiver_control_config*,
+                       receiver_c);
+
+  FL_METHOD_CALLBACK_1(input_control_address,
+                       user_interface,
+                       this,
+                       receiver_address_cb,
+                       receiver_control_config*,
+                       receiver_c);
+
+  FL_METHOD_CALLBACK_1(input_control_token,
+                       user_interface,
+                       this,
+                       receiver_token_cb,
+                       receiver_control_config*,
+                       receiver_c);
+
+  FL_METHOD_CALLBACK_1(check_reencode,
+                       user_interface,
+                       this,
+                       receiver_reencode_cb,
+                       receiver_control_config*,
+                       receiver_c);
+
+  FL_METHOD_CALLBACK_1(choice_reencode_codec,
+                       user_interface,
+                       this,
+                       receiver_codec_cb,
+                       receiver_control_config*,
+                       receiver_c);
+
+  FL_METHOD_CALLBACK_1(choice_reencode_encoder,
+                       user_interface,
+                       this,
+                       receiver_encoder_cb,
+                       receiver_control_config*,
+                       receiver_c);
+
+  FL_METHOD_CALLBACK_1(input_reencode_bitrate,
+                       user_interface,
+                       this,
+                       receiver_bitrate_cb,
+                       receiver_control_config*,
+                       receiver_c);
+
+  FL_METHOD_CALLBACK_1(check_upscale,
+                       user_interface,
+                       this,
+                       receiver_upscale_cb,
+                       receiver_control_config*,
+                       receiver_c);
+
+  FL_METHOD_CALLBACK_1(input_destinations,
+                       user_interface,
+                       this,
+                       receiver_destinations_cb,
+                       receiver_control_config*,
+                       receiver_c);
 }

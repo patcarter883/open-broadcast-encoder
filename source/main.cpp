@@ -2,15 +2,19 @@
 #include <chrono>
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <arpa/inet.h>
 #include <gst/gst.h>
 #include <gst/video/video.h>
 
+#include "control/control.h"
 #include "encode.h"
 #include "lib.h"
 #include "ndi_input.h"
@@ -19,6 +23,33 @@
 #include "ui.h"
 
 app_context ctx;
+
+// Receiver-control POSTs run on background threads so the FLTK UI never blocks
+// on network I/O. They are tracked (not detached) so they can be joined at
+// shutdown before ctx.ui / the FLTK ui are destroyed — a detached worker must
+// never call back into transport_log()/ctx.ui after the event loop has gone.
+static std::mutex control_threads_mutex;
+static std::vector<std::thread> control_threads;
+
+static void track_control_thread(std::thread t)
+{
+  std::lock_guard<std::mutex> guard(control_threads_mutex);
+  control_threads.push_back(std::move(t));
+}
+
+static void join_control_threads()
+{
+  std::vector<std::thread> local;
+  {
+    std::lock_guard<std::mutex> guard(control_threads_mutex);
+    local.swap(control_threads);
+  }
+  for (auto& t : local) {
+    if (t.joinable()) {
+      t.join();
+    }
+  }
+}
 
 static auto encode_log(const std::string& msg)
 {
@@ -149,8 +180,65 @@ static void run_loop()
   }
 }
 
+// Provision the partner receiver over its REST control plane before the
+// encoder begins sending RIST. Runs on a tracked background thread so the FLTK
+// UI never blocks on receiver network I/O; results are reported via
+// transport_log (which is itself thread-safe). Tracked (not detached) so it is
+// joined at shutdown before ctx.ui is torn down.
+static void provision_receiver()
+{
+  receiver_control_config& rc = ctx.lib.receiver_ctl;
+  if (!rc.enabled || rc.destinations.empty()) {
+    return;
+  }
+  if (rc.session_id.empty()) {
+    rc.session_id = std::format(
+        "enc-{}",
+        std::chrono::steady_clock::now().time_since_epoch().count());
+  }
+  const receiver_control_config cfg = rc;  // copy for the worker thread
+  const codec source_codec = ctx.lib.encode_cfg.selected_codec;
+  track_control_thread(std::thread(
+      [cfg, source_codec]
+      {
+        control_client client(cfg.control_host, cfg.control_port, cfg.token);
+        std::string err;
+        if (client.start(cfg, source_codec, err)) {
+          transport_log("Receiver provisioned (session " + cfg.session_id
+                        + ").\n");
+        } else {
+          transport_log("Receiver start failed: " + err + "\n");
+        }
+      }));
+}
+
+static void release_receiver()
+{
+  receiver_control_config& rc = ctx.lib.receiver_ctl;
+  if (!rc.enabled || rc.session_id.empty()) {
+    return;
+  }
+  const std::string host = rc.control_host;
+  const int port = rc.control_port;
+  const std::string token = rc.token;
+  const std::string session = rc.session_id;
+  rc.session_id.clear();
+  track_control_thread(std::thread(
+      [host, port, token, session]
+      {
+        control_client client(host, port, token);
+        std::string err;
+        if (client.stop(session, err)) {
+          transport_log("Receiver released (session " + session + ").\n");
+        } else {
+          transport_log("Receiver stop failed: " + err + "\n");
+        }
+      }));
+}
+
 static void run()
 {
+  provision_receiver();
   ctx.lib.threads.emplace_back(run_loop);
 }
 
@@ -171,6 +259,9 @@ static void stop()
     }
   }
   ctx.lib.threads.clear();
+
+  // Tell the receiver to tear down its restream pipeline.
+  release_receiver();
 }
 
 static void run_transport()
@@ -194,13 +285,18 @@ static void run_preview_pipeline(const std::string& pipeline_str)
 {
   auto* pipeline = gst_parse_launch(pipeline_str.c_str(), nullptr);
   if (pipeline == nullptr) {
+    ctx.lib.preview_running = false;
     return;
   }
 
   auto* bus = gst_element_get_bus(pipeline);
   gst_element_set_state(pipeline, GST_STATE_PLAYING);
 
-  ctx.lib.preview_running = true;
+  // preview_running is set true by the launcher on the main thread BEFORE this
+  // worker starts; the worker must only ever clear it. Writing true here would
+  // clobber a concurrent cancel (preview_running=false; join()) issued before
+  // the OS scheduled this thread, leaving the loop spinning forever on a live
+  // source and blocking the joiner — see start_preview_thread.
   bool done = false;
   while (!done && ctx.lib.preview_running.load(std::memory_order_acquire)) {
     auto* msg = gst_bus_timed_pop_filtered(
@@ -236,11 +332,29 @@ static void run_preview_pipeline(const std::string& pipeline_str)
   ctx.lib.preview_running = false;
 }
 
+// Run a blocking preview pipeline on a dedicated thread so the FLTK main
+// thread keeps dispatching events. Called from the UI button callback; a
+// synchronous run_preview_pipeline() here would block Fl::run() and freeze
+// the whole UI until the preview window closes.
+static void start_preview_thread(std::string pipeline_str)
+{
+  if (ctx.lib.preview_thread.joinable()) {
+    if (ctx.lib.preview_running.load(std::memory_order_acquire)) {
+      return;  // preview still running; leave it rather than blocking the UI
+    }
+    ctx.lib.preview_thread.join();  // thread finished its cleanup; quick join
+  }
+  ctx.lib.preview_running = true;
+  ctx.lib.preview_thread = std::thread(
+      [pipeline_str = std::move(pipeline_str)]
+      { run_preview_pipeline(pipeline_str); });
+}
+
 static void preview_input()
 {
   switch (ctx.lib.input_cfg.selected_input_mode) {
     case input_mode::testsrc: {
-      run_preview_pipeline(
+      start_preview_thread(
           "videotestsrc is-live=true pattern=smpte ! videoconvert ! "
           "autovideosink  audiotestsrc is-live=true wave=sine ! audioconvert "
           "! autoaudiosink");
@@ -249,7 +363,7 @@ static void preview_input()
 
     case input_mode::mpegts: {
       auto port = ctx.lib.input_cfg.selected_input;
-      run_preview_pipeline(
+      start_preview_thread(
           std::format("udpsrc port={} ! tsdemux name=d ! d.video ! queue ! "
                       "videoconvert ! autovideosink d.audio ! queue ! "
                       "audioconvert ! autoaudiosink",
@@ -273,13 +387,27 @@ static void preview_input()
           "PM=2110GPM; SSN=ST2110-20:2017; TP=2110TPN;\n"
           "a=mediaclk:direct=0\n"
           "a=ts-refclk:ptp=IEEE1588-2008:00-02-c5-ff-fe-21-60-5c:127\n";
-      auto tmp_path = std::filesystem::temp_directory_path() / "preview.sdp";
-      std::ofstream(tmp_path) << sdp;
-      run_preview_pipeline(std::format(
-          "sdpsrc uri=\"file://{}\" ! rtpvrawdepay ! videoconvert ! "
-          "autovideosink",
-          tmp_path.string()));
-      std::filesystem::remove(tmp_path);
+      // The temp .sdp file must outlive sdpsrc reading it, so its whole
+      // lifecycle (write → run → remove) lives inside the preview thread.
+      if (ctx.lib.preview_thread.joinable()) {
+        if (ctx.lib.preview_running.load(std::memory_order_acquire)) {
+          break;  // preview still running; leave it rather than blocking the UI
+        }
+        ctx.lib.preview_thread.join();  // thread finished its cleanup; quick join
+      }
+      ctx.lib.preview_running = true;
+      ctx.lib.preview_thread = std::thread(
+          [sdp]
+          {
+            auto tmp_path =
+                std::filesystem::temp_directory_path() / "preview.sdp";
+            std::ofstream(tmp_path) << sdp;
+            run_preview_pipeline(std::format(
+                "sdpsrc uri=\"file://{}\" ! rtpvrawdepay ! videoconvert ! "
+                "autovideosink",
+                tmp_path.string()));
+            std::filesystem::remove(tmp_path);
+          });
       break;
     }
 
@@ -308,6 +436,7 @@ auto main(int argc, char** argv) -> int
   ctx.ui->init_ui_callbacks(&(ctx.lib.input_cfg),
                             &(ctx.lib.encode_cfg),
                             &(ctx.lib.output_cfg),
+                            &(ctx.lib.receiver_ctl),
                             &run,
                             &stop,
                             &refresh_ndi_devices,
@@ -321,6 +450,9 @@ auto main(int argc, char** argv) -> int
   // scope. Each component drains its own threads / callbacks.
   stop();
   ctx.lib.preview_running = false;
+  if (ctx.lib.preview_thread.joinable()) {
+    ctx.lib.preview_thread.join();
+  }
   if (ctx.ndi) {
     ctx.ndi->stop_preview();
     ctx.ndi.reset();
@@ -328,6 +460,9 @@ auto main(int argc, char** argv) -> int
   if (ctx.transporter) {
     ctx.transporter.reset();
   }
+  // Join any in-flight receiver-control POSTs before the FLTK ui is destroyed
+  // so a worker cannot call transport_log()/ctx.ui after teardown.
+  join_control_threads();
   ctx.ui = nullptr;
 
   return result;

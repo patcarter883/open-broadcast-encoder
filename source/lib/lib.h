@@ -105,6 +105,52 @@ struct output_config
   int bandwidth = 6000;
 };
 
+// ---------------------------------------------------------------------------
+// Receiver control: where the partner open-broadcast-receiver should restream
+// the incoming RIST stream, and how. Sent to the receiver over the REST
+// control plane on Start (see source/control/control.h and the receiver's
+// docs/CONTRACT.md). The codec/encoder enum integer order is the wire contract
+// shared with the receiver — do not renumber.
+// ---------------------------------------------------------------------------
+
+enum class output_proto : std::uint8_t
+{
+  rtmp,
+  rtmps,
+  srt,
+  rist
+};
+
+struct reencode_config
+{
+  encoder enc = encoder::software;
+  codec out_codec = codec::h264;
+  int bitrate = 8000;  // kbps
+  bool upscale = false;
+  int width = 2560;
+  int height = 1440;
+};
+
+struct receiver_destination
+{
+  output_proto proto = output_proto::rtmp;
+  std::string url;
+  std::string stream_key;  // RTMP key or SRT streamid
+};
+
+struct receiver_control_config
+{
+  bool enabled = false;  // drive a receiver at all?
+  std::string control_host = "127.0.0.1";
+  int control_port = 8080;
+  std::string token;
+  std::string session_id;
+  // v1: copy vs reencode applies to all destinations uniformly.
+  bool reencode = false;
+  reencode_config video;  // used when reencode == true
+  std::vector<receiver_destination> destinations;
+};
+
 inline std::pair<std::string, int> parse_address(const std::string& addr)
 {
   // Note: IPv6 addresses must use the bracketed [host]:port form for the
@@ -146,10 +192,12 @@ struct library
   std::shared_ptr<std::atomic<bool>> run_flag;
 
   std::vector<std::thread> threads;
+  std::thread preview_thread;
 
   input_config input_cfg;
   encode_config encode_cfg;
   output_config output_cfg;
+  receiver_control_config receiver_ctl;
 
   cumulative_stats stats;
 

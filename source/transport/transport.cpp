@@ -50,7 +50,7 @@ void transport::set_oob_callback(void (*oob_callback_func)(const uint8_t*,
 
 void transport::stats_cb_func(const rist_stats& stats)
 {
-  auto* cb = this->statistics_callback;
+  auto cb = this->statistics_callback.load(std::memory_order_acquire);
   if (cb != nullptr) {
     cb(stats);
   }
@@ -62,7 +62,7 @@ void transport::oob_cb_func(
     std::shared_ptr<RISTNetSender::NetworkConnection>& /*connection*/,
     rist_peer* /*peer*/)
 {
-  auto* cb = this->oob_callback;
+  auto cb = this->oob_callback.load(std::memory_order_acquire);
   if (cb != nullptr) {
     cb(buf, size);
   }
@@ -102,7 +102,7 @@ void transport::setup_rist_sender(output_config& output_c)
     interface_list_sender.emplace_back(rist_output_url, 0);
   }
 
-  my_send_configuration.mLogLevel = RIST_LOG_DEBUG;
+  my_send_configuration.mLogLevel = RIST_LOG_INFO;
   my_send_configuration.mProfile = RIST_PROFILE_ADVANCED;
 
   my_send_configuration.mLogSetting->log_cb = log_callback;

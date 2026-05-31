@@ -9,8 +9,12 @@ library::library() noexcept
 library::~library()
 {
   is_running = false;
+  preview_running = false;
   if (run_flag) {
     *run_flag = false;
+  }
+  if (preview_thread.joinable()) {
+    preview_thread.join();
   }
   for (auto& t : threads) {
     if (t.joinable()) {

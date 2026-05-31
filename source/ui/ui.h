@@ -8,11 +8,13 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Button.H>
+#include <FL/Fl_Check_Button.H>
 #include <FL/Fl_Choice.H>
 #include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Flex.H>
 #include <FL/Fl_Grid.H>
 #include <FL/Fl_Input.H>
+#include <FL/Fl_Multiline_Input.H>
 #include <FL/Fl_Output.H>
 #include <FL/Fl_Text_Display.H>
 #include <stdint.h>
@@ -52,6 +54,17 @@ public:
   Fl_Input* input_rist_address;
   Fl_Button* btn_start_encode;
   Fl_Button* btn_stop_encode;
+  // Receiver / restream control section
+  Fl_Flex* flx_receiver;
+  Fl_Check_Button* check_receiver_enabled;
+  Fl_Input* input_control_address;
+  Fl_Input* input_control_token;
+  Fl_Check_Button* check_reencode;
+  Fl_Choice* choice_reencode_codec;
+  Fl_Choice* choice_reencode_encoder;
+  Fl_Input* input_reencode_bitrate;
+  Fl_Check_Button* check_upscale;
+  Fl_Multiline_Input* input_destinations;
   Fl_Grid* grid_stats;
   Fl_Output* bandwidth_output;
   Fl_Output* link_quality_output;
@@ -76,6 +89,7 @@ public:
   void init_ui_callbacks(input_config* input_c,
                          encode_config* encode_c,
                          output_config* output_c,
+                         receiver_control_config* receiver_c,
                          FuncPtr start_funcptr,
                          FuncPtr stop_funcptr,
                          FuncPtr ndi_refresh_funcptr,
@@ -107,6 +121,17 @@ private:
   void select_encoder(encode_config* encode_config);
   void select_bitrate_source(encode_config* encode_config,
                              FuncPtr scaling_source_changed_funcptr);
+  void encode_bitrate_cb(encode_config* encode_config);
+  // Receiver / restream control callbacks
+  void receiver_enabled_cb(receiver_control_config* receiver_config);
+  void receiver_address_cb(receiver_control_config* receiver_config);
+  void receiver_token_cb(receiver_control_config* receiver_config);
+  void receiver_reencode_cb(receiver_control_config* receiver_config);
+  void receiver_codec_cb(receiver_control_config* receiver_config);
+  void receiver_encoder_cb(receiver_control_config* receiver_config);
+  void receiver_bitrate_cb(receiver_control_config* receiver_config);
+  void receiver_upscale_cb(receiver_control_config* receiver_config);
+  void receiver_destinations_cb(receiver_control_config* receiver_config);
   void start(FuncPtr start_funcptr);
   void stop(FuncPtr stop_funcptr);
   void refresh_ndi_devices(FuncPtr refresh_ndi_funcptr);

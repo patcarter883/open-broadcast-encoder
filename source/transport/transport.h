@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <format>
 #include <functional>
 #include <memory>
@@ -33,8 +34,10 @@ public:
 private:
   std::unique_ptr<RISTNetSender> rist_sender = std::make_unique<RISTNetSender>();
   int (*log_callback)(void*, enum rist_log_level, const char*) = nullptr;
-  void (*statistics_callback)(const rist_stats&) = nullptr;
-  void (*oob_callback)(const uint8_t*, size_t) = nullptr;
+  // Read from the RIST sender thread (stats/OOB dispatch) and written from the
+  // main/UI thread (run_loop/stop) — atomic to avoid a data race on the swap.
+  std::atomic<void (*)(const rist_stats&)> statistics_callback {nullptr};
+  std::atomic<void (*)(const uint8_t*, size_t)> oob_callback {nullptr};
   void stats_cb_func(const rist_stats& stats);
   void oob_cb_func(const uint8_t* buf,
                    size_t size,

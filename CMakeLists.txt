@@ -21,6 +21,8 @@ include(cmake/ExternalBuilds.cmake)
 
 find_package(NDI REQUIRED)
 
+find_package(nlohmann_json 3.2 REQUIRED)
+
 find_package(PkgConfig REQUIRED)
     pkg_search_module(gstreamer REQUIRED IMPORTED_TARGET gstreamer-1.0>=1.28)
     pkg_search_module(gstreamer-sdp REQUIRED IMPORTED_TARGET gstreamer-sdp-1.0>=1.28)
@@ -35,6 +37,7 @@ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/transport)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/encode)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/stats)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/url)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/control)
 
 # ---- Declare executable ----
 
@@ -52,7 +55,8 @@ target_link_libraries(open-broadcast-encoder_exe PRIVATE
   ui_lib
   encode_lib
   transport_lib
-  ristnet 
+  control_lib
+  ristnet
   PkgConfig::gstreamer
   PkgConfig::gstreamer-sdp
   PkgConfig::gstreamer-rtp
@@ -73,7 +77,9 @@ ${CMAKE_CURRENT_LIST_DIR}/source/stats
 ${CMAKE_CURRENT_LIST_DIR}/source/encode
 ${CMAKE_CURRENT_LIST_DIR}/source/transport
 ${CMAKE_CURRENT_LIST_DIR}/source/ndi_input
-${CMAKE_CURRENT_LIST_DIR}/source/ui)
+${CMAKE_CURRENT_LIST_DIR}/source/ui
+${CMAKE_CURRENT_LIST_DIR}/source/control
+${CMAKE_CURRENT_LIST_DIR}/external)
 
 
 

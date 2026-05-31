@@ -45,17 +45,36 @@ auto ndi_input::run_device_monitor() -> void
   this->device_monitor_thread = std::thread(
       [this]
       {
+        // GLib main context is required so the NDI device provider can fire
+        // timers and post device-added messages; without it the device list
+        // stays empty even when NDI sources are on the network.
+        GMainContext* glib_ctx = g_main_context_new();
+        g_main_context_push_thread_default(glib_ctx);
+
         auto* caps = gst_caps_new_empty_simple("application/x-ndi");
-        gst_device_monitor_add_filter(
+        const guint filter_id = gst_device_monitor_add_filter(
             this->device_monitor, "Video/Source", caps);
         gst_caps_unref(caps);
 
-        gst_device_monitor_start(this->device_monitor);
+        log(std::format(
+            "NDI monitor: filter_id={} (0 means monitor already started or "
+            "error)\n",
+            filter_id));
+
+        if (!gst_device_monitor_start(this->device_monitor)) {
+          log("NDI monitor: gst_device_monitor_start() failed\n");
+        } else {
+          log("NDI monitor: started\n");
+        }
 
         const std::chrono::milliseconds tick(100);
         while (this->run_monitor.load(std::memory_order_acquire)) {
+          g_main_context_iteration(glib_ctx, FALSE);
           std::this_thread::sleep_for(tick);
         }
+
+        g_main_context_pop_thread_default(glib_ctx);
+        g_main_context_unref(glib_ctx);
       });
 }
 
@@ -63,20 +82,39 @@ auto ndi_input::refresh_devices() const -> std::vector<std::string>
 {
   std::vector<std::string> device_names;
   if (this->device_monitor == nullptr) {
+    log("NDI refresh: device monitor is null\n");
     return device_names;
   }
 
   GList* devices = gst_device_monitor_get_devices(this->device_monitor);
+  const guint n = g_list_length(devices);
+  log(std::format("NDI refresh: {} device(s) found\n", n));
 
   for (GList* list_item = devices; list_item != nullptr;
        list_item = list_item->next)
   {
     auto* device = static_cast<GstDevice*>(list_item->data);
+
     gchar* device_name = gst_device_get_display_name(device);
+    gchar* device_class = gst_device_get_device_class(device);
+    GstCaps* device_caps = gst_device_get_caps(device);
+    gchar* caps_str =
+        (device_caps != nullptr) ? gst_caps_to_string(device_caps) : nullptr;
+
+    log(std::format("  device: name='{}' class='{}' caps='{}'\n",
+                    device_name != nullptr ? device_name : "(null)",
+                    device_class != nullptr ? device_class : "(null)",
+                    caps_str != nullptr ? caps_str : "(null)"));
+
     if (device_name != nullptr) {
       device_names.emplace_back(device_name);
-      g_free(device_name);
     }
+    g_free(device_name);
+    g_free(device_class);
+    if (device_caps != nullptr) {
+      gst_caps_unref(device_caps);
+    }
+    g_free(caps_str);
     gst_object_unref(device);
   }
   g_list_free(devices);
@@ -96,7 +134,10 @@ auto ndi_input::stop_preview() -> void
 auto ndi_input::preview() -> void
 {
   if (this->preview_thread.joinable()) {
-    this->preview_thread.join();
+    if (this->preview_running.load(std::memory_order_acquire)) {
+      return;  // preview still running; leave it rather than blocking the UI
+    }
+    this->preview_thread.join();  // thread finished its cleanup; quick join
   }
   this->preview_running = true;
   this->preview_thread = std::thread(
