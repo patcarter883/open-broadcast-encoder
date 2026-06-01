@@ -54,6 +54,7 @@ public:
   Fl_Input* input_rist_address;
   Fl_Button* btn_start_encode;
   Fl_Button* btn_stop_encode;
+  Fl_Button* btn_exit;
   // Receiver / restream control section
   Fl_Flex* flx_receiver;
   Fl_Check_Button* check_receiver_enabled;

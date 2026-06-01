@@ -379,6 +379,9 @@ user_interface::user_interface()
               btn_stop_encode = new Fl_Button(693, 50, 210, 25, "Stop Encode");
               btn_stop_encode->deactivate();
             }  // Fl_Button* btn_stop_encode
+            {
+              btn_exit = new Fl_Button(905, 50, 80, 25, "Exit");
+            }  // Fl_Button* btn_exit
             o->gap(12);
             o->end();
           }  // Fl_Flex* o
@@ -1045,6 +1048,10 @@ void user_interface::init_ui_callbacks(input_config* input_c,
 
   FL_METHOD_CALLBACK_1(
       btn_stop_encode, user_interface, this, stop, FuncPtr, stop_funcptr);
+
+  btn_exit->callback([](Fl_Widget*, void* v) {
+    static_cast<user_interface*>(v)->main_window->hide();
+  }, this);
 
   FL_METHOD_CALLBACK_1(btn_refresh_ndi_devices,
                        user_interface,
