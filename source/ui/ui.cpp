@@ -99,6 +99,57 @@ std::vector<receiver_destination> parse_destinations(const char* text)
   }
   return dests;
 }
+
+// Select the menu item whose user_data encodes `value`. The encoder menu order
+// (AMD, NVENC, QSV, Software) does NOT match the encoder enum order, so a saved
+// choice must be restored by matching user_data — never by using the enum as a
+// menu index.
+void select_choice_by_userdata(Fl_Choice* choice, long value)
+{
+  const Fl_Menu_Item* menu = choice->menu();
+  if (menu == nullptr) {
+    return;
+  }
+  for (int i = 0; menu[i].text != nullptr; ++i) {
+    if (reinterpret_cast<long>(menu[i].user_data()) == value) {
+      choice->value(i);
+      return;
+    }
+  }
+}
+
+const char* proto_label(output_proto p)
+{
+  switch (p) {
+    case output_proto::rtmp:
+      return "rtmp";
+    case output_proto::rtmps:
+      return "rtmps";
+    case output_proto::srt:
+      return "srt";
+    case output_proto::rist:
+      return "rist";
+  }
+  return "rtmp";
+}
+
+// Render destinations back into the one-per-line text the input area expects.
+// Round-trips with parse_destinations() above.
+std::string format_destinations(const std::vector<receiver_destination>& dests)
+{
+  std::string text;
+  for (const auto& d : dests) {
+    text += proto_label(d.proto);
+    text += ' ';
+    text += d.url;
+    if (!d.stream_key.empty()) {
+      text += ' ';
+      text += d.stream_key;
+    }
+    text += '\n';
+  }
+  return text;
+}
 }  // namespace
 
 Fl_Menu_Item user_interface::menu_choice_input_protocol[] = {
@@ -380,7 +431,11 @@ user_interface::user_interface()
               btn_stop_encode->deactivate();
             }  // Fl_Button* btn_stop_encode
             {
-              btn_exit = new Fl_Button(905, 50, 80, 25, "Exit");
+              btn_save_settings =
+                  new Fl_Button(905, 50, 110, 25, "Save Settings");
+            }  // Fl_Button* btn_save_settings
+            {
+              btn_exit = new Fl_Button(1020, 50, 80, 25, "Exit");
             }  // Fl_Button* btn_exit
             o->gap(12);
             o->end();
@@ -938,6 +993,76 @@ void user_interface::stop(void (*stop_funcptr)())
   stop_funcptr();
 }
 
+void user_interface::save_settings(FuncPtr save_settings_funcptr)
+{
+  if (save_settings_funcptr != nullptr) {
+    save_settings_funcptr();
+  }
+}
+
+void user_interface::apply_settings(const input_config& input_c,
+                                    const encode_config& encode_c,
+                                    const output_config& output_c,
+                                    const receiver_control_config& receiver_c)
+{
+  // ---- Input ----
+  select_choice_by_userdata(choice_input_protocol,
+                            static_cast<long>(input_c.selected_input_mode));
+  // Mirror choose_input_protocol()'s option-group visibility for the restored
+  // mode so the UI is consistent without synthesising a user click.
+  mpegts_options_group->hide();
+  sdp_options_group->hide();
+  ndi_options_group->hide();
+  switch (input_c.selected_input_mode) {
+    case input_mode::mpegts:
+      input_listen_port->value(input_c.selected_input.c_str());
+      mpegts_options_group->show();
+      break;
+    case input_mode::sdp:
+      sdp_options_group->show();
+      break;
+    case input_mode::ndi:
+      // The saved device name may not be present yet; the NDI monitor
+      // repopulates choice_ndi_input. The model already holds selected_input.
+      ndi_options_group->show();
+      break;
+    case input_mode::testsrc:
+    case input_mode::none:
+      break;
+  }
+
+  // ---- Encode ----
+  select_choice_by_userdata(choice_codec,
+                            static_cast<long>(encode_c.selected_codec));
+  select_choice_by_userdata(choice_encoder,
+                            static_cast<long>(encode_c.selected_encoder));
+  input_encode_bitrate->value(
+      std::to_string(encode_c.bitrate.load(std::memory_order_relaxed)).c_str());
+  select_choice_by_userdata(
+      choice_bitrate_source,
+      static_cast<long>(encode_c.scaling_source.load(std::memory_order_relaxed)));
+
+  // ---- Output ----
+  input_rist_address->value(output_c.address.c_str());
+
+  // ---- Receiver / Restream ----
+  check_receiver_enabled->value(receiver_c.enabled ? 1 : 0);
+  input_control_address->value(
+      (receiver_c.control_host + ":" + std::to_string(receiver_c.control_port))
+          .c_str());
+  input_control_token->value(receiver_c.token.c_str());
+  check_reencode->value(receiver_c.reencode ? 1 : 0);
+  select_choice_by_userdata(choice_reencode_codec,
+                            static_cast<long>(receiver_c.video.out_codec));
+  select_choice_by_userdata(choice_reencode_encoder,
+                            static_cast<long>(receiver_c.video.enc));
+  input_reencode_bitrate->value(std::to_string(receiver_c.video.bitrate).c_str());
+  check_upscale->value(receiver_c.video.upscale ? 1 : 0);
+  input_destinations->value(format_destinations(receiver_c.destinations).c_str());
+
+  layout();
+}
+
 void user_interface::refresh_ndi_devices(FuncPtr refresh_ndi_funcptr)
 {
   refresh_ndi_funcptr();
@@ -957,7 +1082,8 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                                        FuncPtr ndi_refresh_funcptr,
                                        FuncPtr input_rist_address_funcptr,
                                        FuncPtr preview_src_funcptr,
-                                       FuncPtr scaling_source_changed_funcptr)
+                                       FuncPtr scaling_source_changed_funcptr,
+                                       FuncPtr save_settings_funcptr)
 {
   main_window->callback([](Fl_Widget* w, void*) { w->hide(); });
 
@@ -1048,6 +1174,13 @@ void user_interface::init_ui_callbacks(input_config* input_c,
 
   FL_METHOD_CALLBACK_1(
       btn_stop_encode, user_interface, this, stop, FuncPtr, stop_funcptr);
+
+  FL_METHOD_CALLBACK_1(btn_save_settings,
+                       user_interface,
+                       this,
+                       save_settings,
+                       FuncPtr,
+                       save_settings_funcptr);
 
   btn_exit->callback([](Fl_Widget*, void* v) {
     static_cast<user_interface*>(v)->main_window->hide();

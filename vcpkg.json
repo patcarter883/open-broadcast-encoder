@@ -1,7 +1,9 @@
 {
   "name": "open-broadcast-encoder",
   "version-semver": "0.1.0",
-  "dependencies": [],
+  "dependencies": [
+    "nlohmann-json"
+  ],
   "default-features": [],
   "features": {
     "test": {
@@ -14,5 +16,5 @@
       ]
     }
   },
-  "builtin-baseline": "eba7c6a894fce24146af4fdf16fef8e90dd6be3"
+  "builtin-baseline": "059d760472984042e1b4db0d40efd935a1adcbc9"
 }

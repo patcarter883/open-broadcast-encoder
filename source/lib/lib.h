@@ -97,11 +97,15 @@ struct output_config
   std::string host = "127.0.0.1";
   int port = 5000;
   int streams = 1;
-  int buffer_min = 245;
+  // Recovery buffer floor must leave room for several retransmit rounds over a
+  // high-RTT mobile link; reorder hold-off must be a SMALL fraction of it
+  // (librist default 15 ms). A large reorder value (was 240 ms, ~= buffer_min)
+  // eats the recovery window and disables retransmission.
+  int buffer_min = 1000;
   int buffer_max = 5000;
   int rtt_min = 40;
   int rtt_max = 500;
-  int reorder_buffer = 240;
+  int reorder_buffer = 30;
   int bandwidth = 6000;
 };
 

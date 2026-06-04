@@ -30,6 +30,16 @@ find_package(PkgConfig REQUIRED)
     pkg_search_module(gstreamer-app REQUIRED IMPORTED_TARGET gstreamer-app-1.0>=1.28)
     pkg_search_module(gstreamer-video REQUIRED IMPORTED_TARGET gstreamer-video-1.0>=1.28)
 
+# cmake's FindPkgConfig doesn't always propagate -L dirs from the pkg-config
+# wrapper into INTERFACE_LINK_DIRECTORIES when cross-compiling.  Add them
+# explicitly so the MinGW linker can find the import libraries.
+if(CMAKE_CROSSCOMPILING AND DEFINED ENV{GSTREAMER_MINGW_PREFIX})
+  link_directories("$ENV{GSTREAMER_MINGW_PREFIX}/lib")
+endif()
+if(CMAKE_CROSSCOMPILING AND NDI_LIBRARY_DIR)
+  link_directories("${NDI_LIBRARY_DIR}")
+endif()
+
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/lib)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/ui)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/ndi_input)
@@ -38,6 +48,7 @@ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/encode)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/stats)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/url)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/control)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/settings)
 
 # ---- Declare executable ----
 
@@ -46,17 +57,34 @@ add_executable(open-broadcast-encoder::exe ALIAS open-broadcast-encoder_exe)
 
 set_property(TARGET open-broadcast-encoder_exe PROPERTY OUTPUT_NAME open-broadcast-encoder)
 
+# CachyOS compiles its crt files with znver4 ISA notes which propagate into
+# any linked binary and cause the glibc loader to reject the binary on older
+# CPUs — even when the code itself targets the x86-64 baseline. Strip the
+# note so the binary runs on any x86-64 regardless of the build host's CRT.
+if(UNIX AND NOT APPLE AND NOT CMAKE_CROSSCOMPILING)
+  find_program(OBJCOPY_EXE NAMES objcopy llvm-objcopy)
+  if(OBJCOPY_EXE)
+    add_custom_command(TARGET open-broadcast-encoder_exe POST_BUILD
+      COMMAND ${OBJCOPY_EXE} --remove-section=.note.gnu.property
+              $<TARGET_FILE:open-broadcast-encoder_exe>
+      COMMENT "Stripping x86 ISA-level note for cross-CPU portability"
+    )
+  endif()
+endif()
+
 target_compile_features(open-broadcast-encoder_exe PRIVATE cxx_std_20)
 
-target_link_libraries(open-broadcast-encoder_exe PRIVATE 
-  open-broadcast-encoder_lib 
+target_link_libraries(open-broadcast-encoder_exe PRIVATE
+  open-broadcast-encoder_lib
   stats_lib
   ndi_input_lib
   ui_lib
   encode_lib
   transport_lib
   control_lib
+  settings_lib
   ristnet
+  nlohmann_json::nlohmann_json
   PkgConfig::gstreamer
   PkgConfig::gstreamer-sdp
   PkgConfig::gstreamer-rtp

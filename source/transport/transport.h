@@ -6,7 +6,12 @@
 #include <memory>
 #include <vector>
 
-#include <sys/types.h>
+#ifndef _WIN32
+#  include <sys/types.h>
+#else
+#  include <cstdint>
+   using u_int16_t = uint16_t;
+#endif
 
 #include "RISTNet.h"
 #include "lib/lib.h"

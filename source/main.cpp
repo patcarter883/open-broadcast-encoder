@@ -10,7 +10,11 @@
 #include <thread>
 #include <vector>
 
-#include <arpa/inet.h>
+#ifdef _WIN32
+#  include <winsock2.h>
+#else
+#  include <arpa/inet.h>
+#endif
 #include <gst/gst.h>
 #include <gst/video/video.h>
 
@@ -18,6 +22,7 @@
 #include "encode.h"
 #include "lib.h"
 #include "ndi_input.h"
+#include "settings/settings.h"
 #include "stats.h"
 #include "transport.h"
 #include "ui.h"
@@ -273,6 +278,19 @@ static void run_transport()
   ctx.transporter->setup_rist_sender(ctx.lib.output_cfg);
 }
 
+// Persist the current Encode / Output / Receiver / Input configuration. Wired
+// to the "Save Settings" button and also invoked once on clean exit so the
+// last-used values are remembered without an explicit click.
+static void save_settings()
+{
+  if (settings::save(ctx.lib)) {
+    transport_log("Settings saved to " + settings::settings_file_path().string()
+                  + "\n");
+  } else {
+    transport_log("Failed to save settings.\n");
+  }
+}
+
 static void scaling_source_changed()
 {
   std::lock_guard<std::mutex> guard(ctx.lib.stats.mutex);
@@ -442,9 +460,31 @@ auto main(int argc, char** argv) -> int
                             &refresh_ndi_devices,
                             &run_transport,
                             &preview_input,
-                            &scaling_source_changed);
+                            &scaling_source_changed,
+                            &save_settings);
+
+  // Restore persisted settings (if any) over the UI defaults set above, then
+  // mirror them into the widgets so the operator sees their saved values.
+  if (settings::load(ctx.lib)) {
+    ctx.ui->apply_settings(ctx.lib.input_cfg,
+                           ctx.lib.encode_cfg,
+                           ctx.lib.output_cfg,
+                           ctx.lib.receiver_ctl);
+  }
+
+  // Bring up the RIST sender (and register the OOB feedback callback) from the
+  // current output address right away. apply_settings() populates the address
+  // widget via value(), which does NOT fire its FLTK callback, so without this
+  // the transport only came up after the operator hand-edited the address field
+  // (type a character, delete it). run_transport() reads ctx.lib.output_cfg,
+  // already populated by settings::load() or its defaults.
+  run_transport();
+
   ctx.ui->show(argc, argv);
   const int result = ctx.ui->run_ui();
+
+  // Auto-save on clean exit so the latest values persist without a click.
+  settings::save(ctx.lib);
 
   // Tear down in reverse dependency order before the FLTK ui goes out of
   // scope. Each component drains its own threads / callbacks.

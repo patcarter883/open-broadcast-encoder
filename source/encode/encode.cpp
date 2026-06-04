@@ -129,7 +129,11 @@ void encode::pipeline_build_sink()
   this->pipeline_str +=
       " appsink name=video_sink "
       // " appsink name=audio_sink  ";
-      "mpegtsmux alignment=7 name=tsmux ! video_sink. ";
+      // enable-custom-mappings=true is REQUIRED to mux AV1 (and VP9): GStreamer
+      // has no standardised MPEG-TS stream type for them, so mpegtsmux otherwise
+      // fails with "AV1 requires enabling custom mapping". No-op for H.264/H.265.
+      "mpegtsmux alignment=7 enable-custom-mappings=true name=tsmux "
+      "! video_sink. ";
 }
 
 void encode::pipeline_build_video_demux()
@@ -210,7 +214,7 @@ constexpr std::string_view kEncoderTemplates[kEncoderCount][kCodecCount] = {
         "amfav1enc name=videncoder bitrate={} rate-control=cbr "
         "usage=low-latency preset=high-quality  pre-encode=true "
         "pa-hqmb-mode=auto ! video/x-av1,framerate=60/1 "
-        "! av1parse ",
+        "! av1parse ! video/x-av1,stream-format=obu-stream,alignment=frame ",
     },
     // encoder::qsv
     {
@@ -224,7 +228,8 @@ constexpr std::string_view kEncoderTemplates[kEncoderCount][kCodecCount] = {
         "config-interval=1 ",
         // codec::av1
         "qsvav1enc name=videncoder bitrate={} rate-control=cbr "
-        "target-usage=1 gop-size=120 ! video/x-av1,framerate=60/1 ! av1parse ",
+        "target-usage=1 gop-size=120 ! video/x-av1,framerate=60/1 ! av1parse "
+        "! video/x-av1,stream-format=obu-stream,alignment=frame ",
     },
     // encoder::nvenc
     {
@@ -236,7 +241,7 @@ constexpr std::string_view kEncoderTemplates[kEncoderCount][kCodecCount] = {
         "preset=low-latency-hq ! h265parse config-interval=1 ",
         // codec::av1
         "nvav1enc name=videncoder bitrate={} rc-mode=cbr preset=low-latency-hq "
-        "! av1parse config-interval=1 ",
+        "! av1parse ! video/x-av1,stream-format=obu-stream,alignment=frame ",
     },
     // encoder::software
     {
@@ -248,7 +253,8 @@ constexpr std::string_view kEncoderTemplates[kEncoderCount][kCodecCount] = {
         "speed-preset=fast tune=zerolatency ! h265parse config-interval=1 ",
         // codec::av1
         "rav1enc name=videncoder bitrate={} speed-preset=8 tile-cols=2 "
-        "tile-rows=2 ! av1parse ",
+        "tile-rows=2 ! av1parse "
+        "! video/x-av1,stream-format=obu-stream,alignment=frame ",
     },
 };
 }  // namespace

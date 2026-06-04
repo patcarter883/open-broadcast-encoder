@@ -54,6 +54,7 @@ public:
   Fl_Input* input_rist_address;
   Fl_Button* btn_start_encode;
   Fl_Button* btn_stop_encode;
+  Fl_Button* btn_save_settings;
   Fl_Button* btn_exit;
   // Receiver / restream control section
   Fl_Flex* flx_receiver;
@@ -96,7 +97,14 @@ public:
                          FuncPtr ndi_refresh_funcptr,
                          FuncPtr input_rist_address_funcptr,
                          FuncPtr preview_src_funcptr,
-                         FuncPtr scaling_source_changed_funcptr);
+                         FuncPtr scaling_source_changed_funcptr,
+                         FuncPtr save_settings_funcptr);
+  // Push persisted configs into the widgets after settings::load(). Call once,
+  // on the main thread, after init_ui_callbacks() and before show().
+  void apply_settings(const input_config& input_c,
+                      const encode_config& encode_c,
+                      const output_config& output_c,
+                      const receiver_control_config& receiver_c);
   void transport_log_append(const std::string& msg) const;
   void encode_log_append(const std::string& msg) const;
   void init_ui();
@@ -135,6 +143,7 @@ private:
   void receiver_destinations_cb(receiver_control_config* receiver_config);
   void start(FuncPtr start_funcptr);
   void stop(FuncPtr stop_funcptr);
+  void save_settings(FuncPtr save_settings_funcptr);
   void refresh_ndi_devices(FuncPtr refresh_ndi_funcptr);
   void btn_preview_input_cb(FuncPtr preview_src_funcptr);
 };

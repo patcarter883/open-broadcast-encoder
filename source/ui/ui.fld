@@ -183,6 +183,14 @@ class user_interface {open
                 label {Stop Encode}
                 xywh {693 50 210 25} deactivate
               }
+              Fl_Button btn_save_settings {
+                label {Save Settings}
+                xywh {905 50 110 25}
+              }
+              Fl_Button btn_exit {
+                label Exit
+                xywh {1020 50 80 25}
+              }
             }
           }
           Fl_Flex {} {
