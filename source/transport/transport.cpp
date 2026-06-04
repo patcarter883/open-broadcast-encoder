@@ -86,10 +86,15 @@ void transport::setup_rist_sender(output_config& output_c)
   std::vector<std::tuple<string, int>> interface_list_sender;
 
   for (int i = 0; i < output_c.streams; i = i + 1) {
+    // timing-mode=1 (ARRIVAL), NOT 2 (RTC). RTC mode makes the receiver drop
+    // every data packet while time_offset==0, and that offset is only set from
+    // an RTCP SR carrying a real NTP source clock we don't supply (ts_ntp=0) —
+    // so gap detection / NACK never runs and loss is never recovered or counted.
+    // Must match the receiver's timing-mode.
     string rist_output_url = std::format(
         "rist://"
         "{}:{}?bandwidth={}&buffer-min={}&buffer-max={}&rtt-min={}&rtt-max={}&"
-        "reorder-buffer={}&timing-mode=2",
+        "reorder-buffer={}&timing-mode=1",
         output_c.host,
         output_c.port + (2 * i),
         output_c.bandwidth,
