@@ -154,6 +154,8 @@ static void rist_oob_cb(const uint8_t* data, size_t size)
   }
 }
 
+static void run_transport();
+
 static void run_loop()
 {
   ctx.lib.is_running = true;
@@ -163,15 +165,19 @@ static void run_loop()
         ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
     ctx.lib.stats.previous_quality = 0.0;
   }
+
+  // Create and configure the RIST sender HERE, on this background thread —
+  // never on the FLTK UI thread. rist_destroy()/initSender can block (thread
+  // joins, DNS), and recreating the transporter while this loop sends to it is
+  // a use-after-free. The RIST output address is read from output_cfg, which
+  // the address field updates directly without touching the live sender.
+  run_transport();
+
   auto encoder = std::make_shared<encode>(
       ctx.lib.input_cfg, ctx.lib.encode_cfg, ctx.lib.run_flag, &encode_log);
   ctx.lib.encoder_ptr.store(encoder);
 
   encoder->run_encode_thread();
-
-  if (ctx.transporter) {
-    ctx.transporter->set_statistics_callback(&rist_stats_cb);
-  }
 
   while (ctx.lib.is_running.load(std::memory_order_acquire)) {
     auto vidbuf = encoder->pull_video_buffer();
@@ -183,6 +189,13 @@ static void run_loop()
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
   }
+
+  // NOTE: we do NOT rist_destroy() here. stop() runs on the FLTK thread holding
+  // Fl::lock() and joins this thread; if we tore the sender down here, librist's
+  // stats callback (which takes Fl::lock()) would deadlock against that join.
+  // The sender is left connected-but-silent (callbacks nulled in stop()) and is
+  // destroyed on the NEXT Start (run_transport(), this thread) or at exit (after
+  // Fl::run() returns, when no Fl::lock is held).
 }
 
 // Provision the partner receiver over its REST control plane before the
@@ -243,6 +256,18 @@ static void release_receiver()
 
 static void run()
 {
+  // Stop the NDI preview before opening the encode pipeline. Preview and encode
+  // each create their own ndisrc on the same NDI source; running both contends
+  // for the receiver and the encode pipeline's ndisrc gets no video frames — so
+  // mpegtsmux emits only PSI (PAT/PMT) and the encoder appears to send nothing,
+  // while the preview keeps working (separate pipeline). Tear preview down first
+  // to free the source. (No Fl::lock() in preview teardown, so this join is
+  // safe on the UI thread — same pattern as start_preview_thread.)
+  ctx.lib.preview_running = false;
+  if (ctx.lib.preview_thread.joinable()) {
+    ctx.lib.preview_thread.join();
+  }
+
   provision_receiver();
   ctx.lib.threads.emplace_back(run_loop);
 }
@@ -250,6 +275,10 @@ static void run()
 static void stop()
 {
   ctx.lib.is_running = false;
+  // Silence the sender's callbacks (fast atomic stores — safe on the UI thread).
+  // We do NOT destroy the transporter here: rist_destroy() must not run while
+  // the UI thread holds Fl::lock() and joins run_loop (librist's stats callback
+  // takes Fl::lock() → deadlock). It is destroyed at the next Start or at exit.
   if (ctx.transporter) {
     ctx.transporter->set_statistics_callback(nullptr);
     ctx.transporter->set_oob_callback(nullptr);
@@ -458,7 +487,10 @@ auto main(int argc, char** argv) -> int
                             &run,
                             &stop,
                             &refresh_ndi_devices,
-                            &run_transport,
+                            // No address-change callback: the RIST sender is
+                            // (re)created at Start on the run_loop thread, never
+                            // from the FLTK UI thread. The field just edits cfg.
+                            nullptr,
                             &preview_input,
                             &scaling_source_changed,
                             &save_settings);
@@ -472,16 +504,21 @@ auto main(int argc, char** argv) -> int
                            ctx.lib.receiver_ctl);
   }
 
-  // Bring up the RIST sender (and register the OOB feedback callback) from the
-  // current output address right away. apply_settings() populates the address
-  // widget via value(), which does NOT fire its FLTK callback, so without this
-  // the transport only came up after the operator hand-edited the address field
-  // (type a character, delete it). run_transport() reads ctx.lib.output_cfg,
-  // already populated by settings::load() or its defaults.
-  run_transport();
+  // NOTE: the RIST sender is created at Start, inside run_loop() on its own
+  // thread (never here / never on the UI thread). The address field only
+  // updates output_cfg; it must not build or tear down the live sender.
 
   ctx.ui->show(argc, argv);
   const int result = ctx.ui->run_ui();
+
+  // Fl::run() returns with the main thread still holding the FLTK lock taken in
+  // init_ui(). Release it BEFORE teardown: ctx.transporter.reset() below calls
+  // rist_destroy(), which joins librist's sender thread — and an in-flight stats
+  // callback (rist_stats_cb -> Fl::lock()) would deadlock against the join if we
+  // kept holding the lock. Releasing it lets that callback finish so the join
+  // (and thus Exit) completes instead of freezing. Teardown code re-takes the
+  // lock per-mutation (transport_log_append etc.) as needed.
+  ctx.ui->unlock();
 
   // Auto-save on clean exit so the latest values persist without a click.
   settings::save(ctx.lib);

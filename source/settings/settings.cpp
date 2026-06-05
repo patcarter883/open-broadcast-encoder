@@ -1,5 +1,6 @@
 #include "settings/settings.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <string>
@@ -246,6 +247,8 @@ bool save(const library& lib)
       {"bitrate", enc.bitrate.load(std::memory_order_relaxed)},
       {"scaling_source",
        bitrate_source_str(enc.scaling_source.load(std::memory_order_relaxed))},
+      {"mpegts_alignment",
+       enc.mpegts_alignment.load(std::memory_order_relaxed)},
   };
 
   root["output"] = {
@@ -342,6 +345,12 @@ bool load(library& lib)
       if (parse_bitrate_source(s->get<std::string>(), src)) {
         enc.scaling_source.store(src, std::memory_order_relaxed);
       }
+    }
+    if (auto a = j.find("mpegts_alignment");
+        a != j.end() && a->is_number_integer())
+    {
+      enc.mpegts_alignment.store(std::clamp(a->get<int>(), 1, 7),
+                                 std::memory_order_relaxed);
     }
   }
 

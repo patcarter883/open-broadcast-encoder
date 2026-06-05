@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <format>
 #include <mutex>
@@ -126,14 +127,19 @@ void encode::pipeline_build_source()
 
 void encode::pipeline_build_sink()
 {
-  this->pipeline_str +=
+  // alignment = TS packets per buffer = bytes per RIST datagram (n*188). Lower
+  // it for low-MTU cellular links so RIST packets don't get IP-fragmented.
+  // Clamp to a sane range; <1 would make mpegtsmux auto-size (= large buffers).
+  const int alignment =
+      std::clamp(encode_c.mpegts_alignment.load(std::memory_order_relaxed), 1, 7);
+  // enable-custom-mappings=true is REQUIRED to mux AV1 (and VP9): GStreamer has
+  // no standardised MPEG-TS stream type for them, so mpegtsmux otherwise fails
+  // with "AV1 requires enabling custom mapping". No-op for H.264/H.265.
+  this->pipeline_str += std::format(
       " appsink name=video_sink "
-      // " appsink name=audio_sink  ";
-      // enable-custom-mappings=true is REQUIRED to mux AV1 (and VP9): GStreamer
-      // has no standardised MPEG-TS stream type for them, so mpegtsmux otherwise
-      // fails with "AV1 requires enabling custom mapping". No-op for H.264/H.265.
-      "mpegtsmux alignment=7 enable-custom-mappings=true name=tsmux "
-      "! video_sink. ";
+      "mpegtsmux alignment={} enable-custom-mappings=true name=tsmux "
+      "! video_sink. ",
+      alignment);
 }
 
 void encode::pipeline_build_video_demux()
@@ -204,31 +210,31 @@ constexpr std::string_view kEncoderTemplates[kEncoderCount][kCodecCount] = {
         // codec::h264
         "amfh264enc name=videncoder  bitrate={} rate-control=cbr "
         "usage=low-latency preset=quality pre-encode=true pa-hqmb-mode=auto ! "
-        "video/x-h264,framerate=60/1,profile=high ! h264parse "
+        "video/x-h264,profile=high ! h264parse "
         "config-interval=1 ",
         // codec::h265
         "amfh265enc name=videncoder bitrate={} rate-control=cbr "
         "usage=low-latency preset=quality pre-encode=true pa-hqmb-mode=auto ! "
-        "video/x-h265,framerate=60/1 ! h265parse config-interval=1 ",
+        "h265parse config-interval=1 ",
         // codec::av1
         "amfav1enc name=videncoder bitrate={} rate-control=cbr "
         "usage=low-latency preset=high-quality  pre-encode=true "
-        "pa-hqmb-mode=auto ! video/x-av1,framerate=60/1 "
+        "pa-hqmb-mode=auto "
         "! av1parse ! video/x-av1,stream-format=obu-stream,alignment=frame ",
     },
     // encoder::qsv
     {
         // codec::h264
         "qsvh264enc name=videncoder  bitrate={} rate-control=cbr "
-        "target-usage=1 ! video/x-h264,framerate=60/1  ! h264parse "
+        "target-usage=1 ! h264parse "
         "config-interval=1 ",
         // codec::h265
         "qsvh265enc name=videncoder bitrate={} rate-control=cbr "
-        "target-usage=1 ! video/x-h265,framerate=60/1  ! h265parse "
+        "target-usage=1 ! h265parse "
         "config-interval=1 ",
         // codec::av1
         "qsvav1enc name=videncoder bitrate={} rate-control=cbr "
-        "target-usage=1 gop-size=120 ! video/x-av1,framerate=60/1 ! av1parse "
+        "target-usage=1 gop-size=120 ! av1parse "
         "! video/x-av1,stream-format=obu-stream,alignment=frame ",
     },
     // encoder::nvenc

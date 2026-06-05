@@ -51,6 +51,7 @@ public:
   Fl_Choice* choice_encoder;
   static Fl_Menu_Item menu_choice_encoder[];
   Fl_Input* input_encode_bitrate;
+  Fl_Input* input_mpegts_alignment;
   Fl_Input* input_rist_address;
   Fl_Button* btn_start_encode;
   Fl_Button* btn_stop_encode;
@@ -131,6 +132,7 @@ private:
   void select_bitrate_source(encode_config* encode_config,
                              FuncPtr scaling_source_changed_funcptr);
   void encode_bitrate_cb(encode_config* encode_config);
+  void mpegts_alignment_cb(encode_config* encode_config);
   // Receiver / restream control callbacks
   void receiver_enabled_cb(receiver_control_config* receiver_config);
   void receiver_address_cb(receiver_control_config* receiver_config);

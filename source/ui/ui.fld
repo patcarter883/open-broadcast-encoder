@@ -172,6 +172,10 @@ class user_interface {open
               label {RIST Address}
               xywh {476 51 421 25} align 5
             }
+            Fl_Input input_mpegts_alignment {
+              label {MPEG-TS Alignment}
+              tooltip {TS packets per RIST datagram (1-7) = bytes/188. Lower it (e.g. 6) for low-MTU cellular links so RIST packets aren't IP-fragmented. Default 7. Applied at next Start.} xywh {476 51 421 25} align 5
+            }
             Fl_Flex {} {open
               xywh {475 50 423 25} type HORIZONTAL gap 12
             } {

@@ -420,6 +420,15 @@ user_interface::user_interface()
             input_rist_address->align(Fl_Align(FL_ALIGN_TOP_LEFT));
           }  // Fl_Input* input_rist_address
           {
+            input_mpegts_alignment =
+                new Fl_Input(476, 51, 421, 25, "MPEG-TS Alignment");
+            input_mpegts_alignment->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+            input_mpegts_alignment->tooltip(
+                "TS packets per RIST datagram (1-7) = bytes/188. Lower it "
+                "(e.g. 6) for low-MTU cellular links so RIST packets aren't "
+                "IP-fragmented. Default 7. Applied at next Start.");
+          }  // Fl_Input* input_mpegts_alignment
+          {
             Fl_Flex* o = new Fl_Flex(475, 50, 423, 25);
             o->type(1);
             {
@@ -442,8 +451,9 @@ user_interface::user_interface()
           }  // Fl_Flex* o
           o->margin(5, 25, 5, 5);
           o->gap(25);
-          o->fixed(o->child(0), 25);
-          o->fixed(o->child(1), 25);
+          o->fixed(o->child(0), 25);  // RIST Address
+          o->fixed(o->child(1), 25);  // MPEG-TS Alignment
+          o->fixed(o->child(2), 25);  // Start/Stop/Save/Exit button row
           o->end();
         }  // Fl_Flex* o
         {
@@ -904,6 +914,19 @@ void user_interface::encode_bitrate_cb(encode_config* encode_config)
   }
 }
 
+void user_interface::mpegts_alignment_cb(encode_config* encode_config)
+{
+  const char* raw = input_mpegts_alignment->value();
+  if (raw == nullptr) {
+    return;
+  }
+  try {
+    encode_config->mpegts_alignment.store(std::clamp(std::stoi(raw), 1, 7),
+                                          std::memory_order_relaxed);
+  } catch (...) {
+  }
+}
+
 void user_interface::receiver_enabled_cb(receiver_control_config* rc)
 {
   rc->enabled = check_receiver_enabled->value() != 0;
@@ -1038,6 +1061,9 @@ void user_interface::apply_settings(const input_config& input_c,
                             static_cast<long>(encode_c.selected_encoder));
   input_encode_bitrate->value(
       std::to_string(encode_c.bitrate.load(std::memory_order_relaxed)).c_str());
+  input_mpegts_alignment->value(
+      std::to_string(encode_c.mpegts_alignment.load(std::memory_order_relaxed))
+          .c_str());
   select_choice_by_userdata(
       choice_bitrate_source,
       static_cast<long>(encode_c.scaling_source.load(std::memory_order_relaxed)));
@@ -1150,6 +1176,15 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        user_interface,
                        this,
                        encode_bitrate_cb,
+                       encode_config*,
+                       encode_c);
+
+  input_mpegts_alignment->value("7");
+  input_mpegts_alignment->when(FL_WHEN_CHANGED);
+  FL_METHOD_CALLBACK_1(input_mpegts_alignment,
+                       user_interface,
+                       this,
+                       mpegts_alignment_cb,
                        encode_config*,
                        encode_c);
 

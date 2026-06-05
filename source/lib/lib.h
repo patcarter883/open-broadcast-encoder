@@ -89,6 +89,12 @@ struct encode_config
   encoder selected_encoder = encoder::software;
   std::atomic<int> bitrate {4300};
   std::atomic<bitrate_source> scaling_source {bitrate_source::local};
+  // MPEG-TS packets per mux output buffer = bytes per RIST datagram (n * 188).
+  // 7 (=1316 B) is the standard RTP/MPEG-TS payload, but with RIST's RTP/GRE
+  // headers that can exceed a low cellular path MTU and get IP-fragmented (one
+  // lost fragment drops the whole packet). Lower it (e.g. 6 => 1128 B) so each
+  // RIST datagram fits under the link MTU. Applied at the next Start.
+  std::atomic<int> mpegts_alignment {7};
 };
 
 struct output_config
