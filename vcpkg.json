@@ -1,6 +1,7 @@
 {
   "name": "open-broadcast-encoder",
   "version-semver": "0.1.0",
+  "license": "AGPL-3.0-or-later",
   "dependencies": [
     "nlohmann-json"
   ],
