@@ -22,6 +22,7 @@ target_include_directories(settings_lib PUBLIC
 target_compile_features(settings_lib PUBLIC cxx_std_20)
 
 target_link_libraries(settings_lib PRIVATE
+    backplane_lib
     open-broadcast-encoder_lib
     nlohmann_json::nlohmann_json
 )

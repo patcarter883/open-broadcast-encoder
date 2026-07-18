@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
+#include <iterator>
+#include <optional>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -419,5 +421,54 @@ bool load(library& lib)
   }
 
   return true;
+}
+
+// --- Hosted-mode session persistence (M2.7) --------------------------------
+
+std::filesystem::path hosted_session_path()
+{
+  return settings_file_path().parent_path() / "hosted-session.json";
+}
+
+bool save_hosted_session(const hosted_session& session)
+{
+  namespace fs = std::filesystem;
+  const fs::path path = hosted_session_path();
+  std::error_code ec;
+  fs::create_directories(path.parent_path(), ec);
+  std::ofstream file(path, std::ios::trunc);
+  if (!file) {
+    return false;
+  }
+  // Contains the once-shown control_token + PSK — owner-only, set before the
+  // secret content is written (the file exists and is empty here). Mirrors the
+  // settings-file 0600 rule (M1.9).
+  fs::permissions(path,
+                  fs::perms::owner_read | fs::perms::owner_write,
+                  fs::perm_options::replace,
+                  ec);
+  file << session.to_json() << '\n';
+  return static_cast<bool>(file);
+}
+
+std::optional<hosted_session> load_hosted_session()
+{
+  std::ifstream file(hosted_session_path());
+  if (!file) {
+    return std::nullopt;
+  }
+  std::string text((std::istreambuf_iterator<char>(file)),
+                   std::istreambuf_iterator<char>());
+  hosted_session session = hosted_session::from_json(text);
+  if (!session.valid()) {
+    return std::nullopt;
+  }
+  return session;
+}
+
+void clear_hosted_session()
+{
+  std::error_code ec;
+  std::filesystem::remove(hosted_session_path(), ec);
 }
 }  // namespace settings
