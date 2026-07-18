@@ -21,6 +21,18 @@ target_compile_features(open-broadcast-encoder_test PRIVATE cxx_std_20)
 
 catch_discover_tests(open-broadcast-encoder_test)
 
+add_executable(backplane_test source/backplane_test.cpp)
+target_link_libraries(
+    backplane_test PRIVATE
+    backplane_lib
+    open-broadcast-encoder_lib
+    nlohmann_json::nlohmann_json
+    Catch2::Catch2WithMain
+)
+target_compile_features(backplane_test PRIVATE cxx_std_20)
+
+catch_discover_tests(backplane_test)
+
 # ---- End-of-file commands ----
 
 add_folders(Test)

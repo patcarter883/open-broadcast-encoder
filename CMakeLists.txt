@@ -48,6 +48,7 @@ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/encode)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/stats)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/url)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/control)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/backplane)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/settings)
 
 # ---- Declare executable ----
@@ -82,6 +83,7 @@ target_link_libraries(open-broadcast-encoder_exe PRIVATE
   encode_lib
   transport_lib
   control_lib
+  backplane_lib
   settings_lib
   ristnet
   nlohmann_json::nlohmann_json
@@ -107,6 +109,7 @@ ${CMAKE_CURRENT_LIST_DIR}/source/transport
 ${CMAKE_CURRENT_LIST_DIR}/source/ndi_input
 ${CMAKE_CURRENT_LIST_DIR}/source/ui
 ${CMAKE_CURRENT_LIST_DIR}/source/control
+${CMAKE_CURRENT_LIST_DIR}/source/backplane
 ${CMAKE_CURRENT_LIST_DIR}/external)
 
 

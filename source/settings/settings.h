@@ -4,7 +4,9 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 
+#include "backplane/backplane.h"
 #include "lib/lib.h"
 
 // Persists the user-editable Encode / Output / Receiver / Input configuration to
@@ -27,4 +29,15 @@ bool save(const library& lib);
 // read and parsed; false (leaving the existing defaults untouched) if the file
 // is absent or malformed.
 bool load(library& lib);
+
+// Hosted-mode session persistence (M2.7). The credentials a backplane
+// allocation returns are written to a SEPARATE 0600 file next to the settings
+// file, the instant they are received — before the session is used — so a
+// crash between allocate and first use cannot silently orphan the allocation.
+// On relaunch the encoder loads it and can resume, or offer
+// abandon-and-reallocate. Path: <config-dir>/hosted-session.json.
+std::filesystem::path hosted_session_path();
+bool save_hosted_session(const hosted_session& session);   // 0600, atomic-ish
+std::optional<hosted_session> load_hosted_session();
+void clear_hosted_session();  // on clean /stop or successful abandon
 }  // namespace settings
