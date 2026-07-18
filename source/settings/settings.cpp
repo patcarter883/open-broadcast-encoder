@@ -301,6 +301,15 @@ bool save(const library& lib)
   if (!file) {
     return false;
   }
+  // M1.9: the settings file holds stream keys and the receiver token —
+  // restrict it to the owner BEFORE the secret content is written (the file
+  // exists and is empty at this point). Keychain integration is a later
+  // nicety (see README).
+  std::filesystem::permissions(path,
+                               std::filesystem::perms::owner_read
+                                   | std::filesystem::perms::owner_write,
+                               std::filesystem::perm_options::replace,
+                               ec);
   file << root.dump(2) << '\n';
   return static_cast<bool>(file);
 }

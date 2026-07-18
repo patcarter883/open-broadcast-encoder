@@ -22,3 +22,11 @@ yourself; the encoder detects it at runtime and prompts if it is missing.
 
 Contributions are accepted under the same license with a DCO sign-off — see
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+# Secrets on disk
+
+The settings file (stream keys, receiver token) is written with `0600`
+permissions and secrets are masked in the in-app log panes. OS keychain
+integration is a planned later nicety — until then, treat the settings file
+path as sensitive. A future hosted-mode device refresh token will be stored in
+the same file under the same rules.

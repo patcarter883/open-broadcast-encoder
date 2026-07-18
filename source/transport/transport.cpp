@@ -101,12 +101,20 @@ void transport::setup_rist_sender(output_config& output_c)
     // SOURCE orders/paces by the monotonic source timestamp librist stamps on
     // each packet (preserved unchanged across the rist2rist relay). Must match
     // on every hop.
+    // Bonding topology (FIXPLAN M1.7 / CONTRACT §4): every link targets the
+    // SAME host:port — bonded links present as multiple RIST peers on the
+    // single session port. The old port fan (port + 2*i) silently lost every
+    // link but the first against a spec-compliant single-port receiver and is
+    // not supported. (True multi-WAN bonding from one machine additionally
+    // needs per-interface binding — the rist2rist hop's miface model; until
+    // the encoder grows an interface picker, streams>1 peers share the
+    // default route and mainly serve the test rig.)
     string rist_output_url = std::format(
         "rist://"
         "{}:{}?bandwidth={}&buffer-min={}&buffer-max={}&rtt-min={}&rtt-max={}&"
         "reorder-buffer={}&timing-mode=0",
         output_c.host,
-        output_c.port + (2 * i),
+        output_c.port,
         output_c.bandwidth,
         output_c.buffer_min,
         output_c.buffer_max,
