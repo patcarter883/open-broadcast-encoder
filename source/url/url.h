@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Pat Carter
+
 // homer::url v0.3.0
 // MIT License
 // https://github.com/homer6/url

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Pat Carter
+
 #pragma once
 #include <atomic>
 #include <cstdint>
@@ -217,6 +220,26 @@ struct library
 
   void log_append(const std::string& msg) const;
 };
+
+
+// ---------------------------------------------------------------------------
+// Secret hygiene (FIXPLAN M1.9). Stream keys, bearer tokens and PSKs must
+// never reach the UI log panes or the transport log. Register every secret as
+// soon as it is known; route every log line through redact() before display.
+// URLs are loggable by definition — secrets never enter URLs — but librist and
+// third-party lines are redacted defensively anyway.
+// ---------------------------------------------------------------------------
+
+namespace secrets
+{
+// Remember a secret value so redact() can mask it. Values shorter than 4
+// characters are ignored (masking them would shred normal text). Idempotent.
+void register_secret(const std::string& value);
+
+// Return text with every registered secret replaced by "***" and the values
+// of secret=/streamid=/psk=/token= URL-style parameters masked.
+auto redact(std::string text) -> std::string;
+}  // namespace secrets
 
 struct app_context
 {

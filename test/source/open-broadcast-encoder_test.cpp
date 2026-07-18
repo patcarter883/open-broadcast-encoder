@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Pat Carter
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "lib.h"

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Pat Carter
+
 #include <algorithm>
 #include <functional>
 #include <sstream>
@@ -710,16 +713,19 @@ void user_interface::layout()
 
 void user_interface::transport_log_append(const std::string& msg) const
 {
+  // M1.9: no stream key / token / PSK material ever reaches the log panes.
+  const std::string clean = secrets::redact(msg);
   Fl::lock();
-  transport_log_display->insert(msg.c_str());
+  transport_log_display->insert(clean.c_str());
   Fl::unlock();
   Fl::awake();
 }
 
 void user_interface::encode_log_append(const std::string& msg) const
 {
+  const std::string clean = secrets::redact(msg);
   Fl::lock();
-  encode_log_display->insert(msg.c_str());
+  encode_log_display->insert(clean.c_str());
   Fl::unlock();
   Fl::awake();
 }

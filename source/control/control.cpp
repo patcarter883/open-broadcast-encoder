@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Pat Carter
+
 #include "control/control.h"
 
 #include <string>
@@ -22,21 +25,6 @@ const char* codec_str(codec c) noexcept
       return "av1";
   }
   return "h264";
-}
-
-const char* encoder_str(encoder e) noexcept
-{
-  switch (e) {
-    case encoder::amd:
-      return "amd";
-    case encoder::qsv:
-      return "qsv";
-    case encoder::nvenc:
-      return "nvenc";
-    case encoder::software:
-      return "software";
-  }
-  return "software";
 }
 
 const char* proto_str(output_proto p) noexcept
@@ -91,14 +79,18 @@ control_client::control_client(std::string host_, int port_, std::string token_)
     , port {port_}
     , token {std::move(token_)}
 {
+  secrets::register_secret(token);  // M1.9: never reaches the log panes
 }
 
 bool control_client::start(const receiver_control_config& cfg,
                            codec source_codec,
                            std::string& err)
 {
+  // CONTRACT schema_version 2 (transport profile, 2026-07-18): the receiver
+  // is copy-only fan-out — outputs carry no video/audio mode blocks (the
+  // fields are gone, not ignored: a v1 body is rejected with invalid_schema).
   json body;
-  body["schema_version"] = 1;
+  body["schema_version"] = 2;
   body["session_id"] = cfg.session_id;
   body["source"]["codec"] = codec_str(source_codec);
 
@@ -109,29 +101,10 @@ bool control_client::start(const receiver_control_config& cfg,
     o["id"] = "out" + std::to_string(i);
     o["type"] = proto_str(d.proto);
     o["url"] = d.url;
-    o["key_or_streamid"] = d.stream_key;
-
-    json v;
-    if (cfg.reencode) {
-      v["mode"] = "reencode";
-      v["codec"] = codec_str(cfg.video.out_codec);
-      v["encoder"] = encoder_str(cfg.video.enc);
-      v["bitrate_kbps"] = cfg.video.bitrate;
-      v["upscale"] = cfg.video.upscale;
-      v["width"] = cfg.video.width;
-      v["height"] = cfg.video.height;
-    } else {
-      // Copy mode: video.codec must equal source.codec (CONTRACT §4).
-      v["mode"] = "copy";
-      v["codec"] = codec_str(source_codec);
+    if (!d.stream_key.empty()) {
+      secrets::register_secret(d.stream_key);  // M1.9
+      o["key_or_streamid"] = d.stream_key;
     }
-    o["video"] = v;
-
-    json a;
-    a["mode"] = "copy";
-    a["codec"] = "aac";
-    o["audio"] = a;
-
     outputs.push_back(std::move(o));
   }
   body["outputs"] = std::move(outputs);
@@ -142,7 +115,7 @@ bool control_client::start(const receiver_control_config& cfg,
 bool control_client::stop(const std::string& session_id, std::string& err)
 {
   json body;
-  body["schema_version"] = 1;
+  body["schema_version"] = 2;
   body["session_id"] = session_id;
   return post_json(host, port, token, "/stop", body.dump(), err);
 }
