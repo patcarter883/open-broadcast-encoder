@@ -26,6 +26,7 @@ fltk::fltk
 
 target_link_libraries(ui_lib PRIVATE
 open-broadcast-encoder_lib
+discovery_lib
 )
 
 target_include_directories(ui_lib PUBLIC

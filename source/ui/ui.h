@@ -23,6 +23,7 @@
 #include <stdint.h>
 
 #include "FL/fl_callback_macros.H"
+#include "discovery/discovery.h"
 #include "lib/lib.h"
 
 using FuncPtr = void (*)();
@@ -56,6 +57,10 @@ public:
   Fl_Input* input_encode_bitrate;
   Fl_Input* input_mpegts_alignment;
   Fl_Input* input_rist_address;
+  // Auto-discovered rist2rist bridges (mDNS) + a refresh button; picking one
+  // fills input_rist_address.
+  Fl_Choice* choice_rist_bridge;
+  Fl_Button* btn_refresh_bridges;
   Fl_Button* btn_start_encode;
   Fl_Button* btn_stop_encode;
   Fl_Button* btn_save_settings;
@@ -115,6 +120,11 @@ public:
   int run_ui();
   void add_ndi_choices(const std::vector<std::string>& choice_names);
   void clear_ndi_choices();
+  // Bridge picker: browse the LAN and (re)populate choice_rist_bridge.
+  void refresh_bridges();
+  void add_bridge_choices(const std::vector<discovery::bridge>& bridges);
+  void clear_bridge_choices();
+  void choose_bridge();
   void lock();
   void unlock();
 
@@ -124,6 +134,8 @@ private:
   // Owns the storage backing the user_data pointers attached to NDI
   // Fl_Choice items so they remain valid for the lifetime of the choice.
   std::vector<std::string> ndi_choice_storage;
+  // Backs the host:port user_data pointers on choice_rist_bridge items.
+  std::vector<std::string> bridge_choice_storage;
   void choose_ndi_input(input_config* input_config);
   void choose_input_protocol(input_config* input_config,
                              FuncPtr refresh_ndi_funcptr);
