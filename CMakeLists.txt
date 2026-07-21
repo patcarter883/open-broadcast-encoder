@@ -41,6 +41,7 @@ if(CMAKE_CROSSCOMPILING AND NDI_LIBRARY_DIR)
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/lib)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/discovery)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/ui)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/ndi_input)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/transport)
@@ -82,6 +83,7 @@ target_link_libraries(open-broadcast-encoder_exe PRIVATE
   ui_lib
   encode_lib
   transport_lib
+  discovery_lib
   control_lib
   backplane_lib
   settings_lib

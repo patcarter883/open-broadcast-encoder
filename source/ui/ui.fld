@@ -11,6 +11,12 @@ decl {\#include "FL/fl_callback_macros.H"} {public global
 decl {\#include "lib/lib.h"} {public global
 }
 
+decl {\#include "discovery/discovery.h"} {public global
+}
+
+decl {\#include <atomic>} {public global
+}
+
 decl {using FuncPtr = void (*)();} {public global
 }
 
@@ -166,11 +172,20 @@ class user_interface {open
           }
           Fl_Flex {} {
             label Output open
-            xywh {470 25 433 309} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {2  0 25  1 25 }
+            xywh {470 25 433 309} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {5  0 25  1 25  2 25  3 25  4 25 }
           } {
             Fl_Input input_rist_address {
               label {RIST Address}
               xywh {476 51 421 25} align 5
+            }
+            Fl_Choice choice_rist_bridge {
+              label {Bridge (auto-discovered)}
+              tooltip {rist2rist bridges found on the LAN over mDNS. Pick one to fill the RIST Address above, or just type the address by hand.} open
+              xywh {476 51 421 25} down_box BORDER_BOX align 5
+            } {}
+            Fl_Button btn_refresh_bridges {
+              label {Find bridges on LAN}
+              xywh {476 51 421 25}
             }
             Fl_Input input_mpegts_alignment {
               label {MPEG-TS Alignment}
@@ -380,6 +395,18 @@ flx_bottom->layout();} {}
   }
   decl {void clear_ndi_choices();} {public local
   }
+  decl {void refresh_bridges();} {public local
+  }
+  decl {static void on_bridges_ready(void* data);} {public local
+  }
+  decl {void apply_bridges(const std::vector<discovery::bridge>& bridges);} {public local
+  }
+  decl {void add_bridge_choices(const std::vector<discovery::bridge>& bridges);} {public local
+  }
+  decl {void clear_bridge_choices();} {public local
+  }
+  decl {void choose_bridge();} {public local
+  }
   decl {void lock();} {public local
   }
   decl {void unlock();} {public local
@@ -389,6 +416,10 @@ flx_bottom->layout();} {}
   decl {Fl_Text_Buffer encode_log_buffer;} {private local
   }
   decl {std::vector<std::string> ndi_choice_storage;} {private local
+  }
+  decl {std::vector<std::string> bridge_choice_storage;} {private local
+  }
+  decl {std::atomic<bool> bridge_browse_active{false};} {private local
   }
   decl {void choose_ndi_input(input_config* input_config);} {private local
   }

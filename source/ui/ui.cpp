@@ -2,9 +2,12 @@
 // Copyright (C) 2026 Pat Carter
 
 #include <algorithm>
+#include <chrono>
 #include <functional>
+#include <memory>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "ui/ui.h"
@@ -423,6 +426,19 @@ user_interface::user_interface()
             input_rist_address->align(Fl_Align(FL_ALIGN_TOP_LEFT));
           }  // Fl_Input* input_rist_address
           {
+            choice_rist_bridge =
+                new Fl_Choice(476, 51, 421, 25, "Bridge (auto-discovered)");
+            choice_rist_bridge->down_box(FL_BORDER_BOX);
+            choice_rist_bridge->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+            choice_rist_bridge->tooltip(
+                "rist2rist bridges found on the LAN over mDNS. Pick one to fill "
+                "the RIST Address above, or just type the address by hand.");
+          }  // Fl_Choice* choice_rist_bridge
+          {
+            btn_refresh_bridges =
+                new Fl_Button(476, 51, 421, 25, "Find bridges on LAN");
+          }  // Fl_Button* btn_refresh_bridges
+          {
             input_mpegts_alignment =
                 new Fl_Input(476, 51, 421, 25, "MPEG-TS Alignment");
             input_mpegts_alignment->align(Fl_Align(FL_ALIGN_TOP_LEFT));
@@ -455,8 +471,10 @@ user_interface::user_interface()
           o->margin(5, 25, 5, 5);
           o->gap(25);
           o->fixed(o->child(0), 25);  // RIST Address
-          o->fixed(o->child(1), 25);  // MPEG-TS Alignment
-          o->fixed(o->child(2), 25);  // Start/Stop/Save/Exit button row
+          o->fixed(o->child(1), 25);  // Bridge (auto-discovered)
+          o->fixed(o->child(2), 25);  // Find bridges on LAN
+          o->fixed(o->child(3), 25);  // MPEG-TS Alignment
+          o->fixed(o->child(4), 25);  // Start/Stop/Save/Exit button row
           o->end();
         }  // Fl_Flex* o
         {
@@ -849,6 +867,94 @@ void user_interface::choose_ndi_input(input_config* input_config)
   input_config->selected_input = input_name;
 }
 
+void user_interface::add_bridge_choices(const std::vector<discovery::bridge>& bridges)
+{
+  Fl::lock();
+  bridge_choice_storage.reserve(bridge_choice_storage.size() + bridges.size());
+  for (const auto& b : bridges) {
+    // The stored "host:port" backs the item's user_data — reserve() above keeps
+    // the pointer stable across pushes.
+    bridge_choice_storage.push_back(b.host + ":" + std::to_string(b.port));
+    char* addr = bridge_choice_storage.back().data();
+    const std::string label = (b.name.empty() ? std::string("bridge") : b.name) + " (" + addr + ")";
+    choice_rist_bridge->add(label.c_str(), 0, nullptr, addr, 0);
+  }
+  Fl::unlock();
+  Fl::awake();
+}
+
+void user_interface::clear_bridge_choices()
+{
+  Fl::lock();
+  choice_rist_bridge->clear();
+  bridge_choice_storage.clear();
+  Fl::unlock();
+  Fl::awake();
+}
+
+// Picking a bridge fills the RIST Address field and propagates it to the model
+// by re-firing that field's own callback.
+void user_interface::choose_bridge()
+{
+  const Fl_Menu_Item* selected = choice_rist_bridge->mvalue();
+  if (selected == nullptr || selected->user_data() == nullptr) {
+    return;
+  }
+  input_rist_address->value(static_cast<const char*>(selected->user_data()));
+  input_rist_address->do_callback();
+}
+
+namespace
+{
+// Carries a completed browse from the worker thread back to the UI thread.
+struct bridge_browse_result
+{
+  user_interface* ui;
+  std::vector<discovery::bridge> bridges;
+};
+}  // namespace
+
+// Starts a one-shot LAN browse (mDNS) on a background thread so the UI never
+// blocks; results are applied on the UI thread via Fl::awake. Re-entrancy is
+// guarded so a double-click cannot launch two browses at once.
+void user_interface::refresh_bridges()
+{
+  bool expected = false;
+  if (!bridge_browse_active.compare_exchange_strong(expected, true)) {
+    return;  // a browse is already running
+  }
+  clear_bridge_choices();
+  btn_refresh_bridges->copy_label("Searching...");
+  btn_refresh_bridges->deactivate();
+
+  std::thread([this]() {
+    auto* result = new bridge_browse_result{
+        this, discovery::discover_bridges(std::chrono::milliseconds(1500))};
+    Fl::awake(&user_interface::on_bridges_ready, result);
+  }).detach();
+}
+
+// Fl::awake handler — runs on the UI thread once the browse finishes.
+void user_interface::on_bridges_ready(void* data)
+{
+  std::unique_ptr<bridge_browse_result> r(static_cast<bridge_browse_result*>(data));
+  r->ui->apply_bridges(r->bridges);
+}
+
+// Applies a finished browse on the UI thread: (re)populate the dropdown,
+// auto-select a sole match, and re-enable the button.
+void user_interface::apply_bridges(const std::vector<discovery::bridge>& bridges)
+{
+  add_bridge_choices(bridges);
+  if (bridges.size() == 1) {
+    choice_rist_bridge->value(0);
+    choose_bridge();
+  }
+  btn_refresh_bridges->copy_label("Find bridges on LAN");
+  btn_refresh_bridges->activate();
+  bridge_browse_active.store(false);
+}
+
 void user_interface::input_listen_port_cb(input_config* input_config)
 {
   const char* raw = input_listen_port->value();
@@ -1233,6 +1339,13 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        refresh_ndi_devices,
                        FuncPtr,
                        ndi_refresh_funcptr);
+
+  // Bridge auto-discovery picker: the browse is self-contained (no external
+  // state), so wire it directly instead of threading a funcptr through.
+  btn_refresh_bridges->callback(
+      [](Fl_Widget*, void* v) { static_cast<user_interface*>(v)->refresh_bridges(); }, this);
+  choice_rist_bridge->callback(
+      [](Fl_Widget*, void* v) { static_cast<user_interface*>(v)->choose_bridge(); }, this);
 
   // ---- Receiver / restream control section ----
   // Default the reencode codec/encoder choices so the model matches the
