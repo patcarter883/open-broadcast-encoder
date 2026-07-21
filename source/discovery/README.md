@@ -36,12 +36,16 @@ host blank (or `auto`) and Start; the sender targets the discovered
 `host:port`. The parser is covered by a standalone test that feeds synthetic
 mDNS responses (incl. a compression pointer) and asserts the extracted bridge.
 
+The picker browse runs on a detached worker thread; results are applied on the
+UI thread via `Fl::awake`, so the window never freezes during the browse. The
+two widgets are also present in `ui.fld`, so a FLUID regenerate keeps them.
+
 ## Not yet (prototype scope)
 - Only IPv4 A records are resolved (SRV port always used).
-- The picker browse runs on the UI thread with a short (~1.2 s) timeout; a
-  background thread would keep the UI fully responsive during the browse.
-- No continuous/background discovery — browse is on demand (button) or at Start.
+- Discovery is on demand (button) or at Start — no continuous background
+  browsing.
 - QU-unicast only; a multicast-listen fallback would catch responders that
   ignore the QU bit.
-- `ui.cpp`/`ui.h` were hand-edited; `ui.fld` (FLUID source) still needs the two
-  widgets added so a future FLUID regenerate doesn't drop them.
+- `ui.fld` was hand-edited to match the hand-written `ui.cpp`/`ui.h`; run
+  `fluid -c ui.fld` on a machine with FLTK to confirm the regenerate is a
+  no-op (couldn't run FLUID in the prototype environment).
