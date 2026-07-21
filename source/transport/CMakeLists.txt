@@ -32,6 +32,7 @@ ristnet
 target_link_libraries(transport_lib PRIVATE
 url_lib
 open-broadcast-encoder_lib
+discovery_lib
 )
 
 target_link_libraries(transport_lib PRIVATE

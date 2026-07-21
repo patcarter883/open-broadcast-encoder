@@ -2,11 +2,13 @@
 // Copyright (C) 2026 Pat Carter
 
 #include <algorithm>
+#include <chrono>
 #include <format>
 #include <functional>
 #include <memory>
 #include <vector>
 
+#include "discovery/discovery.h"
 #include "transport/transport.h"
 
 #include "RISTNet.h"
@@ -80,8 +82,19 @@ void transport::setup_rist_sender(output_config& output_c)
   if (output_c.bandwidth < 100) {
     output_c.bandwidth = 100;
   }
-  if (output_c.host.empty()) {
-    output_c.host = "127.0.0.1";
+  // Auto-discovery (prototype): a blank host — or the literal "auto" — triggers
+  // a one-shot LAN browse for a rist2rist bridge advertising _obr-rist._udp
+  // (OpenWrt umdns). The first responder's host:port wins; if nothing answers
+  // we fall back to loopback, so behaviour is unchanged when discovery is
+  // unused or unavailable.
+  if (output_c.host.empty() || output_c.host == "auto") {
+    const auto bridges = discovery::discover_bridges(std::chrono::milliseconds(1500));
+    if (!bridges.empty()) {
+      output_c.host = bridges.front().host;
+      output_c.port = bridges.front().port;
+    } else {
+      output_c.host = "127.0.0.1";
+    }
   }
 
   RISTNetSender::RISTNetSenderSettings my_send_configuration;
