@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <functional>
 #include <string>
 #include <vector>
@@ -120,8 +121,12 @@ public:
   int run_ui();
   void add_ndi_choices(const std::vector<std::string>& choice_names);
   void clear_ndi_choices();
-  // Bridge picker: browse the LAN and (re)populate choice_rist_bridge.
+  // Bridge picker: browse the LAN (on a background thread) and (re)populate
+  // choice_rist_bridge. on_bridges_ready is the Fl::awake handler that hands
+  // the result back to apply_bridges on the UI thread.
   void refresh_bridges();
+  static void on_bridges_ready(void* data);
+  void apply_bridges(const std::vector<discovery::bridge>& bridges);
   void add_bridge_choices(const std::vector<discovery::bridge>& bridges);
   void clear_bridge_choices();
   void choose_bridge();
@@ -136,6 +141,8 @@ private:
   std::vector<std::string> ndi_choice_storage;
   // Backs the host:port user_data pointers on choice_rist_bridge items.
   std::vector<std::string> bridge_choice_storage;
+  // True while a background browse is in flight (blocks re-entry).
+  std::atomic<bool> bridge_browse_active{false};
   void choose_ndi_input(input_config* input_config);
   void choose_input_protocol(input_config* input_config,
                              FuncPtr refresh_ndi_funcptr);

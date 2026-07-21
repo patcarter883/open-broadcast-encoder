@@ -4,8 +4,10 @@
 #include <algorithm>
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "ui/ui.h"
@@ -902,18 +904,55 @@ void user_interface::choose_bridge()
   input_rist_address->do_callback();
 }
 
-// One-shot LAN browse (mDNS) that repopulates the dropdown. Runs on the UI
-// thread with a short timeout; if exactly one bridge answers it is selected
-// automatically. Falls back silently to manual entry when nothing is found.
+namespace
+{
+// Carries a completed browse from the worker thread back to the UI thread.
+struct bridge_browse_result
+{
+  user_interface* ui;
+  std::vector<discovery::bridge> bridges;
+};
+}  // namespace
+
+// Starts a one-shot LAN browse (mDNS) on a background thread so the UI never
+// blocks; results are applied on the UI thread via Fl::awake. Re-entrancy is
+// guarded so a double-click cannot launch two browses at once.
 void user_interface::refresh_bridges()
 {
+  bool expected = false;
+  if (!bridge_browse_active.compare_exchange_strong(expected, true)) {
+    return;  // a browse is already running
+  }
   clear_bridge_choices();
-  const auto bridges = discovery::discover_bridges(std::chrono::milliseconds(1200));
+  btn_refresh_bridges->copy_label("Searching...");
+  btn_refresh_bridges->deactivate();
+
+  std::thread([this]() {
+    auto* result = new bridge_browse_result{
+        this, discovery::discover_bridges(std::chrono::milliseconds(1500))};
+    Fl::awake(&user_interface::on_bridges_ready, result);
+  }).detach();
+}
+
+// Fl::awake handler — runs on the UI thread once the browse finishes.
+void user_interface::on_bridges_ready(void* data)
+{
+  std::unique_ptr<bridge_browse_result> r(static_cast<bridge_browse_result*>(data));
+  r->ui->apply_bridges(r->bridges);
+}
+
+// Applies a finished browse on the UI thread: (re)populate the dropdown,
+// auto-select a sole match, and re-enable the button.
+void user_interface::apply_bridges(const std::vector<discovery::bridge>& bridges)
+{
   add_bridge_choices(bridges);
   if (bridges.size() == 1) {
     choice_rist_bridge->value(0);
     choose_bridge();
   }
+  btn_refresh_bridges->copy_label("Find bridges on LAN");
+  btn_refresh_bridges->activate();
+  bridge_browse_active.store(false);
 }
 
 void user_interface::input_listen_port_cb(input_config* input_config)
