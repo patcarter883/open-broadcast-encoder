@@ -8,21 +8,24 @@
 #include <utility>
 #include <vector>
 
-#include <catch2/catch_test_macros.hpp>
-
 #include "backplane/backplane.h"
+
+#include <catch2/catch_test_macros.hpp>
 
 namespace
 {
 constexpr const char* k_good =
     "{\"ok\":true,\"session\":{\"id\":\"s_abc\",\"state\":\"allocated\","
-    "\"rist_url\":\"rist://syd1-a.relay.example.au:20144\",\"psk\":\"deadbeef\","
-    "\"psk_aes\":256,\"control_url\":\"https://syd1-a.relay.example.au/s/s_abc\","
+    "\"rist_url\":\"rist://"
+    "syd1-a.relay.example.au:20144\",\"psk\":\"deadbeef\","
+    "\"psk_aes\":256,\"control_url\":\"https://syd1-a.relay.example.au/s/"
+    "s_abc\","
     "\"control_token\":\"tok-xyz\",\"start_body\":{\"schema_version\":2,"
     "\"session_id\":\"s_abc\",\"outputs\":[]}}}";
 
 // A scripted transport that records call order and returns a canned allocate.
-auto scripted(std::vector<std::string>& calls, int alloc_status,
+auto scripted(std::vector<std::string>& calls,
+              int alloc_status,
               std::string alloc_body) -> backplane_client::transport_fn
 {
   return [&calls, alloc_status, alloc_body = std::move(alloc_body)](
@@ -48,10 +51,14 @@ TEST_CASE("allocate persists credentials before returning", "[backplane][m2.7]")
   std::vector<std::string> calls;
   hosted_session persisted;
   bool persisted_flag = false;
-  backplane_client client("https://api.example.au", "devtok",
-                          scripted(calls, 201, k_good));
-  client.set_persist([&](const hosted_session& s)
-                     { persisted = s; persisted_flag = true; });
+  backplane_client client(
+      "https://api.example.au", "devtok", scripted(calls, 201, k_good));
+  client.set_persist(
+      [&](const hosted_session& s)
+      {
+        persisted = s;
+        persisted_flag = true;
+      });
 
   const alloc_result r = client.allocate("syd1", {1, 2}, true);
 
@@ -84,15 +91,17 @@ TEST_CASE("hosted_session survives a JSON round trip", "[backplane][m2.7]")
   CHECK(back.valid());
 }
 
-TEST_CASE("abandon-and-reallocate deletes then allocates, in order", "[backplane][m2.7]")
+TEST_CASE("abandon-and-reallocate deletes then allocates, in order",
+          "[backplane][m2.7]")
 {
   std::vector<std::string> calls;
   int persists = 0;
-  backplane_client client("https://api.example.au", "devtok",
-                          scripted(calls, 201, k_good));
+  backplane_client client(
+      "https://api.example.au", "devtok", scripted(calls, 201, k_good));
   client.set_persist([&](const hosted_session&) { ++persists; });
 
-  const alloc_result r = client.abandon_and_reallocate("s_lost", "syd1", {1}, false);
+  const alloc_result r =
+      client.abandon_and_reallocate("s_lost", "syd1", {1}, false);
 
   REQUIRE(r.ok);
   REQUIRE(calls.size() == 2);
@@ -101,14 +110,17 @@ TEST_CASE("abandon-and-reallocate deletes then allocates, in order", "[backplane
   CHECK(persists == 1);  // only the fresh session is persisted
 }
 
-TEST_CASE("allocation failure surfaces error and does not persist", "[backplane][m2.7]")
+TEST_CASE("allocation failure surfaces error and does not persist",
+          "[backplane][m2.7]")
 {
   std::vector<std::string> calls;
   bool persisted = false;
-  backplane_client client(
-      "https://api.example.au", "devtok",
-      scripted(calls, 402,
-               "{\"ok\":false,\"error_code\":\"plan_limit\",\"message\":\"limit\"}"));
+  backplane_client client("https://api.example.au",
+                          "devtok",
+                          scripted(calls,
+                                   402,
+                                   "{\"ok\":false,\"error_code\":\"plan_"
+                                   "limit\",\"message\":\"limit\"}"));
   client.set_persist([&](const hosted_session&) { persisted = true; });
 
   const alloc_result r = client.allocate("syd1", {1}, false);
@@ -120,9 +132,12 @@ TEST_CASE("allocation failure surfaces error and does not persist", "[backplane]
 
 TEST_CASE("no response from backplane is a clean failure", "[backplane][m2.7]")
 {
-  auto dead = [](const std::string&, const std::string&, const std::string&,
-                 const std::string&) -> std::pair<int, std::string>
-  { return {0, ""}; };
+  auto dead = [](const std::string&,
+                 const std::string&,
+                 const std::string&,
+                 const std::string&) -> std::pair<int, std::string> {
+    return {0, ""};
+  };
   backplane_client client("https://api.example.au", "devtok", dead);
 
   std::string err;

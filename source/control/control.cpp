@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 
-#include "control/control.h"
-
 #include <string>
 #include <utility>
+
+#include "control/control.h"
 
 #include <nlohmann/json.hpp>
 

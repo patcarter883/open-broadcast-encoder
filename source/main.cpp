@@ -197,11 +197,11 @@ static void run_loop()
   }
 
   // NOTE: we do NOT rist_destroy() here. stop() runs on the FLTK thread holding
-  // Fl::lock() and joins this thread; if we tore the sender down here, librist's
-  // stats callback (which takes Fl::lock()) would deadlock against that join.
-  // The sender is left connected-but-silent (callbacks nulled in stop()) and is
-  // destroyed on the NEXT Start (run_transport(), this thread) or at exit (after
-  // Fl::run() returns, when no Fl::lock is held).
+  // Fl::lock() and joins this thread; if we tore the sender down here,
+  // librist's stats callback (which takes Fl::lock()) would deadlock against
+  // that join. The sender is left connected-but-silent (callbacks nulled in
+  // stop()) and is destroyed on the NEXT Start (run_transport(), this thread)
+  // or at exit (after Fl::run() returns, when no Fl::lock is held).
 }
 
 // Provision the partner receiver over its REST control plane before the
@@ -217,8 +217,7 @@ static void provision_receiver()
   }
   if (rc.session_id.empty()) {
     rc.session_id = std::format(
-        "enc-{}",
-        std::chrono::steady_clock::now().time_since_epoch().count());
+        "enc-{}", std::chrono::steady_clock::now().time_since_epoch().count());
   }
   const receiver_control_config cfg = rc;  // copy for the worker thread
   const codec source_codec = ctx.lib.encode_cfg.selected_codec;
@@ -266,9 +265,9 @@ static void run()
   // each create their own ndisrc on the same NDI source; running both contends
   // for the receiver and the encode pipeline's ndisrc gets no video frames — so
   // mpegtsmux emits only PSI (PAT/PMT) and the encoder appears to send nothing,
-  // while the preview keeps working (separate pipeline). Tear preview down first
-  // to free the source. (No Fl::lock() in preview teardown, so this join is
-  // safe on the UI thread — same pattern as start_preview_thread.)
+  // while the preview keeps working (separate pipeline). Tear preview down
+  // first to free the source. (No Fl::lock() in preview teardown, so this join
+  // is safe on the UI thread — same pattern as start_preview_thread.)
   ctx.lib.preview_running = false;
   if (ctx.lib.preview_thread.joinable()) {
     ctx.lib.preview_thread.join();
@@ -281,10 +280,11 @@ static void run()
 static void stop()
 {
   ctx.lib.is_running = false;
-  // Silence the sender's callbacks (fast atomic stores — safe on the UI thread).
-  // We do NOT destroy the transporter here: rist_destroy() must not run while
-  // the UI thread holds Fl::lock() and joins run_loop (librist's stats callback
-  // takes Fl::lock() → deadlock). It is destroyed at the next Start or at exit.
+  // Silence the sender's callbacks (fast atomic stores — safe on the UI
+  // thread). We do NOT destroy the transporter here: rist_destroy() must not
+  // run while the UI thread holds Fl::lock() and joins run_loop (librist's
+  // stats callback takes Fl::lock() → deadlock). It is destroyed at the next
+  // Start or at exit.
   if (ctx.transporter) {
     ctx.transporter->set_statistics_callback(nullptr);
     ctx.transporter->set_oob_callback(nullptr);
@@ -398,9 +398,8 @@ static void start_preview_thread(std::string pipeline_str)
     ctx.lib.preview_thread.join();  // thread finished its cleanup; quick join
   }
   ctx.lib.preview_running = true;
-  ctx.lib.preview_thread = std::thread(
-      [pipeline_str = std::move(pipeline_str)]
-      { run_preview_pipeline(pipeline_str); });
+  ctx.lib.preview_thread = std::thread([pipeline_str = std::move(pipeline_str)]
+                                       { run_preview_pipeline(pipeline_str); });
 }
 
 static void preview_input()
@@ -447,7 +446,8 @@ static void preview_input()
         if (ctx.lib.preview_running.load(std::memory_order_acquire)) {
           break;  // preview still running; leave it rather than blocking the UI
         }
-        ctx.lib.preview_thread.join();  // thread finished its cleanup; quick join
+        ctx.lib.preview_thread
+            .join();  // thread finished its cleanup; quick join
       }
       ctx.lib.preview_running = true;
       ctx.lib.preview_thread = std::thread(
@@ -487,20 +487,21 @@ auto main(int argc, char** argv) -> int
   ctx.ui->init_ui();
   ctx.ndi = std::make_unique<ndi_input>(ctx.lib.input_cfg, &encode_log);
   ctx.ndi->run_device_monitor();
-  ctx.ui->init_ui_callbacks(&(ctx.lib.input_cfg),
-                            &(ctx.lib.encode_cfg),
-                            &(ctx.lib.output_cfg),
-                            &(ctx.lib.receiver_ctl),
-                            &run,
-                            &stop,
-                            &refresh_ndi_devices,
-                            // No address-change callback: the RIST sender is
-                            // (re)created at Start on the run_loop thread, never
-                            // from the FLTK UI thread. The field just edits cfg.
-                            nullptr,
-                            &preview_input,
-                            &scaling_source_changed,
-                            &save_settings);
+  ctx.ui->init_ui_callbacks(
+      &(ctx.lib.input_cfg),
+      &(ctx.lib.encode_cfg),
+      &(ctx.lib.output_cfg),
+      &(ctx.lib.receiver_ctl),
+      &run,
+      &stop,
+      &refresh_ndi_devices,
+      // No address-change callback: the RIST sender is
+      // (re)created at Start on the run_loop thread, never
+      // from the FLTK UI thread. The field just edits cfg.
+      nullptr,
+      &preview_input,
+      &scaling_source_changed,
+      &save_settings);
 
   // Restore persisted settings (if any) over the UI defaults set above, then
   // mirror them into the widgets so the operator sees their saved values.
@@ -520,11 +521,11 @@ auto main(int argc, char** argv) -> int
 
   // Fl::run() returns with the main thread still holding the FLTK lock taken in
   // init_ui(). Release it BEFORE teardown: ctx.transporter.reset() below calls
-  // rist_destroy(), which joins librist's sender thread — and an in-flight stats
-  // callback (rist_stats_cb -> Fl::lock()) would deadlock against the join if we
-  // kept holding the lock. Releasing it lets that callback finish so the join
-  // (and thus Exit) completes instead of freezing. Teardown code re-takes the
-  // lock per-mutation (transport_log_append etc.) as needed.
+  // rist_destroy(), which joins librist's sender thread — and an in-flight
+  // stats callback (rist_stats_cb -> Fl::lock()) would deadlock against the
+  // join if we kept holding the lock. Releasing it lets that callback finish so
+  // the join (and thus Exit) completes instead of freezing. Teardown code
+  // re-takes the lock per-mutation (transport_log_append etc.) as needed.
   ctx.ui->unlock();
 
   // Auto-save on clean exit so the latest values persist without a click.

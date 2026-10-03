@@ -83,12 +83,12 @@ raw_local_input::raw_local_input(
     GstElement* audio_src,
     std::uint16_t port,
     std::function<void(const std::string&)> log_func,
-    std::function<std::string(std::uint32_t)> format_verdict)
+    format_verdict_fn format_verdict)
     : video_src {video_src}
     , audio_src {audio_src}
     , port {port}
     , log_func {std::move(log_func)}
-    , format_verdict {std::move(format_verdict)}
+    , format_verdict_slot {std::move(format_verdict)}
 {
 }
 
@@ -246,8 +246,8 @@ auto raw_local_input::read_stream_header(int fd) -> bool
   // that policy belongs to the encoder that owns this reader. Ask before a
   // single frame is pushed: a refusal is reported here and the connection
   // dropped, so a corrected OBS reconnects into the same session.
-  if (this->format_verdict) {
-    const std::string refusal = this->format_verdict(hdr.format);
+  if (this->format_verdict_slot) {
+    const std::string refusal = this->format_verdict_slot(hdr.format);
     if (!refusal.empty()) {
       log(std::format("[raw] refusing the stream: {}\n", refusal));
       return false;
@@ -259,8 +259,7 @@ auto raw_local_input::read_stream_header(int fd) -> bool
   }
 
   if (this->base_set
-      && (hdr.width != this->width || hdr.height != this->height))
-  {
+      && (hdr.width != this->width || hdr.height != this->height)) {
     // A mid-session geometry change is legal to announce but most encoders
     // cannot renegotiate in place, so say so rather than debug it later.
     log(
@@ -308,9 +307,9 @@ auto raw_local_input::read_stream_header(int fd) -> bool
     this->audio_rate = hdr.audio_rate;
     this->audio_channels = hdr.audio_channels;
     // Interleaved, not the channel-planar layout the wire uses: audioconvert
-    // needs a GstAudioMeta to consume a non-interleaved appsrc buffer and asserts
-    // in gst_audio_buffer_map without one. read_planar_as_interleaved() repacks
-    // each chunk before it is pushed.
+    // needs a GstAudioMeta to consume a non-interleaved appsrc buffer and
+    // asserts in gst_audio_buffer_map without one. read_planar_as_interleaved()
+    // repacks each chunk before it is pushed.
     GstCaps* acaps = gst_caps_new_simple("audio/x-raw",
                                          "format",
                                          G_TYPE_STRING,
@@ -335,9 +334,8 @@ auto raw_local_input::read_stream_header(int fd) -> bool
   }
 
   const std::string audio_desc = this->audio_present
-      ? std::format("{} Hz {} ch float32 planar",
-                    this->audio_rate,
-                    this->audio_channels)
+      ? std::format(
+          "{} Hz {} ch float32 planar", this->audio_rate, this->audio_channels)
       : std::string("none");
 
   log(
@@ -401,10 +399,9 @@ auto raw_local_input::read_and_push(int fd) -> bool
     log("[raw] failed to map a frame buffer for writing\n");
     return false;
   }
-  const bool read_ok =
-      is_video
-          ? this->read_exact(fd, map.data, fh.payload_bytes)
-          : this->read_planar_as_interleaved(fd, map.data, fh.payload_bytes);
+  const bool read_ok = is_video
+      ? this->read_exact(fd, map.data, fh.payload_bytes)
+      : this->read_planar_as_interleaved(fd, map.data, fh.payload_bytes);
   gst_buffer_unmap(buf, &map);
   if (!read_ok) {
     gst_buffer_unref(buf);
@@ -443,8 +440,9 @@ auto raw_local_input::read_and_push(int fd) -> bool
 
 // Wire audio is channel-planar: channel 0's samples, then channel 1's, and so
 // on. GStreamer's audioconvert will not take that from an appsrc -- a plain
-// buffer carries no GstAudioMeta, so gst_audio_buffer_map asserts and the branch
-// dies with "The stream is in the wrong format" -- so repack to interleaved.
+// buffer carries no GstAudioMeta, so gst_audio_buffer_map asserts and the
+// branch dies with "The stream is in the wrong format" -- so repack to
+// interleaved.
 auto raw_local_input::read_planar_as_interleaved(int fd,
                                                  std::uint8_t* dst,
                                                  std::uint32_t payload_bytes)
@@ -452,7 +450,8 @@ auto raw_local_input::read_planar_as_interleaved(int fd,
 {
   const std::size_t channels = this->audio_channels;
   if (channels == 0 || (payload_bytes % (channels * 4u)) != 0) {
-    log(std::format("[raw] audio payload of {} bytes does not split into {} "
+    log(
+        std::format("[raw] audio payload of {} bytes does not split into {} "
                     "channel(s); dropping the stream\n",
                     payload_bytes,
                     channels));

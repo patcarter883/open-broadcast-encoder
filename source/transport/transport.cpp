@@ -91,7 +91,8 @@ void transport::setup_rist_sender(output_config& output_c)
   for (int i = 0; i < output_c.streams; i = i + 1) {
     // timing-mode=0 (SOURCE) — the librist default, and what the known-good
     // reference uses. NOT 1 (ARRIVAL), NOT 2 (RTC):
-    //  - RTC (2): receiver drops every packet until an RTCP SR sets time_offset,
+    //  - RTC (2): receiver drops every packet until an RTCP SR sets
+    //  time_offset,
     //    which we never send (ts_ntp=0) -> no data, no recovery.
     //  - ARRIVAL (1): for retransmitted packets the receiver interpolates the
     //    arrival time and asserts packet_time < next->packet_time

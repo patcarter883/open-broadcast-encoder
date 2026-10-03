@@ -163,8 +163,7 @@ auto ndi_input::preview() -> void
 
         bool keep_going = true;
         while (keep_going
-               && this->preview_running.load(std::memory_order_acquire))
-        {
+               && this->preview_running.load(std::memory_order_acquire)) {
           auto* msg = gst_bus_timed_pop_filtered(
               bus,
               static_cast<GstClockTime>(100 * GST_MSECOND),

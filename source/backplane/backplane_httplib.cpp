@@ -4,9 +4,9 @@
 #include <string>
 #include <utility>
 
-#include "httplib.h"
-
 #include "backplane/backplane.h"
+
+#include "httplib.h"
 #include "lib/lib.h"
 
 namespace
@@ -19,15 +19,14 @@ struct base_endpoint
 
 // Build an httplib-backed transport for the given base URL. Registers the
 // device token as a secret so it never reaches the UI log panes (M1.9).
-backplane_client::transport_fn make_httplib_transport(const std::string& base_url,
-                                                      const std::string& device_token)
+backplane_client::transport_fn make_httplib_transport(
+    const std::string& base_url, const std::string& device_token)
 {
   secrets::register_secret(device_token);
   return [base_url](const std::string& method,
                     const std::string& path,
                     const std::string& token,
-                    const std::string& body)
-             -> std::pair<int, std::string>
+                    const std::string& body) -> std::pair<int, std::string>
   {
     httplib::Client cli(base_url);
     cli.set_connection_timeout(3, 0);

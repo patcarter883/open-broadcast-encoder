@@ -29,8 +29,8 @@ auto stats::scale_encoder_bitrate(double quality,
   int bitrateDelta = 0;
   double qualDiffPct = 0.0;
   int adjBitrate = 0;
-  const double maxBitrate =
-      static_cast<double>(encode_config.bitrate.load(std::memory_order_relaxed));
+  const double maxBitrate = static_cast<double>(
+      encode_config.bitrate.load(std::memory_order_relaxed));
   bool returnVal = false;
 
   if (stats->previous_quality > 0.0

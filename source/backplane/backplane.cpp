@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 
-#include "backplane/backplane.h"
-
 #include <utility>
 #include <vector>
+
+#include "backplane/backplane.h"
 
 #include <nlohmann/json.hpp>
 
@@ -76,9 +76,10 @@ backplane_client::backplane_client(std::string base_url,
 {
 }
 
-alloc_result backplane_client::allocate(const std::string& pop,
-                                        const std::vector<long>& destination_ids,
-                                        bool record)
+alloc_result backplane_client::allocate(
+    const std::string& pop,
+    const std::vector<long>& destination_ids,
+    bool record)
 {
   alloc_result r;
   if (!m_transport) {
@@ -93,8 +94,8 @@ alloc_result backplane_client::allocate(const std::string& pop,
   req["destination_ids"] = destination_ids;
   req["record"] = record;
 
-  const auto [status, body] = m_transport("POST", "/api/v1/sessions",
-                                          m_device_token, req.dump());
+  const auto [status, body] =
+      m_transport("POST", "/api/v1/sessions", m_device_token, req.dump());
   r.http_status = status;
   if (status == 0) {
     r.error = "no response from backplane";
@@ -120,7 +121,8 @@ alloc_result backplane_client::allocate(const std::string& pop,
   return r;
 }
 
-bool backplane_client::deallocate(const std::string& session_id, std::string& err)
+bool backplane_client::deallocate(const std::string& session_id,
+                                  std::string& err)
 {
   if (!m_transport) {
     err = "no transport configured";

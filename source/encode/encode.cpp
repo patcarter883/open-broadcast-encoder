@@ -597,8 +597,8 @@ auto encode::raw_format_verdict(std::uint32_t obs_format) -> std::string
   }
 
   // H.264 has no 10-bit profile at any level, so there is nothing to negotiate.
-  // Without this check the pipeline either fails caps negotiation or -- worse --
-  // a videoconvert quietly drops the extra two bits, and neither says why.
+  // Without this check the pipeline either fails caps negotiation, or a
+  // videoconvert quietly drops the extra two bits, and neither says why.
   if (this->encode_c.selected_codec == codec::h264) {
     return "the OBS capture is 10-bit but the selected codec is H.264, which "
            "has no 10-bit profile: select H.265 or AV1, or set OBS's Color "
@@ -654,9 +654,8 @@ void encode::start_raw_reader()
       this->raw_audio_src,
       port,
       [this](const std::string& msg) { this->log(msg); },
-      [this](std::uint32_t obs_format) {
-        return this->raw_format_verdict(obs_format);
-      });
+      [this](std::uint32_t obs_format)
+      { return this->raw_format_verdict(obs_format); });
   this->raw_reader->start();
 }
 
@@ -713,7 +712,7 @@ void encode::handle_gstreamer_message(GstMessage* message)
   }
 }
 
-auto encode::pull_from_sink(GstElement* encode::* sink_field) -> buffer_data
+auto encode::pull_from_sink(GstElement* encode::*sink_field) -> buffer_data
 {
   GstElement* sink = nullptr;
   {

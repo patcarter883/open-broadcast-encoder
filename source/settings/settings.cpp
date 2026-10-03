@@ -226,8 +226,7 @@ std::filesystem::path settings_file_path()
     return fs::path(xdg) / "open-broadcast-encoder" / "settings.json";
   }
   if (const char* home = std::getenv("HOME");
-      home != nullptr && home[0] != '\0')
-  {
+      home != nullptr && home[0] != '\0') {
     return fs::path(home) / ".config" / "open-broadcast-encoder"
         / "settings.json";
   }
@@ -365,8 +364,7 @@ bool load(library& lib)
       }
     }
     if (auto a = j.find("mpegts_alignment");
-        a != j.end() && a->is_number_integer())
-    {
+        a != j.end() && a->is_number_integer()) {
       enc.mpegts_alignment.store(std::clamp(a->get<int>(), 1, 7),
                                  std::memory_order_relaxed);
     }
