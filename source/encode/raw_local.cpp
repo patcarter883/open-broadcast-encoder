@@ -16,6 +16,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "encode/raw_format.h"
+
 namespace
 {
 // ---- The wire, mirrored from obs-raw-output/src/raw-output.c ----------------
@@ -64,33 +66,6 @@ static_assert(sizeof(obc_stream_header) == 92,
               "stream header must be exactly 92 bytes");
 static_assert(sizeof(obc_frame_header) == 24,
               "frame header must be exactly 24 bytes");
-
-// OBS's enum video_format in declaration order, mapped to GStreamer formats.
-auto gst_video_format(std::uint32_t format) -> const char*
-{
-  switch (format) {
-    case 1:
-      return "I420";
-    case 2:
-      return "NV12";
-    case 3:
-      return "YVYU";
-    case 4:
-      return "YUY2";
-    case 5:
-      return "UYVY";
-    case 6:
-      return "RGBA";
-    case 7:
-      return "BGRA";
-    case 8:
-      return "BGRx";
-    case 9:
-      return "GRAY8";
-    default:
-      return nullptr;
-  }
-}
 
 // Polling rather than a blocking accept/recv is what lets stop() return
 // promptly: the thread re-checks its stop flag every kPollTimeoutMs instead of
@@ -259,7 +234,7 @@ auto raw_local_input::read_stream_header(int fd) -> bool
     return false;
   }
 
-  const char* const fmt = gst_video_format(hdr.format);
+  const char* const fmt = obs_video_format_to_gst(hdr.format);
   if (fmt == nullptr) {
     log(std::format("[raw] unsupported OBS video_format {}: cannot set caps\n",
                     hdr.format));
