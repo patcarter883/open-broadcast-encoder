@@ -69,6 +69,14 @@ void encode::clear_pipeline_state()
     gst_object_unref(this->audio_sink);
     this->audio_sink = nullptr;
   }
+  if (this->video_queue != nullptr) {
+    gst_object_unref(this->video_queue);
+    this->video_queue = nullptr;
+  }
+  if (this->audio_queue != nullptr) {
+    gst_object_unref(this->audio_queue);
+    this->audio_queue = nullptr;
+  }
   if (this->bus != nullptr) {
     gst_object_unref(this->bus);
     this->bus = nullptr;
@@ -105,8 +113,14 @@ void encode::pipeline_build_source()
       this->pipeline_str = "";
       break;
     case input_mode::mpegts:
+      // udpsrc's `caps` property defaults to application/x-udp, which cannot
+      // negotiate with tsparse: the pipeline then dies instantly with
+      // "streaming stopped, reason not-linked" and no frame ever reaches the
+      // encoder (the RIST sender still connects, so it looks half-alive).
+      // Pin the caps to the MPEG-TS shape we actually ingest.
       this->pipeline_str = std::format(
-          "udpsrc port={} buffer-size=1000000 mtu=45000 ! tsparse "
+          "udpsrc port={} caps=video/mpegts,systemstream=true "
+          "buffer-size=1000000 mtu=45000 ! tsparse "
           "set-timestamps=true ! tsdemux latency=10 "
           "name=demux ",
           input_c.selected_input);
@@ -159,8 +173,13 @@ void encode::pipeline_build_video_demux()
           " demux. ! rtpvrawdepay ! queue silent=true ! videoconvert !";
       break;
     default:
+      // Deliberately no `demux.` here. The MPEG-TS demux's pads are dynamic and
+      // tsdemux will not resolve two any-pad delayed links (the second fails
+      // with "failed delayed linking pad video ... to some pad of GstQueue"),
+      // so the demux is left unlinked by the parser and these branches are
+      // linked by caps in link_demux_pad().
       this->pipeline_str +=
-          " demux. ! queue silent=true ! decodebin3 ! videoconvert !";
+          " queue name=vqueue silent=true ! decodebin3 ! videoconvert !";
       break;
   }
 }
@@ -181,8 +200,9 @@ void encode::pipeline_build_audio_demux()
           "audioconvert !";
       break;
     default:
+      // See the video-demux case: linked by caps in link_demux_pad().
       this->pipeline_str +=
-          " demux. ! queue silent=true ! decodebin3 ! audioresample ! "
+          " queue name=aqueue silent=true ! decodebin3 ! audioresample ! "
           "audioconvert !";
       break;
   }
@@ -209,6 +229,14 @@ constexpr int kCodecCount = 3;
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
 constexpr std::string_view kEncoderTemplates[kEncoderCount][kCodecCount] = {
     // encoder::amd
+    //
+    // AMF (amfh264enc / amfh265enc / amfav1enc) is Windows-only. Everywhere
+    // else the same AMD hardware is driven through VAAPI instead
+    // (vah264enc / vah265enc / vaav1enc), which is also the encoder the
+    // receiver's transcode tier uses. This is not a fallback: with the AMF
+    // names, `encoder=amd` builds a pipeline whose elements do not exist on
+    // Linux, so it can never reach PLAYING.
+#ifdef _WIN32
     {
         // codec::h264
         "amfh264enc name=videncoder  bitrate={} rate-control=cbr "
@@ -225,6 +253,21 @@ constexpr std::string_view kEncoderTemplates[kEncoderCount][kCodecCount] = {
         "pa-hqmb-mode=auto "
         "! av1parse ! video/x-av1,stream-format=obu-stream,alignment=frame ",
     },
+#else
+    {
+        // codec::h264
+        "vah264enc name=videncoder bitrate={} rate-control=cbr "
+        "key-int-max=60 ! video/x-h264,profile=high ! h264parse "
+        "config-interval=1 ",
+        // codec::h265
+        "vah265enc name=videncoder bitrate={} rate-control=cbr "
+        "key-int-max=60 ! h265parse config-interval=1 ",
+        // codec::av1
+        "vaav1enc name=videncoder bitrate={} rate-control=cbr "
+        "key-int-max=60 ! av1parse "
+        "! video/x-av1,stream-format=obu-stream,alignment=frame ",
+    },
+#endif
     // encoder::qsv
     {
         // codec::h264
@@ -319,6 +362,78 @@ void encode::pipeline_build_video_payloader()
   this->pipeline_str += "! queue silent=true ! tsmux. ";
 }
 
+// Connect the pad-added handler for the MPEG-TS demux. Scoped to that path by
+// the named branch queues: only pipeline_build_{video,audio}_demux's default
+// case creates them, so ndi/sdp/testsrc keep their existing parse-time links.
+void encode::link_demux_pads()
+{
+  if (this->video_queue == nullptr || this->audio_queue == nullptr) {
+    return;
+  }
+  GstElement* demux =
+      gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), "demux");
+  if (demux == nullptr) {
+    return;
+  }
+  // The signal lives on the element, which is owned by the pipeline, so
+  // dropping our ref here does not disconnect it.
+  g_signal_connect(
+      demux, "pad-added", G_CALLBACK(&encode::on_demux_pad_added), this);
+  gst_object_unref(demux);
+}
+
+void encode::on_demux_pad_added(GstElement* /*demux*/,
+                                GstPad* pad,
+                                gpointer user_data)
+{
+  static_cast<encode*>(user_data)->link_demux_pad(pad);
+}
+
+// tsdemux emits its pads with caps already set, so route each one to the
+// matching branch queue. Queueing the link (rather than requesting a named pad
+// up front) is what makes this reliable: an any-pad request can hand the video
+// pad to the audio branch, and two any-pad requests fail to link at all.
+void encode::link_demux_pad(GstPad* pad)
+{
+  GstCaps* caps = gst_pad_get_current_caps(pad);
+  if (caps == nullptr) {
+    caps = gst_pad_query_caps(pad, nullptr);
+  }
+  const GstStructure* structure =
+      (caps != nullptr) ? gst_caps_get_structure(caps, 0) : nullptr;
+  const gchar* media_type =
+      (structure != nullptr) ? gst_structure_get_name(structure) : nullptr;
+  if (media_type == nullptr) {
+    if (caps != nullptr) {
+      gst_caps_unref(caps);
+    }
+    return;
+  }
+
+  GstElement* queue = nullptr;
+  if (g_str_has_prefix(media_type, "video/")) {
+    queue = this->video_queue;
+  } else if (g_str_has_prefix(media_type, "audio/")) {
+    queue = this->audio_queue;
+  }
+
+  if (queue != nullptr) {
+    GstPad* sink_pad = gst_element_get_static_pad(queue, "sink");
+    if (sink_pad != nullptr) {
+      if (!gst_pad_is_linked(sink_pad)) {
+        const GstPadLinkReturn ret = gst_pad_link(pad, sink_pad);
+        log(std::format("demux pad '{}' ({}) -> {}: {}",
+                        GST_PAD_NAME(pad),
+                        media_type,
+                        GST_ELEMENT_NAME(queue),
+                        gst_pad_link_get_name(ret)));
+      }
+      gst_object_unref(sink_pad);
+    }
+  }
+  gst_caps_unref(caps);
+}
+
 void encode::build_pipeline()
 {
   this->pipeline_build_source();
@@ -355,6 +470,12 @@ void encode::parse_pipeline()
       gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), "video_sink");
   this->audio_sink =
       gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), "audio_sink");
+
+  this->video_queue =
+      gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), "vqueue");
+  this->audio_queue =
+      gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), "aqueue");
+  this->link_demux_pads();
 
   this->bus = gst_element_get_bus(this->datasrc_pipeline);
   this->pipeline_cleaned_up.store(false, std::memory_order_release);

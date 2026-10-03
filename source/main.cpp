@@ -414,7 +414,8 @@ static void preview_input()
     case input_mode::mpegts: {
       auto port = ctx.lib.input_cfg.selected_input;
       start_preview_thread(
-          std::format("udpsrc port={} ! tsdemux name=d ! d.video ! queue ! "
+          std::format("udpsrc port={} caps=video/mpegts,systemstream=true ! "
+                      "tsdemux name=d ! d.video ! queue ! "
                       "videoconvert ! autovideosink d.audio ! queue ! "
                       "audioconvert ! autoaudiosink",
                       port));

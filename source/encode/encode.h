@@ -53,6 +53,12 @@ private:
   GstElement* video_encoder = nullptr;
   GstElement* audio_sink = nullptr;
   GstElement* video_sink = nullptr;
+  // Branch entry queues for the MPEG-TS demux. That demux's pads are dynamic,
+  // and tsdemux cannot resolve two any-pad (`demux.`) delayed links on
+  // GStreamer 1.28.6, so the branches are linked by caps from a pad-added
+  // handler instead (see link_demux_pads).
+  GstElement* video_queue = nullptr;
+  GstElement* audio_queue = nullptr;
   GstBus* bus = nullptr;
   void clear_pipeline_state();
   auto pull_from_sink(GstElement* encode::* sink_field) -> buffer_data;
@@ -65,6 +71,11 @@ private:
   void pipeline_build_video_encoder();
   void pipeline_build_audio_payloader();
   void pipeline_build_video_payloader();
+  void link_demux_pads();
+  void link_demux_pad(GstPad* pad);
+  static void on_demux_pad_added(GstElement* demux,
+                                 GstPad* pad,
+                                 gpointer user_data);
   void parse_pipeline();
   void play_pipeline();
   void handle_gst_message_error(GstMessage* message);

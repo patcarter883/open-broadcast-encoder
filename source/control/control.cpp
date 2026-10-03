@@ -86,11 +86,14 @@ bool control_client::start(const receiver_control_config& cfg,
                            codec source_codec,
                            std::string& err)
 {
-  // CONTRACT schema_version 2 (transport profile, 2026-07-18): the receiver
-  // is copy-only fan-out — outputs carry no video/audio mode blocks (the
-  // fields are gone, not ignored: a v1 body is rejected with invalid_schema).
+  // CONTRACT schema_version 3 (opt-in transcode tier, 2026-10-03): the receiver
+  // is still copy-only fan-out by default — an output with no `transcode` block
+  // is copied byte-for-byte — and the video/audio mode blocks of the old decode
+  // tier remain gone, not ignored. A v1 or v2 body is rejected with
+  // invalid_schema (there is no compatibility shim), so this version MUST track
+  // the receiver's contract; see docs/CONTRACT.md.
   json body;
-  body["schema_version"] = 2;
+  body["schema_version"] = 3;
   body["session_id"] = cfg.session_id;
   body["source"]["codec"] = codec_str(source_codec);
 
@@ -115,7 +118,10 @@ bool control_client::start(const receiver_control_config& cfg,
 bool control_client::stop(const std::string& session_id, std::string& err)
 {
   json body;
-  body["schema_version"] = 2;
+  // /stop does not enforce schema_version (CONTRACT §5, deliberately lenient so
+  // a stuck encoder can always halt the stream), but we send the current
+  // version anyway so both halves of the control plane agree.
+  body["schema_version"] = 3;
   body["session_id"] = session_id;
   return post_json(host, port, token, "/stop", body.dump(), err);
 }
