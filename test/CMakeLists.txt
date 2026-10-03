@@ -33,6 +33,20 @@ target_compile_features(backplane_test PRIVATE cxx_std_20)
 
 catch_discover_tests(backplane_test)
 
+# raw_format.cpp carries no GStreamer or libobs types, so this test compiles the
+# translation unit directly rather than linking encode_lib: the mapping is a
+# contract with an external format (libobs' enum values, arriving on the raw
+# wire) and this keeps its lane free of the pipeline.
+add_executable(raw_format_test
+    source/raw_format_test.cpp
+    ${CMAKE_SOURCE_DIR}/source/encode/raw_format.cpp
+)
+target_include_directories(raw_format_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(raw_format_test PRIVATE cxx_std_20)
+target_link_libraries(raw_format_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(raw_format_test)
+
 # ---- End-of-file commands ----
 
 add_folders(Test)

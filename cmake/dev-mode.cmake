@@ -1,9 +1,12 @@
 include(cmake/folders.cmake)
 
-# include(CTest)
-# if(BUILD_TESTING)
-#   add_subdirectory(test)
-# endif()
+# Tests are gated on CTest's BUILD_TESTING (default ON). The harness lives in
+# test/ and needs the manifest's "test" feature for Catch2, which the dev-mode
+# and ci-* presets enable (VCPKG_MANIFEST_FEATURES=test).
+include(CTest)
+if(BUILD_TESTING)
+  add_subdirectory(test)
+endif()
 
 # add_custom_target(
 #     run-exe
