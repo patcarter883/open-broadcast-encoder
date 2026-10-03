@@ -25,6 +25,19 @@ constexpr std::uint32_t kObsRgba = 6u;
 constexpr std::uint32_t kObsBgra = 7u;
 constexpr std::uint32_t kObsBgrx = 8u;
 constexpr std::uint32_t kObsY800 = 9u;
+constexpr std::uint32_t kObsI444 = 10u;
+constexpr std::uint32_t kObsI010 = 17u;
 constexpr std::uint32_t kObsP010 = 18u;
+constexpr std::uint32_t kObsI210 = 19u;
+constexpr std::uint32_t kObsP216 = 22u;
+constexpr std::uint32_t kObsP416 = 23u;
 
 auto obs_video_format_to_gst(std::uint32_t format) -> const char*;
+
+// True when the format carries more than 8 bits per sample.
+//
+// Bit depth is a property of the format itself, not of this reader's acceptance
+// of it: the mapping above refuses 4:2:2/4:4:4 (the on-site recorder's
+// business), but the codec and destination policy still has to know whether the
+// stream it is about to carry is 10-bit.
+auto obs_video_format_is_10bit(std::uint32_t format) -> bool;

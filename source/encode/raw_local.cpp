@@ -82,11 +82,13 @@ raw_local_input::raw_local_input(
     GstElement* video_src,
     GstElement* audio_src,
     std::uint16_t port,
-    std::function<void(const std::string&)> log_func)
+    std::function<void(const std::string&)> log_func,
+    std::function<std::string(std::uint32_t)> format_verdict)
     : video_src {video_src}
     , audio_src {audio_src}
     , port {port}
     , log_func {std::move(log_func)}
+    , format_verdict {std::move(format_verdict)}
 {
 }
 
@@ -240,6 +242,17 @@ auto raw_local_input::read_stream_header(int fd) -> bool
                     hdr.format));
     return false;
   }
+  // The format decides which codecs and destinations can carry this stream, and
+  // that policy belongs to the encoder that owns this reader. Ask before a
+  // single frame is pushed: a refusal is reported here and the connection
+  // dropped, so a corrected OBS reconnects into the same session.
+  if (this->format_verdict) {
+    const std::string refusal = this->format_verdict(hdr.format);
+    if (!refusal.empty()) {
+      log(std::format("[raw] refusing the stream: {}\n", refusal));
+      return false;
+    }
+  }
   if (hdr.fps_num == 0 || hdr.fps_den == 0) {
     log("[raw] stream header has a zero frame rate\n");
     return false;
@@ -264,6 +277,13 @@ auto raw_local_input::read_stream_header(int fd) -> bool
   this->fps_num = hdr.fps_num;
   this->fps_den = hdr.fps_den;
 
+  // No colorimetry is set here. OBS's colour space does not travel on the wire,
+  // and every encoder in this pipeline ignores a raw `colorimetry` field:
+  // measured, vah265enc writes no VUI and exposes no colour property at all, so
+  // a bt709 capture decodes as "unknown" at the far end either way (see
+  // DECISIONS.md DT-17 before adding a field here and expecting it to reach the
+  // bitstream). The stream is 4:2:0 SDR, which platforms read as BT.709 by
+  // convention.
   GstCaps* vcaps = gst_caps_new_simple("video/x-raw",
                                        "format",
                                        G_TYPE_STRING,

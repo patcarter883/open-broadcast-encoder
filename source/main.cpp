@@ -176,8 +176,11 @@ static void run_loop()
   // the address field updates directly without touching the live sender.
   run_transport();
 
-  auto encoder = std::make_shared<encode>(
-      ctx.lib.input_cfg, ctx.lib.encode_cfg, ctx.lib.run_flag, &encode_log);
+  auto encoder = std::make_shared<encode>(ctx.lib.input_cfg,
+                                          ctx.lib.encode_cfg,
+                                          ctx.lib.receiver_ctl,
+                                          ctx.lib.run_flag,
+                                          &encode_log);
   ctx.lib.encoder_ptr.store(encoder);
 
   encoder->run_encode_thread();

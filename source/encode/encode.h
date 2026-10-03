@@ -33,6 +33,7 @@ public:
   void set_encode_bitrate(int new_bitrate);
   explicit encode(const input_config& input_config,
                   const encode_config& encode_config,
+                  const receiver_control_config& receiver_config,
                   std::shared_ptr<std::atomic<bool>> run_flag,
                   std::function<void(const std::string&)> log_func);
   ~encode();
@@ -51,6 +52,9 @@ private:
   std::function<void(const std::string&)> log_func;
   const input_config& input_c;
   const encode_config& encode_c;
+  // Read for the raw-capture policy only: a destination that cannot carry the
+  // announced format earns a warning (see raw_format_verdict).
+  const receiver_control_config& receiver_c;
   std::string pipeline_str;
   GstElement* datasrc_pipeline = nullptr;
   GstElement* video_encoder = nullptr;
@@ -88,6 +92,7 @@ private:
   void parse_pipeline();
   void play_pipeline();
   void start_raw_reader();
+  auto raw_format_verdict(std::uint32_t obs_format) -> std::string;
   void handle_gst_message_error(GstMessage* message);
   void handle_gst_message_eos(GstMessage* message);
   void handle_gstreamer_message(GstMessage* message);

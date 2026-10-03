@@ -17,12 +17,14 @@
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
 
+#include "encode/raw_format.h"
 #include "encode/raw_local.h"
 
 using std::string;
 
 encode::encode(const input_config& input_config,
                const encode_config& encode_config,
+               const receiver_control_config& receiver_config,
                std::shared_ptr<std::atomic<bool>> run_flag,
                std::function<void(const std::string&)> log_func)
     : encoder_running {false}
@@ -30,6 +32,7 @@ encode::encode(const input_config& input_config,
     , log_func {std::move(log_func)}
     , input_c {input_config}
     , encode_c {encode_config}
+    , receiver_c {receiver_config}
 {
 }
 
@@ -584,6 +587,40 @@ void encode::run_encode_thread()
   threads.emplace_back([this] { play_pipeline(); });
 }
 
+// The policy for the format OBS announces on the raw wire: an empty return
+// accepts the stream, a non-empty one is the reason to refuse it (the reader
+// logs that and drops the connection, so a corrected OBS rejoins the session).
+auto encode::raw_format_verdict(std::uint32_t obs_format) -> std::string
+{
+  if (!obs_video_format_is_10bit(obs_format)) {
+    return {};  // 8-bit: every codec and destination here carries it as-is
+  }
+
+  // H.264 has no 10-bit profile at any level, so there is nothing to negotiate.
+  // Without this check the pipeline either fails caps negotiation or -- worse --
+  // a videoconvert quietly drops the extra two bits, and neither says why.
+  if (this->encode_c.selected_codec == codec::h264) {
+    return "the OBS capture is 10-bit but the selected codec is H.264, which "
+           "has no 10-bit profile: select H.265 or AV1, or set OBS's Color "
+           "Format to NV12";
+  }
+
+  // The stream can be carried; a destination may still not accept it. Warn and
+  // carry on -- the operator's decision is warn-but-allow -- naming the pair
+  // actually in use.
+  for (const auto& dest : this->receiver_c.destinations) {
+    if (dest.proto == output_proto::rtmp || dest.proto == output_proto::rtmps) {
+      this->log(
+          "warning: 10-bit capture with an RTMP destination: RTMP carries "
+          "10-bit only as Enhanced RTMP (eflvmux) and platform support for it "
+          "is uneven. SRT and RIST carry it cleanly, and an H.264 destination "
+          "cannot carry it at all.\n");
+      break;
+    }
+  }
+  return {};
+}
+
 void encode::start_raw_reader()
 {
   if (this->raw_video_src == nullptr || this->raw_audio_src == nullptr) {
@@ -616,7 +653,10 @@ void encode::start_raw_reader()
       this->raw_video_src,
       this->raw_audio_src,
       port,
-      [this](const std::string& msg) { this->log(msg); });
+      [this](const std::string& msg) { this->log(msg); },
+      [this](std::uint32_t obs_format) {
+        return this->raw_format_verdict(obs_format);
+      });
   this->raw_reader->start();
 }
 

@@ -37,3 +37,24 @@ TEST_CASE("obs video formats map to GStreamer caps names", "[raw][format]")
   // Anything unknown is refused, never guessed at.
   REQUIRE(obs_video_format_to_gst(9999u) == nullptr);
 }
+
+// The codec and destination policy reads bit depth off the wire format, so this
+// must stay right even for formats this reader does not itself accept: an
+// unsupported 10-bit capture must never be mistaken for an 8-bit one.
+TEST_CASE("only the 10-bit formats report 10-bit", "[raw][format]")
+{
+  REQUIRE(obs_video_format_is_10bit(kObsP010));
+  REQUIRE(obs_video_format_is_10bit(kObsI010));
+  REQUIRE(obs_video_format_is_10bit(kObsI210));
+  REQUIRE(obs_video_format_is_10bit(kObsP216));
+  REQUIRE(obs_video_format_is_10bit(kObsP416));
+
+  // 8-bit, including the 4:4:4 one: I444 is 8 bits per sample.
+  REQUIRE_FALSE(obs_video_format_is_10bit(kObsNv12));
+  REQUIRE_FALSE(obs_video_format_is_10bit(kObsI420));
+  REQUIRE_FALSE(obs_video_format_is_10bit(kObsYuy2));
+  REQUIRE_FALSE(obs_video_format_is_10bit(kObsBgra));
+  REQUIRE_FALSE(obs_video_format_is_10bit(kObsI444));
+
+  REQUIRE_FALSE(obs_video_format_is_10bit(9999u));
+}

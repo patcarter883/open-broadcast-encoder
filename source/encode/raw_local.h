@@ -39,10 +39,15 @@ class raw_local_input
 public:
   static constexpr std::uint16_t default_port = 9300;
 
+  // `format_verdict` is asked once per connection with the video format the wire
+  // announces, and returns an empty string to accept the stream or the reason to
+  // refuse it. The policy lives with the encoder that owns this reader: only it
+  // knows the selected codec and the destinations.
   raw_local_input(GstElement* video_src,
                   GstElement* audio_src,
                   std::uint16_t port,
-                  std::function<void(const std::string&)> log_func);
+                  std::function<void(const std::string&)> log_func,
+                  std::function<std::string(std::uint32_t)> format_verdict = {});
   ~raw_local_input();
 
   raw_local_input(const raw_local_input&) = delete;
@@ -73,6 +78,7 @@ private:
   GstElement* audio_src;
   std::uint16_t port;
   std::function<void(const std::string&)> log_func;
+  std::function<std::string(std::uint32_t)> format_verdict;
 
   std::thread reader;
   std::atomic<bool> stop_requested {false};

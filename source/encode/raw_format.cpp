@@ -34,3 +34,21 @@ auto obs_video_format_to_gst(std::uint32_t format) -> const char*
       return nullptr;
   }
 }
+
+auto obs_video_format_is_10bit(std::uint32_t format) -> bool
+{
+  switch (format) {
+    // Every 10-bit value in libobs' enum: the 4:2:0 pairs (I010/P010), the
+    // 4:2:2 pairs (I210/P216) and 4:4:4 (P416). Only P010 is one this reader
+    // accepts today; the rest are still reported as 10-bit so the policy sees
+    // the depth rather than silently treating an unsupported format as 8-bit.
+    case kObsI010:
+    case kObsP010:
+    case kObsI210:
+    case kObsP216:
+    case kObsP416:
+      return true;
+    default:
+      return false;
+  }
+}
