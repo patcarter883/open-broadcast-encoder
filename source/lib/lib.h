@@ -23,6 +23,7 @@ enum class input_mode : std::uint8_t
   mpegts,
   sdp,
   ndi,
+  raw_local,  // uncompressed video+audio from the OBS raw output plugin
   none
 };
 
@@ -220,7 +221,6 @@ struct library
 
   void log_append(const std::string& msg) const;
 };
-
 
 // ---------------------------------------------------------------------------
 // Secret hygiene (FIXPLAN M1.9). Stream keys, bearer tokens and PSKs must

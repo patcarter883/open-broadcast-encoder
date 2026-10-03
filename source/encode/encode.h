@@ -19,6 +19,8 @@
 
 #include "lib/lib.h"
 
+class raw_local_input;
+
 class encode
 {
 public:
@@ -41,7 +43,8 @@ public:
 
 private:
   // Guards video_encoder/audio_sink/video_sink/bus/datasrc_pipeline pointers
-  // and serialises clear_pipeline_state() against pull_*_buffer/set_encode_bitrate.
+  // and serialises clear_pipeline_state() against
+  // pull_*_buffer/set_encode_bitrate.
   std::mutex pipeline_mutex;
   std::vector<std::thread> threads;
   std::shared_ptr<std::atomic<bool>> run_flag;
@@ -59,6 +62,12 @@ private:
   // handler instead (see link_demux_pads).
   GstElement* video_queue = nullptr;
   GstElement* audio_queue = nullptr;
+  // raw_local only: the two appsrcs fed by raw_local_input, and the reader
+  // itself. Owned refs come from gst_bin_get_by_name in parse_pipeline(); the
+  // reader is stopped before they are unreffed (see clear_pipeline_state).
+  GstElement* raw_video_src = nullptr;
+  GstElement* raw_audio_src = nullptr;
+  std::unique_ptr<raw_local_input> raw_reader;
   GstBus* bus = nullptr;
   void clear_pipeline_state();
   auto pull_from_sink(GstElement* encode::* sink_field) -> buffer_data;
@@ -78,6 +87,7 @@ private:
                                  gpointer user_data);
   void parse_pipeline();
   void play_pipeline();
+  void start_raw_reader();
   void handle_gst_message_error(GstMessage* message);
   void handle_gst_message_eos(GstMessage* message);
   void handle_gstreamer_message(GstMessage* message);

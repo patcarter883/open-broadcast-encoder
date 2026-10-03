@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 
-#include "settings/settings.h"
-
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
@@ -12,6 +10,8 @@
 #include <system_error>
 #include <utility>
 #include <vector>
+
+#include "settings/settings.h"
 
 #include <nlohmann/json.hpp>
 
@@ -93,6 +93,8 @@ const char* input_mode_str(input_mode m) noexcept
       return "sdp";
     case input_mode::ndi:
       return "ndi";
+    case input_mode::raw_local:
+      return "raw_local";
     case input_mode::none:
       return "none";
   }
@@ -109,6 +111,8 @@ bool parse_input_mode(const std::string& s, input_mode& out) noexcept
     out = input_mode::sdp;
   } else if (s == "ndi") {
     out = input_mode::ndi;
+  } else if (s == "raw_local") {
+    out = input_mode::raw_local;
   } else if (s == "none") {
     out = input_mode::none;
   } else {
@@ -307,11 +311,11 @@ bool save(const library& lib)
   // restrict it to the owner BEFORE the secret content is written (the file
   // exists and is empty at this point). Keychain integration is a later
   // nicety (see README).
-  std::filesystem::permissions(path,
-                               std::filesystem::perms::owner_read
-                                   | std::filesystem::perms::owner_write,
-                               std::filesystem::perm_options::replace,
-                               ec);
+  std::filesystem::permissions(
+      path,
+      std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+      std::filesystem::perm_options::replace,
+      ec);
   file << root.dump(2) << '\n';
   return static_cast<bool>(file);
 }
@@ -333,14 +337,14 @@ bool load(library& lib)
     const json& j = *it;
     input_config& in = lib.input_cfg;
     get_to(j, "selected_input", in.selected_input);
-    if (auto m = j.find("selected_input_mode");
-        m != j.end() && m->is_string())
+    if (auto m = j.find("selected_input_mode"); m != j.end() && m->is_string())
     {
       parse_input_mode(m->get<std::string>(), in.selected_input_mode);
     }
     // The UI has no "None" item (the protocol choice only offers the four real
     // modes), so a hand-edited input_mode::none would leave the widget and the
-    // model disagreeing after apply_settings(). Normalise it to the app default.
+    // model disagreeing after apply_settings(). Normalise it to the app
+    // default.
     if (in.selected_input_mode == input_mode::none) {
       in.selected_input_mode = input_mode::testsrc;
     }

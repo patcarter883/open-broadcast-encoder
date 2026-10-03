@@ -3,8 +3,11 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <format>
+#include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -13,6 +16,8 @@
 
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
+
+#include "encode/raw_local.h"
 
 using std::string;
 
@@ -46,6 +51,14 @@ encode::~encode()
 
 void encode::clear_pipeline_state()
 {
+  // The reader pushes into the appsrcs below, so it stops first -- and here,
+  // rather than in the callers, so both stop_encode_thread() and the destructor
+  // get the ordering for free.
+  if (this->raw_reader) {
+    this->raw_reader->stop();
+    this->raw_reader.reset();
+  }
+
   std::lock_guard<std::mutex> guard(this->pipeline_mutex);
   if (this->pipeline_cleaned_up.load(std::memory_order_acquire)) {
     return;
@@ -76,6 +89,14 @@ void encode::clear_pipeline_state()
   if (this->audio_queue != nullptr) {
     gst_object_unref(this->audio_queue);
     this->audio_queue = nullptr;
+  }
+  if (this->raw_video_src != nullptr) {
+    gst_object_unref(this->raw_video_src);
+    this->raw_video_src = nullptr;
+  }
+  if (this->raw_audio_src != nullptr) {
+    gst_object_unref(this->raw_audio_src);
+    this->raw_audio_src = nullptr;
   }
   if (this->bus != nullptr) {
     gst_object_unref(this->bus);
@@ -137,6 +158,24 @@ void encode::pipeline_build_source()
           "ndisrc do-timestamp=true ndi-name=\"{}\" ! ndisrcdemux name=demux ",
           input_c.selected_input);
       break;
+    case input_mode::raw_local:
+      // The OBS raw output plugin is the TCP *client*, so the socket is owned
+      // by raw_local_input and these appsrcs are the far end of it. The
+      // branches below start from `rawvideo.`/`rawaudio.`, the same way a tee
+      // is branched in gst-launch syntax.
+      //
+      // No caps are set here on purpose: the geometry only exists once the
+      // stream header has been read, so raw_local_input sets them then. Both
+      // appsrcs are live and time-stamped by us (do-timestamp=false), because
+      // OBS's own timestamps are the A/V sync and must survive untouched.
+      // max-bytes bounds each queue, which is what applies back-pressure to
+      // OBS instead of growing this process without limit.
+      this->pipeline_str =
+          "appsrc name=rawvideo is-live=true format=time do-timestamp=false "
+          "max-bytes=16777216 "
+          "appsrc name=rawaudio is-live=true format=time do-timestamp=false "
+          "max-bytes=1048576 ";
+      break;
     case input_mode::none:
       break;
   }
@@ -147,8 +186,8 @@ void encode::pipeline_build_sink()
   // alignment = TS packets per buffer = bytes per RIST datagram (n*188). Lower
   // it for low-MTU cellular links so RIST packets don't get IP-fragmented.
   // Clamp to a sane range; <1 would make mpegtsmux auto-size (= large buffers).
-  const int alignment =
-      std::clamp(encode_c.mpegts_alignment.load(std::memory_order_relaxed), 1, 7);
+  const int alignment = std::clamp(
+      encode_c.mpegts_alignment.load(std::memory_order_relaxed), 1, 7);
   // enable-custom-mappings=true is REQUIRED to mux AV1 (and VP9): GStreamer has
   // no standardised MPEG-TS stream type for them, so mpegtsmux otherwise fails
   // with "AV1 requires enabling custom mapping". No-op for H.264/H.265.
@@ -163,7 +202,8 @@ void encode::pipeline_build_video_demux()
 {
   switch (input_c.selected_input_mode) {
     case input_mode::testsrc:
-      this->pipeline_str += " videotestsrc is-live=true pattern=smpte ! videoconvert !";
+      this->pipeline_str +=
+          " videotestsrc is-live=true pattern=smpte ! videoconvert !";
       break;
     case input_mode::ndi:
       this->pipeline_str += " demux.video ! queue silent=true ! videoconvert !";
@@ -171,6 +211,11 @@ void encode::pipeline_build_video_demux()
     case input_mode::sdp:
       this->pipeline_str +=
           " demux. ! rtpvrawdepay ! queue silent=true ! videoconvert !";
+      break;
+    case input_mode::raw_local:
+      // Already uncompressed, so straight to conversion: nothing to depay or
+      // decode. videoconvert then hands the encoder whatever format it wants.
+      this->pipeline_str += " rawvideo. ! queue silent=true ! videoconvert !";
       break;
     default:
       // Deliberately no `demux.` here. The MPEG-TS demux's pads are dynamic and
@@ -188,7 +233,9 @@ void encode::pipeline_build_audio_demux()
 {
   switch (input_c.selected_input_mode) {
     case input_mode::testsrc:
-      this->pipeline_str += " audiotestsrc is-live=true wave=sine ! audioconvert ! audioresample !";
+      this->pipeline_str +=
+          " audiotestsrc is-live=true wave=sine ! audioconvert ! audioresample "
+          "!";
       break;
     case input_mode::ndi:
       this->pipeline_str +=
@@ -198,6 +245,11 @@ void encode::pipeline_build_audio_demux()
       this->pipeline_str +=
           " demux. ! rtpL24depay ! queue silent=true ! audioresample ! "
           "audioconvert !";
+      break;
+    case input_mode::raw_local:
+      // OBS hands over planar float32; resample/convert let avenc_aac take it.
+      this->pipeline_str +=
+          " rawaudio. ! queue silent=true ! audioresample ! audioconvert !";
       break;
     default:
       // See the video-demux case: linked by caps in link_demux_pad().
@@ -228,14 +280,14 @@ constexpr int kCodecCount = 3;
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
 constexpr std::string_view kEncoderTemplates[kEncoderCount][kCodecCount] = {
-    // encoder::amd
-    //
-    // AMF (amfh264enc / amfh265enc / amfav1enc) is Windows-only. Everywhere
-    // else the same AMD hardware is driven through VAAPI instead
-    // (vah264enc / vah265enc / vaav1enc), which is also the encoder the
-    // receiver's transcode tier uses. This is not a fallback: with the AMF
-    // names, `encoder=amd` builds a pipeline whose elements do not exist on
-    // Linux, so it can never reach PLAYING.
+// encoder::amd
+//
+// AMF (amfh264enc / amfh265enc / amfav1enc) is Windows-only. Everywhere
+// else the same AMD hardware is driven through VAAPI instead
+// (vah264enc / vah265enc / vaav1enc), which is also the encoder the
+// receiver's transcode tier uses. This is not a fallback: with the AMF
+// names, `encoder=amd` builds a pipeline whose elements do not exist on
+// Linux, so it can never reach PLAYING.
 #ifdef _WIN32
     {
         // codec::h264
@@ -475,6 +527,11 @@ void encode::parse_pipeline()
       gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), "vqueue");
   this->audio_queue =
       gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), "aqueue");
+  // Null unless the mode is raw_local; the names are only in that pipeline.
+  this->raw_video_src =
+      gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), "rawvideo");
+  this->raw_audio_src =
+      gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), "rawaudio");
   this->link_demux_pads();
 
   this->bus = gst_element_get_bus(this->datasrc_pipeline);
@@ -521,7 +578,46 @@ void encode::run_encode_thread()
     *this->run_flag = true;
   }
   gst_element_set_state(this->datasrc_pipeline, GST_STATE_PLAYING);
+  if (this->input_c.selected_input_mode == input_mode::raw_local) {
+    this->start_raw_reader();
+  }
   threads.emplace_back([this] { play_pipeline(); });
+}
+
+void encode::start_raw_reader()
+{
+  if (this->raw_video_src == nullptr || this->raw_audio_src == nullptr) {
+    log("*** raw_local: pipeline has no rawvideo/rawaudio appsrcs; not "
+        "starting the reader ***\n");
+    return;
+  }
+
+  // The listen-port field is shared with the MPEG-TS ingest; empty means the
+  // OBS plugin's default target.
+  std::uint16_t port = raw_local_input::default_port;
+  if (!this->input_c.selected_input.empty()) {
+    try {
+      const int parsed = std::stoi(this->input_c.selected_input);
+      if (parsed > 0 && parsed <= 65535) {
+        port = static_cast<std::uint16_t>(parsed);
+      } else {
+        log(std::format("raw_local: port {} is out of range; using {}\n",
+                        parsed,
+                        raw_local_input::default_port));
+      }
+    } catch (const std::exception&) {
+      log(std::format("raw_local: '{}' is not a valid port; using {}\n",
+                      this->input_c.selected_input,
+                      raw_local_input::default_port));
+    }
+  }
+
+  this->raw_reader = std::make_unique<raw_local_input>(
+      this->raw_video_src,
+      this->raw_audio_src,
+      port,
+      [this](const std::string& msg) { this->log(msg); });
+  this->raw_reader->start();
 }
 
 void encode::stop_encode_thread()

@@ -17,6 +17,8 @@ target_sources(encode_lib ${warning_guard}
   PUBLIC
     encode.h
     encode.cpp
+    raw_local.h
+    raw_local.cpp
 )
 
 target_include_directories(

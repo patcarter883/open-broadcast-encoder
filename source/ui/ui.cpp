@@ -192,6 +192,15 @@ Fl_Menu_Item user_interface::menu_choice_input_protocol[] = {
      .labelfont_ = 0,
      .labelsize_ = 14,
      .labelcolor_ = 0},
+    {.text = "OBS Raw (TCP)",
+     .shortcut_ = 0,
+     .callback_ = 0,
+     .user_data_ = (void*)(4),
+     .flags = 0,
+     .labeltype_ = (uchar)FL_NORMAL_LABEL,
+     .labelfont_ = 0,
+     .labelsize_ = 14,
+     .labelcolor_ = 0},
     {.text = 0,
      .shortcut_ = 0,
      .callback_ = 0,
@@ -665,12 +674,13 @@ user_interface::user_interface()
           row->end();
         }  // Fl_Flex* row
         {
-          input_destinations = new Fl_Multiline_Input(
-              25,
-              487,
-              1323,
-              90,
-              "Destinations (one per line:  rtmp|rtmps|srt|rist  <url>  [key])");
+          input_destinations =
+              new Fl_Multiline_Input(25,
+                                     487,
+                                     1323,
+                                     90,
+                                     "Destinations (one per line:  "
+                                     "rtmp|rtmps|srt|rist  <url>  [key])");
           input_destinations->align(Fl_Align(FL_ALIGN_TOP_LEFT));
         }  // Fl_Multiline_Input* input_destinations
         flx_receiver->margin(8, 22, 8, 8);
@@ -804,6 +814,23 @@ void user_interface::choose_input_protocol(input_config* input_config,
       Fl::unlock();
       Fl::awake();
       refresh_ndi_funcptr();
+      break;
+    }
+
+    case 4: {
+      input_config->selected_input_mode = input_mode::raw_local;
+      Fl::lock();
+      // Shares the MPEG-TS option group: that field is just a listen port,
+      // which is exactly what the OBS raw ingest needs.
+      if (input_listen_port->value()[0] == '\0') {
+        input_listen_port->value("9300");
+      }
+      mpegts_options_group->show();
+      sdp_options_group->hide();
+      ndi_options_group->hide();
+      layout();
+      Fl::unlock();
+      Fl::awake();
       break;
     }
 
@@ -1047,6 +1074,12 @@ void user_interface::apply_settings(const input_config& input_c,
       input_listen_port->value(input_c.selected_input.c_str());
       mpegts_options_group->show();
       break;
+    case input_mode::raw_local:
+      input_listen_port->value(input_c.selected_input.empty()
+                                   ? "9300"
+                                   : input_c.selected_input.c_str());
+      mpegts_options_group->show();
+      break;
     case input_mode::sdp:
       sdp_options_group->show();
       break;
@@ -1070,9 +1103,9 @@ void user_interface::apply_settings(const input_config& input_c,
   input_mpegts_alignment->value(
       std::to_string(encode_c.mpegts_alignment.load(std::memory_order_relaxed))
           .c_str());
-  select_choice_by_userdata(
-      choice_bitrate_source,
-      static_cast<long>(encode_c.scaling_source.load(std::memory_order_relaxed)));
+  select_choice_by_userdata(choice_bitrate_source,
+                            static_cast<long>(encode_c.scaling_source.load(
+                                std::memory_order_relaxed)));
 
   // ---- Output ----
   input_rist_address->value(output_c.address.c_str());
@@ -1088,9 +1121,11 @@ void user_interface::apply_settings(const input_config& input_c,
                             static_cast<long>(receiver_c.video.out_codec));
   select_choice_by_userdata(choice_reencode_encoder,
                             static_cast<long>(receiver_c.video.enc));
-  input_reencode_bitrate->value(std::to_string(receiver_c.video.bitrate).c_str());
+  input_reencode_bitrate->value(
+      std::to_string(receiver_c.video.bitrate).c_str());
   check_upscale->value(receiver_c.video.upscale ? 1 : 0);
-  input_destinations->value(format_destinations(receiver_c.destinations).c_str());
+  input_destinations->value(
+      format_destinations(receiver_c.destinations).c_str());
 
   layout();
 }
@@ -1223,9 +1258,9 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        FuncPtr,
                        save_settings_funcptr);
 
-  btn_exit->callback([](Fl_Widget*, void* v) {
-    static_cast<user_interface*>(v)->main_window->hide();
-  }, this);
+  btn_exit->callback([](Fl_Widget*, void* v)
+                     { static_cast<user_interface*>(v)->main_window->hide(); },
+                     this);
 
   FL_METHOD_CALLBACK_1(btn_refresh_ndi_devices,
                        user_interface,
@@ -1237,8 +1272,9 @@ void user_interface::init_ui_callbacks(input_config* input_c,
   // ---- Receiver / restream control section ----
   // Default the reencode codec/encoder choices so the model matches the
   // displayed selection (h264 / software) before the user touches them.
-  choice_reencode_codec->value(0);     // h264 (index 0 of menu_choice_codec)
-  choice_reencode_encoder->value(3);   // Software (index 3 of menu_choice_encoder)
+  choice_reencode_codec->value(0);  // h264 (index 0 of menu_choice_codec)
+  choice_reencode_encoder->value(
+      3);  // Software (index 3 of menu_choice_encoder)
 
   // Update the model live as the user types/toggles.
   input_control_address->when(FL_WHEN_CHANGED);
