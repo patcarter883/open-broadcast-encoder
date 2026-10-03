@@ -4,10 +4,12 @@ on:
   push:
     branches:
     - master
+    - v2
 
   pull_request:
     branches:
     - master
+    - v2
 
 env:
   VCPKG_COMMIT: "eba7c6a894fce24146af4fdf161fef8e90dd6be3"
