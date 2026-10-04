@@ -10,9 +10,10 @@
 
 #include "ui/ui.h"
 
-auto stats::scale_encoder_bitrate(double quality,
-                                  cumulative_stats* stats,
-                                  const encode_config& encode_config) -> bool
+auto stats::scale_encoder_bitrate_locked(double quality,
+                                         cumulative_stats* stats,
+                                         const encode_config& encode_config,
+                                         int* new_bitrate_out) -> bool
 {
   if (stats == nullptr) {
     return false;
@@ -23,8 +24,6 @@ auto stats::scale_encoder_bitrate(double quality,
   if (std::isnan(quality) || std::isinf(quality)) {
     return false;
   }
-
-  std::lock_guard<std::mutex> guard(stats->mutex);
 
   int bitrateDelta = 0;
   double qualDiffPct = 0.0;
@@ -63,26 +62,37 @@ auto stats::scale_encoder_bitrate(double quality,
 
   stats->previous_quality = quality;
 
+  if (new_bitrate_out != nullptr) {
+    *new_bitrate_out = returnVal ? stats->current_bitrate : 0;
+  }
+
   return returnVal;
+}
+
+auto stats::scale_encoder_bitrate(double quality,
+                                  cumulative_stats* stats,
+                                  const encode_config& encode_config,
+                                  int* new_bitrate_out) -> bool
+{
+  if (stats == nullptr) {
+    return false;
+  }
+  std::lock_guard<std::mutex> guard(stats->mutex);
+  return scale_encoder_bitrate_locked(
+      quality, stats, encode_config, new_bitrate_out);
 }
 
 auto stats::got_rist_statistics(const rist_stats& statistics,
                                 cumulative_stats* stats,
                                 const encode_config& encode_config,
-                                user_interface& ui) -> bool
+                                user_interface& ui,
+                                int* new_bitrate_out) -> bool
 {
   if (stats == nullptr) {
     return false;
   }
 
   bool returnVal = false;
-
-  if (encode_config.scaling_source.load(std::memory_order_relaxed)
-      == bitrate_source::local)
-  {
-    returnVal = scale_encoder_bitrate(
-        statistics.stats.sender_peer.quality, stats, encode_config);
-  }
 
   // Snapshot for UI display so we don't hold the stats lock across FLTK calls.
   int bandwidth_snapshot = 0;
@@ -91,8 +101,21 @@ auto stats::got_rist_statistics(const rist_stats& statistics,
   int retransmitted_sum_snapshot = 0;
   int total_packets_sum_snapshot = 0;
 
+  // ONE lock for the whole sample. Locking per step (as before) let the OOB
+  // callback on the other thread rewrite current_bitrate between the bitrate
+  // decision and the caller's read of it.
   {
     std::lock_guard<std::mutex> guard(stats->mutex);
+
+    if (encode_config.scaling_source.load(std::memory_order_relaxed)
+        == bitrate_source::local)
+    {
+      returnVal = scale_encoder_bitrate_locked(
+          statistics.stats.sender_peer.quality,
+          stats,
+          encode_config,
+          new_bitrate_out);
+    }
 
     stats::push_bounded(stats->bandwidth,
                         statistics.stats.sender_peer.bandwidth);

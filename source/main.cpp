@@ -98,17 +98,13 @@ static auto rist_stats_cb(const rist_stats& stats)
   }
   auto encoder_snapshot = ctx.lib.encoder_ptr.load();
   int new_bitrate = 0;
-  bool should_update = false;
+  // got_rist_statistics reports the new bitrate itself under its single lock;
+  // no second lock here, which also closes the window in which the OOB
+  // callback could change current_bitrate between the decision and this read.
+  if (stats::got_rist_statistics(
+          stats, &ctx.lib.stats, ctx.lib.encode_cfg, *ctx.ui, &new_bitrate)
+      && encoder_snapshot)
   {
-    if (stats::got_rist_statistics(
-            stats, &ctx.lib.stats, ctx.lib.encode_cfg, *ctx.ui))
-    {
-      std::lock_guard<std::mutex> guard(ctx.lib.stats.mutex);
-      new_bitrate = ctx.lib.stats.current_bitrate;
-      should_update = true;
-    }
-  }
-  if (should_update && encoder_snapshot) {
     encoder_snapshot->set_encode_bitrate(new_bitrate);
   }
 }
@@ -143,21 +139,29 @@ static void rist_oob_cb(const uint8_t* data, size_t size)
 
   auto encoder_snapshot = ctx.lib.encoder_ptr.load();
   int new_bitrate = 0;
-  bool should_update = false;
   if (stats::scale_encoder_bitrate(static_cast<double>(tel.link_quality),
                                    &ctx.lib.stats,
-                                   ctx.lib.encode_cfg))
+                                   ctx.lib.encode_cfg,
+                                   &new_bitrate)
+      && encoder_snapshot)
   {
-    std::lock_guard<std::mutex> guard(ctx.lib.stats.mutex);
-    new_bitrate = ctx.lib.stats.current_bitrate;
-    should_update = true;
-  }
-  if (should_update && encoder_snapshot) {
     encoder_snapshot->set_encode_bitrate(new_bitrate);
   }
 }
 
 static void run_transport();
+
+// Reflect the encode lifecycle in the UI. Called from the send thread, so it
+// takes the FLTK lock for the widget writes only -- never across anything that
+// can block (same discipline as the teardown notes in stop() / main()).
+static void publish_encode_state(encode_state state)
+{
+  if (ctx.ui == nullptr) {
+    return;
+  }
+  ctx.ui->set_encode_state(encode_state_text(state),
+                           state == encode_state::failed);
+}
 
 static void run_loop()
 {
@@ -184,17 +188,43 @@ static void run_loop()
   ctx.lib.encoder_ptr.store(encoder);
 
   encoder->run_encode_thread();
+  publish_encode_state(encoder->state.load(std::memory_order_relaxed));
 
   while (ctx.lib.is_running.load(std::memory_order_acquire)) {
+    // A pipeline error stops play_pipeline() but used to leave this loop
+    // spinning on an empty sink forever, identical to a healthy stream. Stop
+    // the loop and surface the failure instead (C2).
+    if (encoder->state.load(std::memory_order_relaxed) == encode_state::failed) {
+      encode_log("\n*** Encode failed: the pipeline is no longer running. "
+                 "Press Stop, fix the cause, then Start. ***\n");
+      ctx.lib.is_running = false;
+      break;
+    }
+
     auto vidbuf = encoder->pull_video_buffer();
     if (!vidbuf.buf_data.empty() && ctx.transporter) {
-      ctx.transporter->send_buffer(vidbuf.buf_data, 0);
+      if (!ctx.transporter->send_buffer(vidbuf.buf_data, 0)) {
+        // rist-cpp's sendData returns false when the sender has no live context
+        // (and emits no log in a release build); stop rather than spin (C3).
+        encode_log("\n*** RIST send failed: the sender is no longer live. "
+                   "Press Stop, then Start to rebuild it. ***\n");
+        encoder->state.store(encode_state::failed, std::memory_order_relaxed);
+        ctx.lib.is_running = false;
+        break;
+      }
+      if (encoder->state.load(std::memory_order_relaxed)
+          == encode_state::starting) {
+        encoder->state.store(encode_state::streaming,
+                             std::memory_order_relaxed);
+        publish_encode_state(encode_state::streaming);
+      }
     } else if (vidbuf.buf_data.empty()) {
       // Pipeline torn down or returned no data; back off briefly to avoid
       // spinning on a dead sink.
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
   }
+  publish_encode_state(encoder->state.load(std::memory_order_relaxed));
 
   // NOTE: we do NOT rist_destroy() here. stop() runs on the FLTK thread holding
   // Fl::lock() and joins this thread; if we tore the sender down here,

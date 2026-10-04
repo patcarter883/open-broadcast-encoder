@@ -568,12 +568,29 @@ void encode::play_pipeline()
   }
 }
 
+auto encode_state_text(encode_state state) -> const char*
+{
+  switch (state) {
+    case encode_state::idle:
+      return "Idle";
+    case encode_state::starting:
+      return "Starting";
+    case encode_state::streaming:
+      return "Streaming";
+    case encode_state::failed:
+      return "FAILED";
+  }
+  return "Unknown";
+}
+
 void encode::run_encode_thread()
 {
+  this->state.store(encode_state::starting, std::memory_order_relaxed);
   this->build_pipeline();
   this->parse_pipeline();
   if (this->datasrc_pipeline == nullptr) {
     log("Refusing to start: pipeline failed to parse.\n");
+    this->state.store(encode_state::failed, std::memory_order_relaxed);
     return;
   }
   log("Playing pipeline.\n");
@@ -673,29 +690,35 @@ void encode::stop_encode_thread()
   }
   this->threads.clear();
 
+  this->state.store(encode_state::idle, std::memory_order_relaxed);
   this->clear_pipeline_state();
 }
 
 void encode::handle_gst_message_error(GstMessage* message)
 {
-  GError* err;
-  gchar* debug_info;
+  GError* err = nullptr;
+  gchar* debug_info = nullptr;
   gst_message_parse_error(message, &err, &debug_info);
   log("\nReceived error from datasrc_pipeline...\n");
   log(std::format("Error received from element {}: {}\n",
                   GST_OBJECT_NAME(message->src),
-                  err->message));
+                  (err != nullptr) ? err->message : "unknown"));
   log(std::format("Debugging information: {}\n",
                   (debug_info != nullptr) ? debug_info : "none"));
+  log("*** Encode stopped: the pipeline failed (see the error above). "
+      "Press Stop, fix the cause, then Start. ***\n");
   g_clear_error(&err);
   g_free(debug_info);
   encoder_running = false;
+  this->state.store(encode_state::failed, std::memory_order_relaxed);
 }
 
 void encode::handle_gst_message_eos(GstMessage* /*message*/)
 {
   log("\nReceived EOS from pipeline...\n");
+  log("*** Encode stopped: the input ended (EOS). ***\n");
   encoder_running = false;
+  this->state.store(encode_state::failed, std::memory_order_relaxed);
 }
 
 void encode::handle_gstreamer_message(GstMessage* message)

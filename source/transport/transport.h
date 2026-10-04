@@ -26,7 +26,13 @@ class transport
 {
 public:
   void setup_rist_sender(output_config& output_c);
-  void send_buffer(const std::vector<uint8_t>& data, u_int16_t connection_id);
+  // Returns false when the RIST sender rejected the buffer: either no context
+  // is live (initSender never ran, or rist-cpp's own sendData destroyed it
+  // after a hard write error) or the write itself failed. The caller must stop
+  // sending rather than spin, because rist-cpp's error path emits no log in a
+  // release build and every later call fails identically.
+  auto send_buffer(const std::vector<uint8_t>& data, u_int16_t connection_id)
+      -> bool;
   transport();
   ~transport();
   transport(const transport&) = delete;

@@ -56,6 +56,11 @@ public:
   Fl_Input* input_encode_bitrate;
   Fl_Input* input_mpegts_alignment;
   Fl_Input* input_rist_address;
+  // Lifecycle of the encode pipeline (Idle / Starting / Streaming / FAILED).
+  // Written from the send thread via set_encode_state, which takes the FLTK
+  // lock; a pipeline or RIST-send failure is otherwise indistinguishable from a
+  // healthy stream.
+  Fl_Output* encode_state_output;
   Fl_Button* btn_start_encode;
   Fl_Button* btn_stop_encode;
   Fl_Button* btn_save_settings;
@@ -109,6 +114,11 @@ public:
                       const encode_config& encode_c,
                       const output_config& output_c,
                       const receiver_control_config& receiver_c);
+  // Show the encode lifecycle state. Safe to call from a non-UI thread: takes
+  // the FLTK lock for the widget write and, when is_failed, presents the
+  // buttons as stopped (Start available, Stop inactive) because the send loop
+  // has already ended.
+  void set_encode_state(const std::string& text, bool is_failed);
   void transport_log_append(const std::string& msg) const;
   void encode_log_append(const std::string& msg) const;
   void init_ui();

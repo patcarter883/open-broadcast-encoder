@@ -133,8 +133,9 @@ void transport::setup_rist_sender(output_config& output_c)
   this->rist_sender->initSender(interface_list_sender, my_send_configuration);
 }
 
-void transport::send_buffer(const std::vector<uint8_t>& data,
-                            u_int16_t virt_dst_port)
+auto transport::send_buffer(const std::vector<uint8_t>& data,
+                            u_int16_t virt_dst_port) -> bool
 {
-  this->rist_sender->sendData(data.data(), data.size(), 0, virt_dst_port);
+  return this->rist_sender->sendData(
+      data.data(), data.size(), 0, virt_dst_port);
 }

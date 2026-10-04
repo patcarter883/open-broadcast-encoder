@@ -461,11 +461,18 @@ user_interface::user_interface()
             o->gap(12);
             o->end();
           }  // Fl_Flex* o
+          {
+            encode_state_output =
+                new Fl_Output(476, 76, 421, 25, "Encode State");
+            encode_state_output->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+            encode_state_output->value("Idle");
+          }  // Fl_Output* encode_state_output
           o->margin(5, 25, 5, 5);
           o->gap(25);
           o->fixed(o->child(0), 25);  // RIST Address
           o->fixed(o->child(1), 25);  // MPEG-TS Alignment
           o->fixed(o->child(2), 25);  // Start/Stop/Save/Exit button row
+          o->fixed(o->child(3), 25);  // Encode State
           o->end();
         }  // Fl_Flex* o
         {
@@ -728,6 +735,22 @@ void user_interface::transport_log_append(const std::string& msg) const
   Fl::lock();
   transport_log_display->insert(clean.c_str());
   Fl::unlock();
+  Fl::awake();
+}
+
+void user_interface::set_encode_state(const std::string& text, bool is_failed)
+{
+  lock();
+  encode_state_output->value(text.c_str());
+  encode_state_output->textcolor(is_failed ? FL_RED : FL_BLACK);
+  encode_state_output->redraw();
+  // A failed pipeline has already ended the send loop, so present the buttons
+  // as stopped rather than leaving a dead "running" pair on screen.
+  if (is_failed) {
+    btn_start_encode->activate();
+    btn_stop_encode->deactivate();
+  }
+  unlock();
   Fl::awake();
 }
 

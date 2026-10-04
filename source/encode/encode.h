@@ -21,11 +21,30 @@
 
 class raw_local_input;
 
+// Lifecycle of the encode pipeline. Without an explicit state a parse failure
+// or a pipeline error leaves the app looking identical to a healthy stream:
+// the twist is that `encoder_running` stops play_pipeline() but nothing in the
+// app's own send loop reads it, so it kept spinning on an empty sink while the
+// window still read "Start Encode" pressed. `failed` is terminal until the
+// operator Stops and Starts again.
+enum class encode_state
+{
+  idle,
+  starting,
+  streaming,
+  failed
+};
+
+auto encode_state_text(encode_state state) -> const char*;
+
 class encode
 {
 public:
   std::atomic<bool> encoder_running;
   std::atomic<bool> pipeline_cleaned_up {false};
+  // Set by this class on every transition and read by the app's send loop and
+  // the UI (see run_loop / user_interface::set_encode_state).
+  std::atomic<encode_state> state {encode_state::idle};
   void run_encode_thread();
   void stop_encode_thread();
   auto pull_video_buffer() -> buffer_data;
