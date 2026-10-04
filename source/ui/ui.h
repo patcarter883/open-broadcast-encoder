@@ -99,6 +99,10 @@ public:
   Fl_Output* hosted_token_output;
   Fl_Button* btn_hosted_signin;
   Fl_Button* btn_hosted_signout;
+  // One Allocate action (DT-20.1): allocate the hosted session, then apply the
+  // bridge the portal chose and report it. One button because the bridge's upstream
+  // IS the node the allocator picks.
+  Fl_Button* btn_hosted_allocate;
   Fl_Grid* grid_stats;
   Fl_Output* bandwidth_output;
   Fl_Output* link_quality_output;
@@ -136,6 +140,7 @@ public:
                          FuncPtr bridge_find_funcptr,
                          FuncPtr bridge_claim_funcptr,
                          FuncPtr bridge_apply_funcptr,
+                         FuncPtr hosted_allocate_funcptr,
                          FuncPtr hosted_signin_funcptr,
                          FuncPtr hosted_signout_funcptr);
   // Push persisted configs into the widgets after settings::load(). Call once,
@@ -165,6 +170,11 @@ public:
   // background thread, and the token is never rendered -- only set/not-set.
   void set_hosted_state(const std::string& text, bool is_error);
   void set_hosted_token(const std::string& token);
+  // Where the encoder should SEND, decided by an allocation (DT-20.1): the bridge's
+  // listen URL when the portal routed through one, else the node's rist_url. Takes
+  // the FLTK lock and updates the model and the widget together, like the bridge
+  // setters -- a worker must never write the config directly.
+  void set_encoder_target(const std::string& url);
   // The ids the token was minted against, and the backplane's row for the bridge
   // this encoder is driving. Written together because they are learned at
   // different times and a partial update would zero the other.
@@ -220,11 +230,16 @@ private:
   bridge_control_config* bridge_config_ptr = nullptr;
   // Hosted control-plane callbacks
   void hosted_url_cb(hosted_config* hosted_config);
+  void hosted_allocate(FuncPtr allocate_funcptr);
   void hosted_sign_in(FuncPtr signin_funcptr);
   void hosted_sign_out(FuncPtr signout_funcptr);
   // The model the hosted widgets edit; set once in init_ui_callbacks, so the
   // thread-safe setters update the model as well as the widgets.
   hosted_config* hosted_config_ptr = nullptr;
+  // The model behind the RIST output address, held for the same reason: an
+  // allocation can move the encoder's target, and that write must not happen on a
+  // worker thread.
+  output_config* output_config_ptr = nullptr;
   void start(FuncPtr start_funcptr);
   void stop(FuncPtr stop_funcptr);
   void save_settings(FuncPtr save_settings_funcptr);

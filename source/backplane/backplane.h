@@ -101,4 +101,10 @@ private:
   persist_fn m_persist;
 };
 
+// Build an httplib-backed transport for the backplane endpoints. Defined in
+// backplane_httplib.cpp so this header stays free of httplib and links into the
+// tests. Registers the device token as a secret, so it cannot reach a log pane.
+backplane_client::transport_fn make_httplib_transport(
+    const std::string& base_url, const std::string& device_token);
+
 #endif  // OPEN_BROADCAST_ENCODER_SOURCE_BACKPLANE_BACKPLANE_H

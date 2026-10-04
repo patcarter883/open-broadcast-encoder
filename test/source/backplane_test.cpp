@@ -122,6 +122,72 @@ TEST_CASE("hosted_session survives a JSON round trip", "[backplane][m2.7]")
   CHECK(back.valid());
 }
 
+// DT-20.1: the chain the portal chose, and the difference between "no bridge" and "a
+// backplane that never said". A version skew must not read as a routing decision.
+TEST_CASE("the allocation carries the bridge the portal chose",
+          "[backplane][dt20.1]")
+{
+  const std::string with_bridge =
+      "{\"ok\":true,\"session\":{\"id\":\"s_abc\",\"rist_url\":\"rist://h:1\","
+      "\"control_url\":\"https://h/s_abc\",\"bridge\":{\"id\":42,"
+      "\"bridge_uid\":\"rist2rist-aa:bb:cc:dd:ee:ff\","
+      "\"lan_host\":\"192.168.8.1\"}}}";
+  {
+    std::vector<std::string> calls;
+    backplane_client client("https://api", "devtok",
+                            scripted(calls, 201, with_bridge));
+    const alloc_result r = client.allocate("syd1");
+    REQUIRE(r.ok);
+    CHECK(r.session.bridge_present);
+    CHECK(r.session.bridge_id == 42);
+    CHECK(r.session.bridge_uid == "rist2rist-aa:bb:cc:dd:ee:ff");
+    CHECK(r.session.bridge_lan_host == "192.168.8.1");
+  }
+
+  const std::string explicit_null =
+      "{\"ok\":true,\"session\":{\"id\":\"s_abc\",\"rist_url\":\"rist://h:1\","
+      "\"control_url\":\"https://h/s_abc\",\"bridge\":null}}";
+  {
+    std::vector<std::string> calls;
+    backplane_client client("https://api", "devtok",
+                            scripted(calls, 201, explicit_null));
+    const alloc_result r = client.allocate("syd1");
+    REQUIRE(r.ok);
+    // Present and null: the operator chose a direct chain.
+    CHECK(r.session.bridge_present);
+    CHECK(r.session.bridge_uid.empty());
+  }
+
+  {
+    std::vector<std::string> calls;
+    backplane_client client("https://api", "devtok", scripted(calls, 201, k_good));
+    const alloc_result r = client.allocate("syd1");
+    REQUIRE(r.ok);
+    // Absent: this backplane predates the field. Deliberately NOT the same value as
+    // "no bridge" -- the caller must be able to tell a skew from a decision.
+    CHECK_FALSE(r.session.bridge_present);
+  }
+}
+
+TEST_CASE("the chain survives the settings round-trip", "[backplane][dt20.1]")
+{
+  hosted_session s;
+  s.session_id = "s_abc";
+  s.rist_url = "rist://h:1";
+  s.control_url = "https://h/s_abc";
+  s.bridge_present = true;
+  s.bridge_id = 42;
+  s.bridge_uid = "rist2rist-aa:bb:cc:dd:ee:ff";
+  s.bridge_lan_host = "192.168.8.1";
+
+  const hosted_session back = hosted_session::from_json(s.to_json());
+
+  CHECK(back.bridge_present);
+  CHECK(back.bridge_id == 42);
+  CHECK(back.bridge_uid == "rist2rist-aa:bb:cc:dd:ee:ff");
+  CHECK(back.bridge_lan_host == "192.168.8.1");
+}
+
 TEST_CASE("abandon-and-reallocate deletes then allocates, in order",
           "[backplane][m2.7]")
 {

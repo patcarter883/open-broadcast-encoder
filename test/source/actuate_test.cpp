@@ -28,6 +28,17 @@ hosted_session good_session()
   return s;
 }
 
+// The same session, but the portal put a bridge in the chain (DT-20.1).
+hosted_session bridged_session()
+{
+  hosted_session s = good_session();
+  s.bridge_present = true;
+  s.bridge_id = 42;
+  s.bridge_uid = "rist2rist-aa:bb:cc:dd:ee:ff";
+  s.bridge_lan_host = "192.168.8.1";
+  return s;
+}
+
 // Records what it was asked for and answers with what each test wants.
 struct fakes
 {
@@ -45,9 +56,16 @@ struct fakes
   bool report_ok = true;
   std::string report_error = "no response from backplane";
 
+  // The pair token the portal holds. Empty = the portal has none (a genuine 409),
+  // which is ordinary for a virgin bridge.
+  std::string credential_token = "pair-token-from-portal";
+  std::string credential_error = "no token";
+
   int alloc_calls = 0;
   int reconcile_calls = 0;
   int report_calls = 0;
+  int credential_calls = 0;
+  long seen_credential_bridge_id = 0;
   reconcile_request seen_request;
   std::string seen_new_token;
   std::string seen_service_instance;
@@ -94,6 +112,12 @@ struct fakes
           r.bridge_id = 42;
           r.error = report_ok ? "" : report_error;
           return r;
+        },
+        [this](long bridge_id, std::string& err) -> std::string {
+          ++credential_calls;
+          seen_credential_bridge_id = bridge_id;
+          err = credential_token.empty() ? credential_error : "";
+          return credential_token;
         });
   }
 };
@@ -252,6 +276,70 @@ TEST_CASE("a failed report does not invalidate a working chain",
   CHECK_FALSE(out.reported);
   CHECK(out.error_code == "report_failed");
   CHECK(out.encoder_target == "rist://192.168.8.1:6000");
+}
+
+TEST_CASE("the portal's bridge wins over the request's fallback",
+          "[bridge][actuate]")
+{
+  fakes f;
+  f.session = bridged_session();
+  actuator a = f.make();
+  actuate_request req = bridged_request();
+  req.bridge_uid = "rist2rist-99:99:99:99:99:99";  // stale local idea of the chain
+  req.known_token = "stale-local-token";
+  req.bridge_address.clear();
+
+  const actuate_outcome out = a.run(req, std::chrono::milliseconds {2000});
+
+  REQUIRE(out.ok);
+  CHECK(out.bridged);
+  // DT-20.1: the operator's transport is authoritative. A stale local setting must
+  // not be able to redirect a session the portal routed through a different bridge.
+  CHECK(f.seen_request.bridge_uid == "rist2rist-aa:bb:cc:dd:ee:ff");
+  CHECK(out.bridge_uid == "rist2rist-aa:bb:cc:dd:ee:ff");
+  // A local token is used as-is; no need to ask the portal for its copy.
+  CHECK(f.credential_calls == 0);
+  CHECK(f.seen_request.known_token == "stale-local-token");
+}
+
+TEST_CASE("a bridge the portal holds is applied with the portal's token",
+          "[bridge][actuate]")
+{
+  fakes f;
+  f.session = bridged_session();
+  actuator a = f.make();
+  actuate_request req = bridged_request();
+  req.bridge_uid.clear();    // nothing local to go on
+  req.known_token.clear();   // this encoder never claimed the bridge
+
+  const actuate_outcome out = a.run(req, std::chrono::milliseconds {2000});
+
+  REQUIRE(out.ok);
+  CHECK(f.credential_calls == 1);
+  CHECK(f.seen_credential_bridge_id == 42);  // asked for the bridge the PORTAL named
+  // The portal's copy is the only one left: the bridge itself keeps just a hash.
+  CHECK(f.seen_request.known_token == "pair-token-from-portal");
+}
+
+TEST_CASE("a virgin bridge still claims when the portal holds no token",
+          "[bridge][actuate]")
+{
+  fakes f;
+  f.session = bridged_session();
+  f.credential_token.clear();  // 409 no_token -- ordinary for a virgin bridge
+  actuator a = f.make();
+  actuate_request req = bridged_request();
+  req.bridge_uid.clear();
+  req.known_token.clear();
+
+  const actuate_outcome out = a.run(req, std::chrono::milliseconds {2000});
+
+  // An empty token must NOT abort the run: claiming is how a token comes to exist
+  // (DT-21 path C). decide() owns that judgement, not this layer.
+  REQUIRE(out.ok);
+  CHECK(f.reconcile_calls == 1);
+  CHECK(f.seen_request.known_token.empty());
+  CHECK(f.seen_request.allow_claim);
 }
 
 TEST_CASE("bridge_desired_config maps the session to the bridge's upstream",

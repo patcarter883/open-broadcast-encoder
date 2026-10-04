@@ -35,13 +35,15 @@
 namespace bridge
 {
 
-// Everything the caller knows when it asks for a session. The bridge_* fields
-// normally come from the allocation response; the token/fingerprint are local state
-// the encoder holds from an earlier claim.
+// Everything the caller knows when it asks for a session.
+//
+// `bridge_uid` is a FALLBACK, not the primary source: the portal's chosen bridge
+// arrives IN the allocation response (DT-20.1), and that is authoritative. This
+// field exists for the self-host and manual cases, where nothing states the chain.
 struct actuate_request
 {
   std::string pop;             // placement preference; empty = the account's default
-  std::string bridge_uid;      // the portal's chosen bridge; empty = direct
+  std::string bridge_uid;      // fallback bridge; empty = whatever the portal says
   std::string bridge_address;  // last reported LAN address; empty = browse for it
   std::string listen_url;      // what the bridge should listen on
   std::string interface_name;  // the bridge's egress interface; may be empty
@@ -72,6 +74,7 @@ struct actuate_outcome
   std::string new_token;       // set only when THIS run claimed the bridge
   bridge_report report;
   long bridge_id = 0;          // the backplane's row id, for a credential fetch
+  std::string bridge_uid;      // the bridge this run actually drove (empty = direct)
   std::string error_code;      // empty on full success
   std::string error;
 };
@@ -84,8 +87,17 @@ public:
       const reconcile_request&, std::chrono::milliseconds)>;
   using report_fn = std::function<report_result(
       const mdns::service&, const bridge_report&, const std::string& new_token)>;
+  // The pair token the PORTAL holds for a bridge (POST /v1/bridges/:id/credential).
+  // Wanted when the allocation names a bridge this encoder never claimed: the
+  // bridge stores only a hash, so the portal's copy is the only one available.
+  // Empty with `error` set when none is held (409), which is ordinary.
+  using credential_fn =
+      std::function<std::string(long bridge_id, std::string& error)>;
 
-  actuator(allocate_fn allocate, reconcile_fn reconcile, report_fn report);
+  // `credential` may be null when the caller can only ever apply a bridge it
+  // claimed itself.
+  actuator(allocate_fn allocate, reconcile_fn reconcile, report_fn report,
+           credential_fn credential = {});
 
   // BLOCKING -- browse, ubus and HTTP. Run it off the UI thread.
   actuate_outcome run(const actuate_request& req, std::chrono::milliseconds window);
@@ -94,6 +106,7 @@ private:
   allocate_fn m_allocate;
   reconcile_fn m_reconcile;
   report_fn m_report;
+  credential_fn m_credential;
 };
 
 // The bridge's desired state, derived from the session just allocated. Pure, so

@@ -196,6 +196,10 @@ class user_interface {open
                 xywh {1020 50 80 25}
               }
             }
+            Fl_Output encode_state_output {
+              label {Encode State}
+              xywh {476 76 421 25} align 5
+            }
           }
           Fl_Flex {} {
             label Stats open
@@ -337,6 +341,133 @@ class user_interface {open
             }
           }
         }
+        Fl_Flex flx_receiver {open
+          label {Receiver / Restream}
+          xywh {25 442 1323 150} box BORDER_BOX margin {8 22 8 8} gap 22 fixed_size_tuples {1  0 25 }
+        } {
+          Fl_Flex {} {open
+            xywh {25 464 1323 25} type HORIZONTAL gap 10
+          } {
+            Fl_Check_Button check_receiver_enabled {
+              label {Enable receiver}
+              xywh {25 464 110 25}
+            }
+            Fl_Input input_control_address {
+              label {Receiver host:port}
+              xywh {145 464 180 25} align 5
+            }
+            Fl_Input input_control_token {
+              label Token
+              xywh {335 464 160 25} align 5
+            }
+            Fl_Check_Button check_reencode {
+              label Reencode
+              xywh {505 464 100 25}
+            }
+            Fl_Choice choice_reencode_codec {
+              label Codec
+              xywh {615 464 110 25} align 5 down_box BORDER_BOX
+            }
+            Fl_Choice choice_reencode_encoder {
+              label Encoder
+              xywh {735 464 110 25} align 5 down_box BORDER_BOX
+            }
+            Fl_Input input_reencode_bitrate {
+              label {Bitrate kbps}
+              xywh {855 464 110 25} align 5
+            }
+            Fl_Check_Button check_upscale {
+              label {Upscale 1440p}
+              xywh {975 464 120 25}
+            }
+          }
+          Fl_Multiline_Input input_destinations {
+            label {Destinations (one per line:  rtmp|rtmps|srt|rist  <url>  [key])}
+            xywh {25 487 1323 90} align 5
+          }
+        }
+        Fl_Flex flx_bridge {open
+          label {Bridge (LAN)}
+          xywh {25 442 1323 130} box BORDER_BOX margin {8 22 8 8} gap 12
+        } {
+          Fl_Flex {} {open
+            xywh {25 464 1323 25} type HORIZONTAL gap 10
+          } {
+            Fl_Input input_bridge_address {
+              label {Bridge address}
+              xywh {25 464 200 25} align 5
+            }
+            Fl_Button btn_bridge_find {
+              label Find
+              xywh {235 464 90 25}
+            }
+            Fl_Button btn_bridge_claim {
+              label Claim
+              xywh {335 464 90 25}
+            }
+            Fl_Button btn_bridge_apply {
+              label Apply
+              xywh {435 464 90 25}
+            }
+          }
+          Fl_Flex {} {open
+            xywh {25 489 1323 25} type HORIZONTAL gap 10
+          } {
+            Fl_Input input_bridge_listen {
+              label {Bridge listens on}
+              xywh {25 489 230 25} align 5
+            }
+            Fl_Input input_bridge_forward {
+              label {Bridge forwards to}
+              xywh {265 489 230 25} align 5
+            }
+            Fl_Input input_bridge_interface {
+              label Interface
+              xywh {505 489 90 25} align 5
+            }
+            Fl_Output bridge_token_output {
+              label {Pair token}
+              xywh {605 489 140 25} align 5
+            }
+          }
+          Fl_Output bridge_state_output {
+            label {Bridge state}
+            xywh {25 514 1323 25} align 5
+          }
+        }
+        Fl_Flex flx_hosted {open
+          label {Hosted (portal)}
+          xywh {25 442 1323 92} box BORDER_BOX margin {8 22 8 8} gap 12
+        } {
+          Fl_Flex {} {open
+            xywh {25 464 1323 25} type HORIZONTAL gap 10
+          } {
+            Fl_Input input_backplane_url {
+              label {Backplane URL}
+              xywh {25 464 420 25} align 5
+            }
+            Fl_Button btn_hosted_signin {
+              label {Sign in}
+              xywh {455 464 90 25}
+            }
+            Fl_Button btn_hosted_signout {
+              label {Sign out}
+              xywh {555 464 90 25}
+            }
+            Fl_Button btn_hosted_allocate {
+              label Allocate
+              tooltip {Allocate a session, and if the portal routed this encoder through a bridge, apply that bridge on the LAN and report it -- one action, because the bridge's upstream IS the node the allocator picks.} xywh {655 464 100 25}
+            }
+            Fl_Output hosted_token_output {
+              label {Device token}
+              xywh {765 464 140 25} align 5
+            }
+          }
+          Fl_Output hosted_state_output {
+            label {Hosted state}
+            xywh {25 489 1323 25} align 5
+          }
+        }
         Fl_Flex flx_bottom {open
           xywh {25 442 1323 200} type HORIZONTAL
         } {
@@ -361,12 +492,64 @@ flx_bottom->layout();} {}
   decl {void init_ui_callbacks(input_config* input_c,
                        encode_config* encode_c,
                        output_config* output_c,
+                       receiver_control_config* receiver_c,
+                       bridge_control_config* bridge_c,
+                       hosted_config* hosted_c,
                        FuncPtr start_funcptr,
                        FuncPtr stop_funcptr,
                        FuncPtr ndi_refresh_funcptr,
                        FuncPtr input_rist_address_funcptr,
                        FuncPtr preview_src_funcptr,
-                       FuncPtr scaling_source_changed_funcptr);} {public local
+                       FuncPtr scaling_source_changed_funcptr,
+                       FuncPtr save_settings_funcptr,
+                       FuncPtr bridge_find_funcptr,
+                       FuncPtr bridge_claim_funcptr,
+                       FuncPtr bridge_apply_funcptr,
+                       FuncPtr hosted_allocate_funcptr,
+                       FuncPtr hosted_signin_funcptr,
+                       FuncPtr hosted_signout_funcptr);} {public local
+  }
+  decl {void bridge_address_cb(bridge_control_config* bridge_config);} {private local
+  }
+  decl {void bridge_listen_cb(bridge_control_config* bridge_config);} {private local
+  }
+  decl {void bridge_forward_cb(bridge_control_config* bridge_config);} {private local
+  }
+  decl {void bridge_interface_cb(bridge_control_config* bridge_config);} {private local
+  }
+  decl {void bridge_find(FuncPtr find_funcptr);} {private local
+  }
+  decl {void bridge_claim(FuncPtr claim_funcptr);} {private local
+  }
+  decl {void bridge_apply(FuncPtr apply_funcptr);} {private local
+  }
+  decl {void hosted_url_cb(hosted_config* hosted_config);} {private local
+  }
+  decl {void hosted_allocate(FuncPtr allocate_funcptr);} {private local
+  }
+  decl {void hosted_sign_in(FuncPtr signin_funcptr);} {private local
+  }
+  decl {void hosted_sign_out(FuncPtr signout_funcptr);} {private local
+  }
+  decl {void set_bridge_discovered(const std::string& uid, const std::string& address, const std::string& text, bool is_error);} {public local
+  }
+  decl {void set_bridge_token(const std::string& token);} {public local
+  }
+  decl {void set_bridge_message(const std::string& text, bool is_error);} {public local
+  }
+  decl {void set_hosted_state(const std::string& text, bool is_error);} {public local
+  }
+  decl {void set_hosted_token(const std::string& token);} {public local
+  }
+  decl {void set_encoder_target(const std::string& url);} {public local
+  }
+  decl {void set_hosted_ids(long device_id, long bridge_id);} {public local
+  }
+  decl {bridge_control_config* bridge_config_ptr;} {private local
+  }
+  decl {hosted_config* hosted_config_ptr;} {private local
+  }
+  decl {output_config* output_config_ptr;} {private local
   }
   decl {void transport_log_append(const std::string& msg) const;} {public local
   }

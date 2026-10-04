@@ -775,6 +775,9 @@ user_interface::user_interface()
             btn_hosted_signout = new Fl_Button(0, 0, 90, 25, "Sign out");
           }  // Fl_Button* btn_hosted_signout
           {
+            btn_hosted_allocate = new Fl_Button(0, 0, 100, 25, "Allocate");
+          }  // Fl_Button* btn_hosted_allocate
+          {
             hosted_token_output = new Fl_Output(0, 0, 140, 25, "Device token");
             hosted_token_output->align(Fl_Align(FL_ALIGN_TOP_LEFT));
             hosted_token_output->value("not signed in");
@@ -1223,6 +1226,14 @@ void user_interface::hosted_sign_out(FuncPtr signout_funcptr)
   signout_funcptr();
 }
 
+// One Allocate action (DT-20.1). The work lives in main.cpp: it allocates, applies
+// the bridge the portal chose over the LAN, and reports it -- all blocking, so it
+// runs on a tracked background thread.
+void user_interface::hosted_allocate(FuncPtr allocate_funcptr)
+{
+  allocate_funcptr();
+}
+
 void user_interface::start(void (*start_funcptr)())
 {
   lock();
@@ -1411,6 +1422,35 @@ void user_interface::set_hosted_state(const std::string& text, bool is_error)
   Fl::awake();
 }
 
+// The encoder's send target, decided by the allocation (DT-20.1). Model and widget
+// together under the lock, exactly like the bridge setters: a worker thread must
+// never write the config directly. The RIST sender is built at Start on the run_loop
+// thread, so moving the target here does not disturb a live pipeline.
+void user_interface::set_encoder_target(const std::string& url)
+{
+  if (url.empty()) {
+    return;
+  }
+  lock();
+  if (output_config_ptr != nullptr) {
+    output_config_ptr->address = url;
+    // The sender splits host and port out of this at Start; keep them consistent so
+    // a later save does not persist a stale pair.
+    const std::string::size_type colon = url.rfind(':');
+    if (colon != std::string::npos && url.compare(0, 7, "rist://") == 0) {
+      output_config_ptr->host = url.substr(7, colon - 7);
+      try {
+        output_config_ptr->port = std::stoi(url.substr(colon + 1));
+      } catch (const std::exception&) {
+        // A non-numeric port is the sender's to reject, not this setter's.
+      }
+    }
+    input_rist_address->value(url.c_str());
+  }
+  unlock();
+  Fl::awake();
+}
+
 void user_interface::set_hosted_token(const std::string& token)
 {
   // The device token authorises everything against the account, so it is never
@@ -1472,6 +1512,7 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                                        FuncPtr bridge_find_funcptr,
                                        FuncPtr bridge_claim_funcptr,
                                        FuncPtr bridge_apply_funcptr,
+                                       FuncPtr hosted_allocate_funcptr,
                                        FuncPtr hosted_signin_funcptr,
                                        FuncPtr hosted_signout_funcptr)
 {
@@ -1719,6 +1760,9 @@ void user_interface::init_ui_callbacks(input_config* input_c,
 
   // ---- Hosted (portal) control section ----
   hosted_config_ptr = hosted_c;
+  // Held so an allocation can move the encoder's send target from a worker thread
+  // without touching the config directly.
+  output_config_ptr = output_c;
 
   input_backplane_url->when(FL_WHEN_CHANGED);
 
@@ -1736,4 +1780,8 @@ void user_interface::init_ui_callbacks(input_config* input_c,
   FL_METHOD_CALLBACK_1(
       btn_hosted_signout, user_interface, this, hosted_sign_out, FuncPtr,
       hosted_signout_funcptr);
+
+  FL_METHOD_CALLBACK_1(
+      btn_hosted_allocate, user_interface, this, hosted_allocate, FuncPtr,
+      hosted_allocate_funcptr);
 }

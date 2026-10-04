@@ -25,6 +25,7 @@
 
 #include "backplane/backplane.h"
 #include "backplane/device_auth.h"
+#include "bridge/actuate.h"
 #include "bridge/bridge_client.h"
 #include "bridge/discovery.h"
 #include "bridge/mdns.h"
@@ -679,6 +680,139 @@ static void hosted_sign_out()
   transport_log("Hosted: signed out (device token cleared).\n");
 }
 
+// ---------------------------------------------------------------------------
+// ONE Allocate action (DT-20.1, DT-22). Allocate the hosted session, then -- if the
+// portal put a bridge in the chain -- apply that bridge over the LAN and report it.
+//
+// One action, not three, because the bridge's upstream target IS the node the
+// allocator picks: the bridge cannot be configured before the session exists, and
+// split steps leave a window with a live session and nothing on the air.
+//
+// The encoder is the actuator -- it holds the device credential AND can see the
+// customer LAN, which the backplane can do neither of (BACKPLANE.md §49).
+//
+// Blocks end to end (browse, ubus, HTTP), so it runs on a tracked background thread
+// and reports through the thread-safe setters. It never writes a config directly and
+// never renders a token.
+// ---------------------------------------------------------------------------
+static void hosted_allocate()
+{
+  const hosted_config hosted = ctx.lib.hosted;
+  const bridge_control_config bridge_cfg = ctx.lib.bridge_ctl;
+
+  if (hosted.backplane_url.empty() || hosted.device_token.empty()) {
+    if (ctx.ui != nullptr) {
+      ctx.ui->set_hosted_state("Sign in first - allocation needs a device token",
+                               true);
+    }
+    return;
+  }
+  if (ctx.ui != nullptr) {
+    ctx.ui->set_hosted_state("Allocating...", false);
+  }
+
+  track_control_thread(std::thread(
+      [hosted, bridge_cfg]
+      {
+        backplane_client backplane(
+            hosted.backplane_url, hosted.device_token,
+            make_httplib_transport(hosted.backplane_url, hosted.device_token));
+        // M2.7: the credentials reach disk the instant allocation returns, before
+        // the session is used, so a crash cannot silently orphan a billable
+        // allocation.
+        backplane.set_persist([](const hosted_session& s)
+                              { settings::save_hosted_session(s); });
+
+        bridge::bridge_reporter reporter(
+            hosted.backplane_url, hosted.device_token,
+            make_bridge_reporter_transport(hosted.backplane_url,
+                                           hosted.device_token));
+
+        bridge::actuate_request request;
+        // pop is left empty: the backplane places from the account's home POP.
+        request.listen_url = bridge_cfg.listen_url;
+        request.interface_name = bridge_cfg.interface_name;
+        request.known_token = bridge_cfg.token;
+        // Fallback only -- the portal's answer in the allocation is authoritative.
+        request.bridge_uid = bridge_cfg.bridge_uid;
+        if (hosted.device_id != 0) {
+          request.encoder_uid = "device-" + std::to_string(hosted.device_id);
+        }
+
+        auto client = make_bridge_client(bridge_cfg);
+        bridge::actuator actuator(
+            [&backplane](const std::string& pop)
+            { return backplane.allocate(pop); },
+            [&client](const bridge::reconcile_request& req,
+                      std::chrono::milliseconds window)
+            { return client.reconcile(req, window); },
+            [&reporter](const bridge::mdns::service& service,
+                        const bridge::bridge_report& report,
+                        const std::string& new_token)
+            { return reporter.report(service, report, new_token); },
+            [&reporter](long bridge_id, std::string& error)
+            { return reporter.credential(bridge_id, error); });
+
+        const auto outcome = actuator.run(request, k_bridge_window);
+
+        // A live session is billable whether or not the rest worked, so it is the
+        // first thing the operator hears about.
+        if (!outcome.session.session_id.empty()) {
+          transport_log("Allocated: " + outcome.session.session_id
+                        + (outcome.bridged ? " via " + outcome.bridge_uid
+                                           : " (direct)")
+                        + "\n");
+        }
+
+        if (!outcome.ok) {
+          transport_log("Allocate failed: " + outcome.error + "\n");
+          if (ctx.ui == nullptr) {
+            return;
+          }
+          if (outcome.session.session_id.empty()) {
+            ctx.ui->set_hosted_state("Allocate failed: " + outcome.error, true);
+          } else {
+            // Half-applied: the session EXISTS and is billable. Say it plainly
+            // rather than reporting a bare failure that hides it.
+            ctx.ui->set_hosted_state(
+                "Allocated " + outcome.session.session_id
+                    + " but the bridge did not apply (" + outcome.error
+                    + ") - release or retry",
+                true);
+            ctx.ui->set_bridge_message("Bridge apply failed: " + outcome.error,
+                                       true);
+          }
+          return;
+        }
+
+        if (ctx.ui != nullptr) {
+          ctx.ui->set_hosted_state(
+              outcome.bridged
+                  ? "Allocated " + outcome.session.session_id + " via "
+                        + outcome.bridge_uid
+                  : "Allocated " + outcome.session.session_id + " (direct)",
+              false);
+          // Handed over exactly once, and never rendered.
+          if (!outcome.new_token.empty()) {
+            ctx.ui->set_bridge_token(outcome.new_token);
+          }
+          if (outcome.bridged) {
+            ctx.ui->set_bridge_discovered(
+                outcome.bridge_uid, std::string {},
+                outcome.report.bridge_uid + " - applied, "
+                    + (outcome.report.managed ? "managed" : "unmanaged"),
+                false);
+          }
+          // Point the encoder at the chain the allocation decided: the bridge when
+          // one is in the path, the node otherwise.
+          ctx.ui->set_encoder_target(outcome.encoder_target);
+        }
+        if (!outcome.reported) {
+          transport_log("Bridge report failed: " + outcome.error + "\n");
+        }
+      }));
+}
+
 static void run()
 {
   // Stop the NDI preview before opening the encode pipeline. Preview and encode
@@ -927,6 +1061,7 @@ auto main(int argc, char** argv) -> int
       &bridge_find,
       &bridge_claim,
       &bridge_apply,
+      &hosted_allocate,
       &hosted_sign_in,
       &hosted_sign_out);
 
