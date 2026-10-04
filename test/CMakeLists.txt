@@ -33,6 +33,18 @@ target_compile_features(backplane_test PRIVATE cxx_std_20)
 
 catch_discover_tests(backplane_test)
 
+add_executable(device_auth_test source/device_auth_test.cpp)
+target_link_libraries(
+    device_auth_test PRIVATE
+    backplane_lib
+    open-broadcast-encoder_lib
+    nlohmann_json::nlohmann_json
+    Catch2::Catch2WithMain
+)
+target_compile_features(device_auth_test PRIVATE cxx_std_20)
+
+catch_discover_tests(device_auth_test)
+
 add_executable(ubus_test source/ubus_test.cpp)
 target_link_libraries(
     ubus_test PRIVATE
