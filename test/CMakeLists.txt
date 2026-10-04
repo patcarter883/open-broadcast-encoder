@@ -33,6 +33,30 @@ target_compile_features(backplane_test PRIVATE cxx_std_20)
 
 catch_discover_tests(backplane_test)
 
+add_executable(ubus_test source/ubus_test.cpp)
+target_link_libraries(
+    ubus_test PRIVATE
+    bridge_lib
+    open-broadcast-encoder_lib
+    nlohmann_json::nlohmann_json
+    Catch2::Catch2WithMain
+)
+target_compile_features(ubus_test PRIVATE cxx_std_20)
+
+catch_discover_tests(ubus_test)
+
+add_executable(mdns_test source/mdns_test.cpp)
+target_link_libraries(
+    mdns_test PRIVATE
+    bridge_lib
+    open-broadcast-encoder_lib
+    nlohmann_json::nlohmann_json
+    Catch2::Catch2WithMain
+)
+target_compile_features(mdns_test PRIVATE cxx_std_20)
+
+catch_discover_tests(mdns_test)
+
 # raw_format.cpp carries no GStreamer or libobs types, so this test compiles the
 # translation unit directly rather than linking encode_lib: the mapping is a
 # contract with an external format (libobs' enum values, arriving on the raw
