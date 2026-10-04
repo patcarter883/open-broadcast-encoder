@@ -14,6 +14,8 @@ target_sources(bridge_lib ${warning_guard}
     ubus_httplib.cpp
     mdns.h
     mdns.cpp
+    discovery.h
+    discovery.cpp
 )
 
 target_include_directories(bridge_lib PUBLIC
