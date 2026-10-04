@@ -21,6 +21,8 @@ target_sources(bridge_lib ${warning_guard}
     reporting.h
     reporting.cpp
     reporting_httplib.cpp
+    actuate.h
+    actuate.cpp
 )
 
 target_include_directories(bridge_lib PUBLIC

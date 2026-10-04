@@ -23,6 +23,13 @@ std::string hosted_session::to_json() const
   if (!start_body_json.empty()) {
     j["start_body"] = json::parse(start_body_json, nullptr, false);
   }
+  // DT-20.1: the chain decision is part of the allocation, so it persists with it.
+  j["bridge_present"] = bridge_present;
+  if (bridge_present) {
+    j["bridge_id"] = bridge_id;
+    j["bridge_uid"] = bridge_uid;
+    j["bridge_lan_host"] = bridge_lan_host;
+  }
   return j.dump(2);
 }
 
@@ -42,6 +49,10 @@ hosted_session hosted_session::from_json(const std::string& text)
   if (j.contains("start_body")) {
     s.start_body_json = j.at("start_body").dump();
   }
+  s.bridge_present = j.value("bridge_present", false);
+  s.bridge_id = j.value("bridge_id", 0L);
+  s.bridge_uid = j.value("bridge_uid", "");
+  s.bridge_lan_host = j.value("bridge_lan_host", "");
   return s;
 }
 
@@ -62,6 +73,17 @@ hosted_session parse_session(const json& body)
   s.psk_aes = sess.value("psk_aes", 256);
   if (sess.contains("start_body")) {
     s.start_body_json = sess.at("start_body").dump();
+  }
+  // DT-20.1: present-and-null means "direct"; ABSENT means this backplane predates
+  // the field. Those must not collapse into one value -- see hosted_session.
+  if (sess.contains("bridge")) {
+    s.bridge_present = true;
+    const json& b = sess.at("bridge");
+    if (b.is_object()) {
+      s.bridge_id = b.value("id", 0L);
+      s.bridge_uid = b.value("bridge_uid", "");
+      s.bridge_lan_host = b.value("lan_host", "");
+    }
   }
   return s;
 }

@@ -119,6 +119,21 @@ target_link_libraries(raw_format_test PRIVATE Catch2::Catch2WithMain)
 
 catch_discover_tests(raw_format_test)
 
+# The one Allocate action: allocate -> apply the bridge on the LAN -> report. Links
+# both libs because the whole point is the seam between them.
+add_executable(actuate_test source/actuate_test.cpp)
+target_link_libraries(
+    actuate_test PRIVATE
+    bridge_lib
+    backplane_lib
+    open-broadcast-encoder_lib
+    nlohmann_json::nlohmann_json
+    Catch2::Catch2WithMain
+)
+target_compile_features(actuate_test PRIVATE cxx_std_20)
+
+catch_discover_tests(actuate_test)
+
 # ---- End-of-file commands ----
 
 add_folders(Test)

@@ -27,6 +27,19 @@ struct hosted_session
   int psk_aes = 256;
   std::string start_body_json; // receiver schema-2 /start body, verbatim
 
+  // DT-20.1: the bridge the portal chose for this encoder, if any. Identity ONLY --
+  // the pair token is released separately (POST /v1/bridges/:id/credential), so an
+  // allocation never carries a media-plane credential.
+  //
+  // `bridge_present` is load-bearing: it distinguishes "the portal chose no bridge"
+  // (present, null) from "this backplane predates the field" (absent). Collapsing
+  // those would let a version skew silently route a bridged session straight to the
+  // node, past the bridge the operator configured.
+  bool bridge_present = false;
+  long bridge_id = 0;
+  std::string bridge_uid;
+  std::string bridge_lan_host;
+
   bool valid() const { return !session_id.empty() && !control_url.empty(); }
 
   std::string to_json() const;
