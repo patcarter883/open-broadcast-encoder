@@ -142,7 +142,7 @@ std::string ipv6_text(const std::vector<std::uint8_t>& d, std::size_t at)
 }
 
 // The instance label of a fully qualified name, e.g.
-// "rist2rist-aa._rist2rist._udp.local" -> "rist2rist-aa".
+// "rist2rist-aa._obr-rist._udp.local" -> "rist2rist-aa".
 std::string instance_of(const std::string& fqdn)
 {
   const auto dot = fqdn.find('.');

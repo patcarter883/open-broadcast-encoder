@@ -18,8 +18,8 @@ namespace
 {
 constexpr const char* k_instance = "rist2rist-11:22:33:44:55:66";
 constexpr const char* k_fqdn =
-    "rist2rist-11:22:33:44:55:66._rist2rist._udp.local";
-constexpr const char* k_service_name = "_rist2rist._udp.local";
+    "rist2rist-11:22:33:44:55:66._obr-rist._udp.local";
+constexpr const char* k_service_name = "_obr-rist._udp.local";
 constexpr const char* k_host = "OpenWrt.lan";
 constexpr std::size_t k_header = 12;
 
@@ -156,17 +156,17 @@ TEST_CASE("the query asks for PTR of our service", "[mdns]")
   REQUIRE(query[11] == 0);
 
   const std::vector<std::uint8_t> body(query.begin() + k_header, query.end());
-  REQUIRE(body[0] == 10);
-  REQUIRE(std::string(reinterpret_cast<const char*>(&body[1]), 10) == "_rist2rist");
-  REQUIRE(body[11] == 4);
-  REQUIRE(std::string(reinterpret_cast<const char*>(&body[12]), 4) == "_udp");
-  REQUIRE(body[16] == 5);
-  REQUIRE(std::string(reinterpret_cast<const char*>(&body[17]), 5) == "local");
-  REQUIRE(body[22] == 0);   // the root
-  REQUIRE(body[23] == 0);   // type = PTR
-  REQUIRE(body[24] == 12);
-  REQUIRE(body[25] == 0);   // class = IN
-  REQUIRE(body[26] == 1);
+  REQUIRE(body[0] == 9);
+  REQUIRE(std::string(reinterpret_cast<const char*>(&body[1]), 9) == "_obr-rist");
+  REQUIRE(body[10] == 4);
+  REQUIRE(std::string(reinterpret_cast<const char*>(&body[11]), 4) == "_udp");
+  REQUIRE(body[15] == 5);
+  REQUIRE(std::string(reinterpret_cast<const char*>(&body[16]), 5) == "local");
+  REQUIRE(body[21] == 0);   // the root
+  REQUIRE(body[22] == 0);   // type = PTR
+  REQUIRE(body[23] == 12);
+  REQUIRE(body[24] == 0);   // class = IN
+  REQUIRE(body[25] == 1);
 }
 
 TEST_CASE("a full advertisement becomes one merged service", "[mdns]")
@@ -234,7 +234,7 @@ TEST_CASE("two bridges on the LAN are reported separately", "[mdns]")
 {
   builder p;
   p.rr(k_fqdn, bridge::mdns::k_type_srv, 120, [&p] { srv(p, 5000, k_host); });
-  p.rr("rist2rist-aa:bb:cc._rist2rist._udp.local", bridge::mdns::k_type_srv, 120,
+  p.rr("rist2rist-aa:bb:cc._obr-rist._udp.local", bridge::mdns::k_type_srv, 120,
        [&p] { srv(p, 5001, "other.lan"); });
 
   const auto services = bridge::mdns::parse_response(packet(p, 0, 2));
@@ -318,7 +318,7 @@ TEST_CASE("malformed packets are refused rather than read past", "[mdns]")
   SECTION("a compression pointer into nowhere")
   {
     builder p;
-    p.rr("_rist2rist._udp.local", bridge::mdns::k_type_ptr, 4500,
+    p.rr("_obr-rist._udp.local", bridge::mdns::k_type_ptr, 4500,
          [&p] { p.pointer(0x0FF0); });
     REQUIRE(bridge::mdns::parse_response(packet(p, 0, 1)).empty());
   }

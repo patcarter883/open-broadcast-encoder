@@ -21,7 +21,11 @@ namespace bridge::mdns
 {
 
 // What the bridge advertises.
-inline constexpr const char* k_service = "_rist2rist._udp.local";
+// The DNS-SD service the bridge advertises (its umdns service file) and this
+// browser looks for. A product-namespaced type, NOT "_rist2rist._udp": the
+// bridge's advertisement is the authority and both sides must name it the same
+// or discovery silently finds nothing.
+inline constexpr const char* k_service = "_obr-rist._udp.local";
 inline constexpr const char* k_multicast_group = "224.0.0.251";
 inline constexpr std::uint16_t k_multicast_port = 5353;
 
