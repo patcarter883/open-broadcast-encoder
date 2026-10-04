@@ -23,7 +23,8 @@ std::string hosted_session::to_json() const
   if (!start_body_json.empty()) {
     j["start_body"] = json::parse(start_body_json, nullptr, false);
   }
-  // DT-20.1: the chain decision is part of the allocation, so it persists with it.
+  // DT-20.1: the chain decision is part of the allocation, so it persists with
+  // it.
   j["bridge_present"] = bridge_present;
   if (bridge_present) {
     j["bridge_id"] = bridge_id;
@@ -74,8 +75,9 @@ hosted_session parse_session(const json& body)
   if (sess.contains("start_body")) {
     s.start_body_json = sess.at("start_body").dump();
   }
-  // DT-20.1: present-and-null means "direct"; ABSENT means this backplane predates
-  // the field. Those must not collapse into one value -- see hosted_session.
+  // DT-20.1: present-and-null means "direct"; ABSENT means this backplane
+  // predates the field. Those must not collapse into one value -- see
+  // hosted_session.
   if (sess.contains("bridge")) {
     s.bridge_present = true;
     const json& b = sess.at("bridge");
@@ -106,10 +108,10 @@ alloc_result backplane_client::allocate(const std::string& pop)
     return r;
   }
   // DT-22: schema_version (and the optional POP) is ALL the request carries.
-  // The fan-out and recording are the operator's transport row on the backplane;
-  // sending them here would make the encoder a second source of truth for the
-  // same decision, and the backplane now REFUSES them outright (422) rather than
-  // silently preferring one.
+  // The fan-out and recording are the operator's transport row on the
+  // backplane; sending them here would make the encoder a second source of
+  // truth for the same decision, and the backplane now REFUSES them outright
+  // (422) rather than silently preferring one.
   json req;
   req["schema_version"] = 1;
   if (!pop.empty()) {
@@ -168,8 +170,7 @@ bool backplane_client::deallocate(const std::string& session_id,
 }
 
 alloc_result backplane_client::abandon_and_reallocate(
-    const std::string& lost_session_id,
-    const std::string& pop)
+    const std::string& lost_session_id, const std::string& pop)
 {
   std::string err;
   // Best-effort release of the orphan; a failure here (e.g. it was already

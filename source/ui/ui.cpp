@@ -749,7 +749,8 @@ user_interface::user_interface()
           // The state line gets its own full-width row. It is the longest text
           // in the group AND it carries the bridge's address, so letting a flex
           // row distribute it would clip the one thing the operator must read.
-          bridge_state_output = new Fl_Output(25, 514, 1323, 25, "Bridge state");
+          bridge_state_output =
+              new Fl_Output(25, 514, 1323, 25, "Bridge state");
           bridge_state_output->align(Fl_Align(FL_ALIGN_TOP_LEFT));
           bridge_state_output->value("Not found yet - press Find.");
         }  // Fl_Output* bridge_state_output
@@ -764,8 +765,7 @@ user_interface::user_interface()
           Fl_Flex* row = new Fl_Flex(25, 464, 1323, 25);
           row->type(1);
           {
-            input_backplane_url =
-                new Fl_Input(0, 0, 420, 25, "Backplane URL");
+            input_backplane_url = new Fl_Input(0, 0, 420, 25, "Backplane URL");
             input_backplane_url->align(Fl_Align(FL_ALIGN_TOP_LEFT));
           }  // Fl_Input* input_backplane_url
           {
@@ -788,10 +788,12 @@ user_interface::user_interface()
         {
           // Its own full-width row, like the bridge state line -- the sign-in
           // instruction has to be readable in one piece.
-          hosted_state_output = new Fl_Output(25, 489, 1323, 25, "Hosted state");
+          hosted_state_output =
+              new Fl_Output(25, 489, 1323, 25, "Hosted state");
           hosted_state_output->align(Fl_Align(FL_ALIGN_TOP_LEFT));
           hosted_state_output->value(
-              "Not signed in - the portal half stays inactive until you sign in.");
+              "Not signed in - the portal half stays inactive until you sign "
+              "in.");
         }  // Fl_Output* hosted_state_output
         flx_hosted->margin(8, 22, 8, 8);
         flx_hosted->gap(12);
@@ -1207,14 +1209,14 @@ void user_interface::bridge_apply(FuncPtr apply_funcptr)
 void user_interface::hosted_url_cb(hosted_config* hosted_config)
 {
   hosted_config->backplane_url = input_backplane_url->value();
-  // Deliberately does NOT clear the device token. This fires on every keystroke,
-  // so clearing here would sign the operator out as they type the URL; a token
-  // from a different backplane is refused by that backplane instead, which the
-  // state line reports.
+  // Deliberately does NOT clear the device token. This fires on every
+  // keystroke, so clearing here would sign the operator out as they type the
+  // URL; a token from a different backplane is refused by that backplane
+  // instead, which the state line reports.
 }
 
-// The sign-in itself lives in main.cpp: it needs the device-authorization client
-// and runs on a tracked background thread, because polling blocks.
+// The sign-in itself lives in main.cpp: it needs the device-authorization
+// client and runs on a tracked background thread, because polling blocks.
 
 void user_interface::hosted_sign_in(FuncPtr signin_funcptr)
 {
@@ -1226,9 +1228,9 @@ void user_interface::hosted_sign_out(FuncPtr signout_funcptr)
   signout_funcptr();
 }
 
-// One Allocate action (DT-20.1). The work lives in main.cpp: it allocates, applies
-// the bridge the portal chose over the LAN, and reports it -- all blocking, so it
-// runs on a tracked background thread.
+// One Allocate action (DT-20.1). The work lives in main.cpp: it allocates,
+// applies the bridge the portal chose over the LAN, and reports it -- all
+// blocking, so it runs on a tracked background thread.
 void user_interface::hosted_allocate(FuncPtr allocate_funcptr)
 {
   allocate_funcptr();
@@ -1422,10 +1424,11 @@ void user_interface::set_hosted_state(const std::string& text, bool is_error)
   Fl::awake();
 }
 
-// The encoder's send target, decided by the allocation (DT-20.1). Model and widget
-// together under the lock, exactly like the bridge setters: a worker thread must
-// never write the config directly. The RIST sender is built at Start on the run_loop
-// thread, so moving the target here does not disturb a live pipeline.
+// The encoder's send target, decided by the allocation (DT-20.1). Model and
+// widget together under the lock, exactly like the bridge setters: a worker
+// thread must never write the config directly. The RIST sender is built at
+// Start on the run_loop thread, so moving the target here does not disturb a
+// live pipeline.
 void user_interface::set_encoder_target(const std::string& url)
 {
   if (url.empty()) {
@@ -1434,8 +1437,8 @@ void user_interface::set_encoder_target(const std::string& url)
   lock();
   if (output_config_ptr != nullptr) {
     output_config_ptr->address = url;
-    // The sender splits host and port out of this at Start; keep them consistent so
-    // a later save does not persist a stale pair.
+    // The sender splits host and port out of this at Start; keep them
+    // consistent so a later save does not persist a stale pair.
     const std::string::size_type colon = url.rfind(':');
     if (colon != std::string::npos && url.compare(0, 7, "rist://") == 0) {
       output_config_ptr->host = url.substr(7, colon - 7);
@@ -1454,8 +1457,8 @@ void user_interface::set_encoder_target(const std::string& url)
 void user_interface::set_hosted_token(const std::string& token)
 {
   // The device token authorises everything against the account, so it is never
-  // rendered: register it before it can reach a log line, and show only that one
-  // is held (H2).
+  // rendered: register it before it can reach a log line, and show only that
+  // one is held (H2).
   if (!token.empty()) {
     secrets::register_secret(token);
   }
@@ -1710,7 +1713,8 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        receiver_c);
 
   // ---- Bridge (LAN) control section (DT-19, DT-21) ----
-  // Held so the thread-safe setters can update the model as well as the widgets.
+  // Held so the thread-safe setters can update the model as well as the
+  // widgets.
   bridge_config_ptr = bridge_c;
 
   input_bridge_address->when(FL_WHEN_CHANGED);
@@ -1746,22 +1750,31 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        bridge_control_config*,
                        bridge_c);
 
-  FL_METHOD_CALLBACK_1(
-      btn_bridge_find, user_interface, this, bridge_find, FuncPtr,
-      bridge_find_funcptr);
+  FL_METHOD_CALLBACK_1(btn_bridge_find,
+                       user_interface,
+                       this,
+                       bridge_find,
+                       FuncPtr,
+                       bridge_find_funcptr);
 
-  FL_METHOD_CALLBACK_1(
-      btn_bridge_claim, user_interface, this, bridge_claim, FuncPtr,
-      bridge_claim_funcptr);
+  FL_METHOD_CALLBACK_1(btn_bridge_claim,
+                       user_interface,
+                       this,
+                       bridge_claim,
+                       FuncPtr,
+                       bridge_claim_funcptr);
 
-  FL_METHOD_CALLBACK_1(
-      btn_bridge_apply, user_interface, this, bridge_apply, FuncPtr,
-      bridge_apply_funcptr);
+  FL_METHOD_CALLBACK_1(btn_bridge_apply,
+                       user_interface,
+                       this,
+                       bridge_apply,
+                       FuncPtr,
+                       bridge_apply_funcptr);
 
   // ---- Hosted (portal) control section ----
   hosted_config_ptr = hosted_c;
-  // Held so an allocation can move the encoder's send target from a worker thread
-  // without touching the config directly.
+  // Held so an allocation can move the encoder's send target from a worker
+  // thread without touching the config directly.
   output_config_ptr = output_c;
 
   input_backplane_url->when(FL_WHEN_CHANGED);
@@ -1773,15 +1786,24 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        hosted_config*,
                        hosted_c);
 
-  FL_METHOD_CALLBACK_1(
-      btn_hosted_signin, user_interface, this, hosted_sign_in, FuncPtr,
-      hosted_signin_funcptr);
+  FL_METHOD_CALLBACK_1(btn_hosted_signin,
+                       user_interface,
+                       this,
+                       hosted_sign_in,
+                       FuncPtr,
+                       hosted_signin_funcptr);
 
-  FL_METHOD_CALLBACK_1(
-      btn_hosted_signout, user_interface, this, hosted_sign_out, FuncPtr,
-      hosted_signout_funcptr);
+  FL_METHOD_CALLBACK_1(btn_hosted_signout,
+                       user_interface,
+                       this,
+                       hosted_sign_out,
+                       FuncPtr,
+                       hosted_signout_funcptr);
 
-  FL_METHOD_CALLBACK_1(
-      btn_hosted_allocate, user_interface, this, hosted_allocate, FuncPtr,
-      hosted_allocate_funcptr);
+  FL_METHOD_CALLBACK_1(btn_hosted_allocate,
+                       user_interface,
+                       this,
+                       hosted_allocate,
+                       FuncPtr,
+                       hosted_allocate_funcptr);
 }

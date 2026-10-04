@@ -24,8 +24,8 @@ constexpr const char* k_good =
     "\"session_id\":\"s_abc\",\"outputs\":[]}}}";
 
 // A scripted transport that records call order and returns a canned allocate.
-// `bodies`, when given, captures each request body so a test can assert what the
-// client actually SENT (not just what the response handling did).
+// `bodies`, when given, captures each request body so a test can assert what
+// the client actually SENT (not just what the response handling did).
 auto scripted(std::vector<std::string>& calls,
               int alloc_status,
               std::string alloc_body,
@@ -79,17 +79,19 @@ TEST_CASE("allocate persists credentials before returning", "[backplane][m2.7]")
 }
 
 // DT-22: the request must NOT carry transport configuration. The fan-out and
-// recording are the OPERATOR's decision on the backplane; sending them from here
-// would make the encoder a second source of truth, and the backplane refuses
-// them outright (422) rather than silently preferring one. Assert what the
-// client actually put on the wire, not merely that it can build such a body.
+// recording are the OPERATOR's decision on the backplane; sending them from
+// here would make the encoder a second source of truth, and the backplane
+// refuses them outright (422) rather than silently preferring one. Assert what
+// the client actually put on the wire, not merely that it can build such a
+// body.
 TEST_CASE("the allocate request carries no transport config",
           "[backplane][dt22]")
 {
   std::vector<std::string> calls;
   std::vector<std::string> bodies;
-  backplane_client client(
-      "https://api.example.au", "devtok", scripted(calls, 201, k_good, &bodies));
+  backplane_client client("https://api.example.au",
+                          "devtok",
+                          scripted(calls, 201, k_good, &bodies));
 
   const alloc_result r = client.allocate("syd1");
 
@@ -122,8 +124,9 @@ TEST_CASE("hosted_session survives a JSON round trip", "[backplane][m2.7]")
   CHECK(back.valid());
 }
 
-// DT-20.1: the chain the portal chose, and the difference between "no bridge" and "a
-// backplane that never said". A version skew must not read as a routing decision.
+// DT-20.1: the chain the portal chose, and the difference between "no bridge"
+// and "a backplane that never said". A version skew must not read as a routing
+// decision.
 TEST_CASE("the allocation carries the bridge the portal chose",
           "[backplane][dt20.1]")
 {
@@ -134,8 +137,8 @@ TEST_CASE("the allocation carries the bridge the portal chose",
       "\"lan_host\":\"192.168.8.1\"}}}";
   {
     std::vector<std::string> calls;
-    backplane_client client("https://api", "devtok",
-                            scripted(calls, 201, with_bridge));
+    backplane_client client(
+        "https://api", "devtok", scripted(calls, 201, with_bridge));
     const alloc_result r = client.allocate("syd1");
     REQUIRE(r.ok);
     CHECK(r.session.bridge_present);
@@ -149,8 +152,8 @@ TEST_CASE("the allocation carries the bridge the portal chose",
       "\"control_url\":\"https://h/s_abc\",\"bridge\":null}}";
   {
     std::vector<std::string> calls;
-    backplane_client client("https://api", "devtok",
-                            scripted(calls, 201, explicit_null));
+    backplane_client client(
+        "https://api", "devtok", scripted(calls, 201, explicit_null));
     const alloc_result r = client.allocate("syd1");
     REQUIRE(r.ok);
     // Present and null: the operator chose a direct chain.
@@ -160,11 +163,13 @@ TEST_CASE("the allocation carries the bridge the portal chose",
 
   {
     std::vector<std::string> calls;
-    backplane_client client("https://api", "devtok", scripted(calls, 201, k_good));
+    backplane_client client(
+        "https://api", "devtok", scripted(calls, 201, k_good));
     const alloc_result r = client.allocate("syd1");
     REQUIRE(r.ok);
-    // Absent: this backplane predates the field. Deliberately NOT the same value as
-    // "no bridge" -- the caller must be able to tell a skew from a decision.
+    // Absent: this backplane predates the field. Deliberately NOT the same
+    // value as "no bridge" -- the caller must be able to tell a skew from a
+    // decision.
     CHECK_FALSE(r.session.bridge_present);
   }
 }

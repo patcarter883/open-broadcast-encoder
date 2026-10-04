@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 //
-// The orchestrator: which bridge, whether it may be claimed, and what actually gets
-// sent. Discovery and ubus are both faked, so the DT-21 state machine is exercised
-// without a router.
+// The orchestrator: which bridge, whether it may be claimed, and what actually
+// gets sent. Discovery and ubus are both faked, so the DT-21 state machine is
+// exercised without a router.
 
 #include <chrono>
 #include <map>
@@ -38,9 +38,8 @@ auto advertised(const std::string& instance,
 auto discovery(std::vector<bridge::mdns::service> services)
     -> bridge::bridge_client::discover_fn
 {
-  return [services = std::move(services)](std::chrono::milliseconds) {
-    return services;
-  };
+  return [services = std::move(services)](std::chrono::milliseconds)
+  { return services; };
 }
 
 // A bridge that answers ubus, and remembers what it was asked.
@@ -56,42 +55,46 @@ struct fake_bridge
   bool config_read_succeeds = true;
   std::string claim_token_value = "tok-NEW";
 
-  json config{"ok", true};
+  json config {"ok", true};
 
   static auto reply(const json& payload) -> std::string
   {
-    return json{{"jsonrpc", "2.0"},
-                {"id", 1},
-                {"result", json::array({0, payload})}}
+    return json {
+        {"jsonrpc", "2.0"}, {"id", 1}, {"result", json::array({0, payload})}}
         .dump();
   }
 
   auto transport() -> bridge::ubus_client::transport_fn
   {
     return [this](const std::string& url,
-                  const std::string& body) -> std::pair<int, std::string> {
+                  const std::string& body) -> std::pair<int, std::string>
+    {
       const auto request = json::parse(body);
       const std::string method = request["params"][2];
       const auto args = request["params"][3];
       methods.push_back(method);
-      tokens_seen.push_back(args.value("token", std::string{}));
+      tokens_seen.push_back(args.value("token", std::string {}));
       bodies.push_back(request);
 
       if (method == "claim") {
         if (!claim_succeeds) {
-          return {200, reply(json{{"ok", false}, {"error", "already_claimed"},
-                                  {"message", "the bridge is already claimed"}})};
+          return {200,
+                  reply(json {{"ok", false},
+                              {"error", "already_claimed"},
+                              {"message", "the bridge is already claimed"}})};
         }
         const std::string token =
-            claim_returns_no_token ? std::string{} : claim_token_value;
-        return {200, reply(json{{"ok", true}, {"token", token}})};
+            claim_returns_no_token ? std::string {} : claim_token_value;
+        return {200, reply(json {{"ok", true}, {"token", token}})};
       }
       if (method == "reconcile") {
         if (!reconcile_succeeds) {
-          return {200, reply(json{{"ok", false}, {"error", "unmanaged"},
-                                  {"message", "the bridge is not managed"}})};
+          return {200,
+                  reply(json {{"ok", false},
+                              {"error", "unmanaged"},
+                              {"message", "the bridge is not managed"}})};
         }
-        return {200, reply(json{{"ok", true}})};
+        return {200, reply(json {{"ok", true}})};
       }
       if (method == "get_config") {
         if (!config_read_succeeds) {
@@ -99,20 +102,21 @@ struct fake_bridge
         }
         return {200, reply(config)};
       }
-      return {200, reply(json{{"ok", true}})};
+      return {200, reply(json {{"ok", true}})};
     };
   }
 };
 
 auto factory(fake_bridge& fake) -> bridge::bridge_client::ubus_factory_fn
 {
-  return [&fake](const std::string& base, const std::string& token) {
+  return [&fake](const std::string& base, const std::string& token)
+  {
     return std::make_unique<bridge::ubus_client>(base, token, fake.transport());
   };
 }
 
-auto count_of(const std::vector<std::string>& haystack, const std::string& needle)
-    -> int
+auto count_of(const std::vector<std::string>& haystack,
+              const std::string& needle) -> int
 {
   int total = 0;
   for (const auto& item : haystack) {
@@ -130,9 +134,9 @@ constexpr const char* k_virgin = "rist2rist-aa:bb";
 
 TEST_CASE("a named bridge is found by its instance", "[bridge_client]")
 {
-  const auto result =
-      bridge::find_bridge({advertised("rist2rist-aa:bb"), advertised("rist2rist-cc:dd")},
-                          bridge::reconcile_request{.bridge_uid = "rist2rist-cc:dd"});
+  const auto result = bridge::find_bridge(
+      {advertised("rist2rist-aa:bb"), advertised("rist2rist-cc:dd")},
+      bridge::reconcile_request {.bridge_uid = "rist2rist-cc:dd"});
 
   REQUIRE(result.found);
   REQUIRE(result.service.instance == "rist2rist-cc:dd");
@@ -142,7 +146,7 @@ TEST_CASE("the instance match ignores case, as DNS does", "[bridge_client]")
 {
   const auto result = bridge::find_bridge(
       {advertised("rist2rist-AA:BB")},
-      bridge::reconcile_request{.bridge_uid = "RIST2RIST-aa:bb"});
+      bridge::reconcile_request {.bridge_uid = "RIST2RIST-aa:bb"});
 
   REQUIRE(result.found);
 }
@@ -153,7 +157,7 @@ TEST_CASE("a named bridge that is absent is reported, not substituted",
   // The dangerous failure would be quietly driving a DIFFERENT bridge.
   const auto result = bridge::find_bridge(
       {advertised("rist2rist-aa:bb")},
-      bridge::reconcile_request{.bridge_uid = "rist2rist-zz:99"});
+      bridge::reconcile_request {.bridge_uid = "rist2rist-zz:99"});
 
   REQUIRE_FALSE(result.found);
   REQUIRE(result.error_code == "bridge_not_found");
@@ -161,8 +165,8 @@ TEST_CASE("a named bridge that is absent is reported, not substituted",
 
 TEST_CASE("with no name, a lone bridge is taken", "[bridge_client]")
 {
-  const auto result = bridge::find_bridge(
-      {advertised(k_virgin)}, bridge::reconcile_request{});
+  const auto result =
+      bridge::find_bridge({advertised(k_virgin)}, bridge::reconcile_request {});
 
   REQUIRE(result.found);
   REQUIRE(result.service.instance == k_virgin);
@@ -173,7 +177,7 @@ TEST_CASE("with no name, two bridges is ambiguous rather than a guess",
 {
   const auto result = bridge::find_bridge(
       {advertised("rist2rist-aa:bb"), advertised("rist2rist-cc:dd")},
-      bridge::reconcile_request{});
+      bridge::reconcile_request {});
 
   REQUIRE_FALSE(result.found);
   REQUIRE(result.error_code == "ambiguous_bridge");
@@ -182,30 +186,32 @@ TEST_CASE("with no name, two bridges is ambiguous rather than a guess",
 TEST_CASE("with no name and nothing found, the browse result is reported",
           "[bridge_client]")
 {
-  const auto result = bridge::find_bridge({}, bridge::reconcile_request{});
+  const auto result = bridge::find_bridge({}, bridge::reconcile_request {});
 
   REQUIRE_FALSE(result.found);
   REQUIRE(result.error_code == "bridge_not_found");
 }
 
-// ----------------------------------------------------------------- the endpoint
+// ----------------------------------------------------------------- the
+// endpoint
 
-TEST_CASE("the ubus endpoint uses the address and the web port", "[bridge_client]")
+TEST_CASE("the ubus endpoint uses the address and the web port",
+          "[bridge_client]")
 {
   SECTION("default port")
   {
-    REQUIRE(bridge::ubus_base_url(advertised(k_virgin)) ==
-            "http://192.168.8.1");
+    REQUIRE(bridge::ubus_base_url(advertised(k_virgin))
+            == "http://192.168.8.1");
   }
   SECTION("an explicit port from TXT")
   {
-    REQUIRE(bridge::ubus_base_url(advertised(k_virgin, {{"api_port", "8080"}})) ==
-            "http://192.168.8.1:8080");
+    REQUIRE(bridge::ubus_base_url(advertised(k_virgin, {{"api_port", "8080"}}))
+            == "http://192.168.8.1:8080");
   }
   SECTION("80 is not spelled out")
   {
-    REQUIRE(bridge::ubus_base_url(advertised(k_virgin, {{"api_port", "80"}})) ==
-            "http://192.168.8.1");
+    REQUIRE(bridge::ubus_base_url(advertised(k_virgin, {{"api_port", "80"}}))
+            == "http://192.168.8.1");
   }
   SECTION("the SRV host stands in when there is no address yet")
   {
@@ -222,10 +228,11 @@ TEST_CASE("the ubus endpoint uses the address and the web port", "[bridge_client
 
 // --------------------------------------------------------------- the decision
 
-TEST_CASE("a virgin bridge with no token held may be claimed", "[bridge_client]")
+TEST_CASE("a virgin bridge with no token held may be claimed",
+          "[bridge_client]")
 {
   const auto decision = bridge::decide(
-      advertised(k_virgin), bridge::reconcile_request{.known_token = ""});
+      advertised(k_virgin), bridge::reconcile_request {.known_token = ""});
 
   REQUIRE(decision.ok);
   REQUIRE(decision.action == bridge::bridge_action::claim);
@@ -236,7 +243,7 @@ TEST_CASE("claiming can be refused by the caller", "[bridge_client]")
 {
   const auto decision = bridge::decide(
       advertised(k_virgin),
-      bridge::reconcile_request{.known_token = "", .allow_claim = false});
+      bridge::reconcile_request {.known_token = "", .allow_claim = false});
 
   REQUIRE_FALSE(decision.ok);
   REQUIRE(decision.error_code == "not_claimed");
@@ -245,20 +252,22 @@ TEST_CASE("claiming can be refused by the caller", "[bridge_client]")
 TEST_CASE("a bridge that already advertises a fingerprint is NOT claimable",
           "[bridge_client]")
 {
-  // Somebody owns it. Claiming would take it from them, and it would fail anyway.
-  const auto decision = bridge::decide(
-      advertised(k_virgin, {{"fingerprint", "ab12cd34"}}),
-      bridge::reconcile_request{.known_token = ""});
+  // Somebody owns it. Claiming would take it from them, and it would fail
+  // anyway.
+  const auto decision =
+      bridge::decide(advertised(k_virgin, {{"fingerprint", "ab12cd34"}}),
+                     bridge::reconcile_request {.known_token = ""});
 
   REQUIRE_FALSE(decision.ok);
   REQUIRE(decision.error_code == "already_claimed");
 }
 
-TEST_CASE("a bridge that says it is claimed is NOT claimable", "[bridge_client]")
+TEST_CASE("a bridge that says it is claimed is NOT claimable",
+          "[bridge_client]")
 {
-  const auto decision = bridge::decide(
-      advertised(k_virgin, {{"claimed", "1"}}),
-      bridge::reconcile_request{.known_token = ""});
+  const auto decision =
+      bridge::decide(advertised(k_virgin, {{"claimed", "1"}}),
+                     bridge::reconcile_request {.known_token = ""});
 
   REQUIRE_FALSE(decision.ok);
   REQUIRE(decision.error_code == "already_claimed");
@@ -266,10 +275,10 @@ TEST_CASE("a bridge that says it is claimed is NOT claimable", "[bridge_client]"
 
 TEST_CASE("a held token with a matching fingerprint applies", "[bridge_client]")
 {
-  const auto decision = bridge::decide(
-      advertised(k_virgin, {{"fingerprint", "ab12cd34"}}),
-      bridge::reconcile_request{.fingerprint = "ab12cd34",
-                                .known_token = "tok-1"});
+  const auto decision =
+      bridge::decide(advertised(k_virgin, {{"fingerprint", "ab12cd34"}}),
+                     bridge::reconcile_request {.fingerprint = "ab12cd34",
+                                                .known_token = "tok-1"});
 
   REQUIRE(decision.ok);
   REQUIRE(decision.action == bridge::bridge_action::apply);
@@ -279,12 +288,12 @@ TEST_CASE("a held token with a matching fingerprint applies", "[bridge_client]")
 TEST_CASE("a reset bridge is named as reset, not as a generic failure",
           "[bridge_client]")
 {
-  // The factory-reset case: it lives, it answers, but it is not the box the portal
-  // registered any more.
-  const auto decision = bridge::decide(
-      advertised(k_virgin, {{"fingerprint", "ffffffff"}}),
-      bridge::reconcile_request{.fingerprint = "ab12cd34",
-                                .known_token = "tok-1"});
+  // The factory-reset case: it lives, it answers, but it is not the box the
+  // portal registered any more.
+  const auto decision =
+      bridge::decide(advertised(k_virgin, {{"fingerprint", "ffffffff"}}),
+                     bridge::reconcile_request {.fingerprint = "ab12cd34",
+                                                .known_token = "tok-1"});
 
   REQUIRE_FALSE(decision.ok);
   REQUIRE(decision.error_code == "fingerprint_mismatch");
@@ -294,12 +303,13 @@ TEST_CASE("a reset bridge is named as reset, not as a generic failure",
 TEST_CASE("a held token still applies when the bridge publishes no fingerprint",
           "[bridge_client]")
 {
-  // An older advertisement may omit TXT entirely; the token is still required by the
-  // bridge, so applying is right -- it just cannot be verified by fingerprint.
-  const auto decision = bridge::decide(
-      advertised(k_virgin),
-      bridge::reconcile_request{.fingerprint = "ab12cd34",
-                                .known_token = "tok-1"});
+  // An older advertisement may omit TXT entirely; the token is still required
+  // by the bridge, so applying is right -- it just cannot be verified by
+  // fingerprint.
+  const auto decision =
+      bridge::decide(advertised(k_virgin),
+                     bridge::reconcile_request {.fingerprint = "ab12cd34",
+                                                .known_token = "tok-1"});
 
   REQUIRE(decision.ok);
   REQUIRE(decision.action == bridge::bridge_action::apply);
@@ -311,11 +321,13 @@ TEST_CASE("a virgin bridge is claimed, then configured with the new token",
           "[bridge_client]")
 {
   fake_bridge fake;
-  bridge::bridge_client client(discovery({advertised(k_virgin)}), factory(fake));
+  bridge::bridge_client client(discovery({advertised(k_virgin)}),
+                               factory(fake));
 
   const auto outcome = client.reconcile(
-      bridge::reconcile_request{.bridge_uid = k_virgin,
-                                .desired = json{{"listen_url", "rist://0.0.0.0:6000"}}},
+      bridge::reconcile_request {
+          .bridge_uid = k_virgin,
+          .desired = json {{"listen_url", "rist://0.0.0.0:6000"}}},
       std::chrono::milliseconds(1));
 
   REQUIRE(outcome.ok);
@@ -332,16 +344,19 @@ TEST_CASE("a virgin bridge is claimed, then configured with the new token",
 TEST_CASE("the claim carries the ENCODER's identity, not the bridge's own name",
           "[bridge_client]")
 {
-  // The bridge records claimed_by from this field. Passing the bridge's own mDNS
-  // instance made claimed_by a self-referential restatement of the bridge's name --
-  // a field whose whole job is to say WHICH controller claimed it, filled with the
-  // wrong thing, and persisted to the router's config as if it meant something.
+  // The bridge records claimed_by from this field. Passing the bridge's own
+  // mDNS instance made claimed_by a self-referential restatement of the
+  // bridge's name -- a field whose whole job is to say WHICH controller claimed
+  // it, filled with the wrong thing, and persisted to the router's config as if
+  // it meant something.
   fake_bridge fake;
-  bridge::bridge_client client(discovery({advertised(k_virgin)}), factory(fake));
+  bridge::bridge_client client(discovery({advertised(k_virgin)}),
+                               factory(fake));
 
-  const auto outcome = client.reconcile(
-      bridge::reconcile_request{.bridge_uid = k_virgin, .encoder_uid = "device-7"},
-      std::chrono::milliseconds(1));
+  const auto outcome =
+      client.reconcile(bridge::reconcile_request {.bridge_uid = k_virgin,
+                                                  .encoder_uid = "device-7"},
+                       std::chrono::milliseconds(1));
 
   REQUIRE(outcome.ok);
   REQUIRE(outcome.action == bridge::bridge_action::claim);
@@ -351,15 +366,18 @@ TEST_CASE("the claim carries the ENCODER's identity, not the bridge's own name",
   REQUIRE(claim["params"][3]["device_uid"] != k_virgin);
 }
 
-TEST_CASE("an encoder with no identity sends an empty device_uid, not the bridge's name",
-          "[bridge_client]")
+TEST_CASE(
+    "an encoder with no identity sends an empty device_uid, not the bridge's "
+    "name",
+    "[bridge_client]")
 {
   fake_bridge fake;
-  bridge::bridge_client client(discovery({advertised(k_virgin)}), factory(fake));
+  bridge::bridge_client client(discovery({advertised(k_virgin)}),
+                               factory(fake));
 
-  const auto outcome = client.reconcile(
-      bridge::reconcile_request{.bridge_uid = k_virgin},
-      std::chrono::milliseconds(1));
+  const auto outcome =
+      client.reconcile(bridge::reconcile_request {.bridge_uid = k_virgin},
+                       std::chrono::milliseconds(1));
 
   REQUIRE(outcome.ok);
   REQUIRE(fake.bodies.at(0)["params"][3]["device_uid"] == "");
@@ -371,12 +389,14 @@ TEST_CASE("an empty desired config is never applied, so outputs are not wiped",
   // reconcile replaces outputs WHOLESALE: sending an empty config to a working
   // bridge would strip its destinations.
   fake_bridge fake;
-  bridge::bridge_client client(discovery({advertised(k_virgin)}), factory(fake));
+  bridge::bridge_client client(discovery({advertised(k_virgin)}),
+                               factory(fake));
 
-  const auto outcome = client.reconcile(
-      bridge::reconcile_request{.bridge_uid = k_virgin,
-                                .known_token = "tok-1", .desired = json::object()},
-      std::chrono::milliseconds(1));
+  const auto outcome =
+      client.reconcile(bridge::reconcile_request {.bridge_uid = k_virgin,
+                                                  .known_token = "tok-1",
+                                                  .desired = json::object()},
+                       std::chrono::milliseconds(1));
 
   REQUIRE(outcome.ok);
   REQUIRE(outcome.action == bridge::bridge_action::apply);
@@ -388,11 +408,14 @@ TEST_CASE("an empty desired config is never applied, so outputs are not wiped",
 TEST_CASE("a held token means no claim is attempted", "[bridge_client]")
 {
   fake_bridge fake;
-  bridge::bridge_client client(discovery({advertised(k_virgin)}), factory(fake));
+  bridge::bridge_client client(discovery({advertised(k_virgin)}),
+                               factory(fake));
 
   const auto outcome = client.reconcile(
-      bridge::reconcile_request{.bridge_uid = k_virgin, .known_token = "tok-1",
-                                .desired = json{{"listen_url", "rist://a:1"}}},
+      bridge::reconcile_request {
+          .bridge_uid = k_virgin,
+          .known_token = "tok-1",
+          .desired = json {{"listen_url", "rist://a:1"}}},
       std::chrono::milliseconds(1));
 
   REQUIRE(outcome.ok);
@@ -405,13 +428,18 @@ TEST_CASE("the report carries what the bridge says, not what we asked for",
           "[bridge_client]")
 {
   fake_bridge fake;
-  fake.config = json{{"ok", true}, {"listen_url", "rist://0.0.0.0:6000"},
-                     {"managed", true}, {"running", true}};
-  bridge::bridge_client client(discovery({advertised(k_virgin)}), factory(fake));
+  fake.config = json {{"ok", true},
+                      {"listen_url", "rist://0.0.0.0:6000"},
+                      {"managed", true},
+                      {"running", true}};
+  bridge::bridge_client client(discovery({advertised(k_virgin)}),
+                               factory(fake));
 
   const auto outcome = client.reconcile(
-      bridge::reconcile_request{.bridge_uid = k_virgin, .known_token = "tok-1",
-                                .desired = json{{"listen_url", "rist://b:2"}}},
+      bridge::reconcile_request {
+          .bridge_uid = k_virgin,
+          .known_token = "tok-1",
+          .desired = json {{"listen_url", "rist://b:2"}}},
       std::chrono::milliseconds(1));
 
   REQUIRE(outcome.ok);
@@ -423,19 +451,22 @@ TEST_CASE("the report carries what the bridge says, not what we asked for",
 TEST_CASE("the outcome carries the advertisement a report can be built from",
           "[bridge_client]")
 {
-  // The bridge report body needs the ADDRESS and the API VERSION, and both live in
-  // the advertisement rather than in the bridge's config. Carrying the advertisement
-  // on the outcome is what lets the caller report without a second browse and
-  // without rebuilding it from the report alone (which would lose both).
+  // The bridge report body needs the ADDRESS and the API VERSION, and both live
+  // in the advertisement rather than in the bridge's config. Carrying the
+  // advertisement on the outcome is what lets the caller report without a
+  // second browse and without rebuilding it from the report alone (which would
+  // lose both).
   fake_bridge fake;
   bridge::bridge_client client(
-      discovery({advertised(k_virgin, {{"api", "2"}, {"managed", "1"}},
-                            "10.0.0.7")}),
+      discovery(
+          {advertised(k_virgin, {{"api", "2"}, {"managed", "1"}}, "10.0.0.7")}),
       factory(fake));
 
   const auto outcome = client.reconcile(
-      bridge::reconcile_request{.bridge_uid = k_virgin, .known_token = "tok-1",
-                                .desired = json{{"listen_url", "rist://c:3"}}},
+      bridge::reconcile_request {
+          .bridge_uid = k_virgin,
+          .known_token = "tok-1",
+          .desired = json {{"listen_url", "rist://c:3"}}},
       std::chrono::milliseconds(1));
 
   REQUIRE(outcome.ok);
@@ -444,18 +475,20 @@ TEST_CASE("the outcome carries the advertisement a report can be built from",
   REQUIRE(outcome.service.txt_value(bridge::k_txt_api) == "2");
 }
 
-TEST_CASE("a refused outcome still carries the advertisement", "[bridge_client]")
+TEST_CASE("a refused outcome still carries the advertisement",
+          "[bridge_client]")
 {
-  // The service is recorded before the decision, so the failure path keeps it too --
-  // a report of "this bridge refused" still needs to say WHICH bridge.
+  // The service is recorded before the decision, so the failure path keeps it
+  // too -- a report of "this bridge refused" still needs to say WHICH bridge.
   fake_bridge fake;
   bridge::bridge_client client(
-      discovery({advertised(k_virgin, {{"fingerprint", "ab12cd34"}}, "10.0.0.9")}),
+      discovery(
+          {advertised(k_virgin, {{"fingerprint", "ab12cd34"}}, "10.0.0.9")}),
       factory(fake));
 
-  const auto outcome = client.reconcile(
-      bridge::reconcile_request{.bridge_uid = k_virgin},
-      std::chrono::milliseconds(1));
+  const auto outcome =
+      client.reconcile(bridge::reconcile_request {.bridge_uid = k_virgin},
+                       std::chrono::milliseconds(1));
 
   REQUIRE_FALSE(outcome.ok);
   REQUIRE(outcome.error_code == "already_claimed");
@@ -471,9 +504,9 @@ TEST_CASE("the TXT state is reported before anything is attempted",
       discovery({advertised(k_virgin, {{"api", "1"}, {"managed", "1"}})}),
       factory(fake));
 
-  const auto outcome = client.reconcile(
-      bridge::reconcile_request{.bridge_uid = k_virgin},
-      std::chrono::milliseconds(1));
+  const auto outcome =
+      client.reconcile(bridge::reconcile_request {.bridge_uid = k_virgin},
+                       std::chrono::milliseconds(1));
 
   REQUIRE(outcome.ok);
   REQUIRE(outcome.report.api_version == "1");
@@ -485,11 +518,12 @@ TEST_CASE("a refused claim is surfaced with the bridge's own reason",
 {
   fake_bridge fake;
   fake.claim_succeeds = false;
-  bridge::bridge_client client(discovery({advertised(k_virgin)}), factory(fake));
+  bridge::bridge_client client(discovery({advertised(k_virgin)}),
+                               factory(fake));
 
-  const auto outcome = client.reconcile(
-      bridge::reconcile_request{.bridge_uid = k_virgin},
-      std::chrono::milliseconds(1));
+  const auto outcome =
+      client.reconcile(bridge::reconcile_request {.bridge_uid = k_virgin},
+                       std::chrono::milliseconds(1));
 
   REQUIRE_FALSE(outcome.ok);
   REQUIRE(outcome.error_code == "already_claimed");
@@ -503,11 +537,12 @@ TEST_CASE("a claim that returns no token is a failure, not a success",
   // The bridge stores only a hash, so a lost plaintext can never be recovered.
   fake_bridge fake;
   fake.claim_returns_no_token = true;
-  bridge::bridge_client client(discovery({advertised(k_virgin)}), factory(fake));
+  bridge::bridge_client client(discovery({advertised(k_virgin)}),
+                               factory(fake));
 
-  const auto outcome = client.reconcile(
-      bridge::reconcile_request{.bridge_uid = k_virgin},
-      std::chrono::milliseconds(1));
+  const auto outcome =
+      client.reconcile(bridge::reconcile_request {.bridge_uid = k_virgin},
+                       std::chrono::milliseconds(1));
 
   REQUIRE_FALSE(outcome.ok);
   REQUIRE(outcome.error_code == "no_token");
@@ -519,11 +554,14 @@ TEST_CASE("a refused apply is surfaced, and the read-back is skipped",
 {
   fake_bridge fake;
   fake.reconcile_succeeds = false;
-  bridge::bridge_client client(discovery({advertised(k_virgin)}), factory(fake));
+  bridge::bridge_client client(discovery({advertised(k_virgin)}),
+                               factory(fake));
 
   const auto outcome = client.reconcile(
-      bridge::reconcile_request{.bridge_uid = k_virgin, .known_token = "tok-1",
-                                .desired = json{{"listen_url", "rist://a:1"}}},
+      bridge::reconcile_request {
+          .bridge_uid = k_virgin,
+          .known_token = "tok-1",
+          .desired = json {{"listen_url", "rist://a:1"}}},
       std::chrono::milliseconds(1));
 
   REQUIRE_FALSE(outcome.ok);
@@ -531,22 +569,24 @@ TEST_CASE("a refused apply is surfaced, and the read-back is skipped",
   REQUIRE(count_of(fake.methods, "get_config") == 0);
 }
 
-TEST_CASE("an unreachable bridge names the transport failure", "[bridge_client]")
+TEST_CASE("an unreachable bridge names the transport failure",
+          "[bridge_client]")
 {
   // A factory that hands back a client whose transport never answers.
   bridge::bridge_client::ubus_factory_fn dead =
-      [](const std::string& base, const std::string& token) {
-        return std::make_unique<bridge::ubus_client>(
-            base, token,
-            [](const std::string&, const std::string&) {
-              return std::make_pair(0, std::string{});
-            });
-      };
+      [](const std::string& base, const std::string& token)
+  {
+    return std::make_unique<bridge::ubus_client>(
+        base,
+        token,
+        [](const std::string&, const std::string&)
+        { return std::make_pair(0, std::string {}); });
+  };
 
   bridge::bridge_client client(discovery({advertised(k_virgin)}), dead);
-  const auto outcome = client.reconcile(
-      bridge::reconcile_request{.bridge_uid = k_virgin},
-      std::chrono::milliseconds(1));
+  const auto outcome =
+      client.reconcile(bridge::reconcile_request {.bridge_uid = k_virgin},
+                       std::chrono::milliseconds(1));
 
   REQUIRE_FALSE(outcome.ok);
   REQUIRE(outcome.error_code == "no_response");
@@ -557,11 +597,14 @@ TEST_CASE("an apply still succeeds when the read-back fails", "[bridge_client]")
   // A failed read must not undo a write that already landed.
   fake_bridge fake;
   fake.config_read_succeeds = false;
-  bridge::bridge_client client(discovery({advertised(k_virgin)}), factory(fake));
+  bridge::bridge_client client(discovery({advertised(k_virgin)}),
+                               factory(fake));
 
   const auto outcome = client.reconcile(
-      bridge::reconcile_request{.bridge_uid = k_virgin, .known_token = "tok-1",
-                                .desired = json{{"listen_url", "rist://a:1"}}},
+      bridge::reconcile_request {
+          .bridge_uid = k_virgin,
+          .known_token = "tok-1",
+          .desired = json {{"listen_url", "rist://a:1"}}},
       std::chrono::milliseconds(1));
 
   REQUIRE(outcome.ok);
@@ -573,9 +616,9 @@ TEST_CASE("no bridge on the LAN is reported, not thrown", "[bridge_client]")
   fake_bridge fake;
   bridge::bridge_client client(discovery({}), factory(fake));
 
-  const auto outcome = client.reconcile(
-      bridge::reconcile_request{.bridge_uid = k_virgin},
-      std::chrono::milliseconds(1));
+  const auto outcome =
+      client.reconcile(bridge::reconcile_request {.bridge_uid = k_virgin},
+                       std::chrono::milliseconds(1));
 
   REQUIRE_FALSE(outcome.ok);
   REQUIRE(outcome.error_code == "bridge_not_found");

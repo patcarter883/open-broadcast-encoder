@@ -5,15 +5,15 @@
 // live backplane: the transport is scripted, so the wire contract AND the
 // polling rules are asserted rather than assumed.
 
-#include <catch2/catch_test_macros.hpp>
-
-#include <nlohmann/json.hpp>
-
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "backplane/device_auth.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <nlohmann/json.hpp>
+
 #include "lib/lib.h"
 
 namespace
@@ -35,15 +35,15 @@ struct scripted_transport
 
   backplane::device_auth::transport_fn fn()
   {
-    return [this](const std::string&, const std::string& path,
+    return [this](const std::string&,
+                  const std::string& path,
                   const std::string& token,
                   const std::string& body) -> std::pair<int, std::string>
     {
       paths.push_back(path);
       bodies.push_back(body);
       tokens.push_back(token);
-      if (next >= replies.size())
-      {
+      if (next >= replies.size()) {
         return {0, ""};  // script exhausted: behave like a dead server
       }
       const reply r = replies[next++];
@@ -59,9 +59,9 @@ const char* k_code_body =
 
 std::string token_body(const std::string& token, long id)
 {
-  return std::string("{\"access_token\":\"") + token +
-         "\",\"token_type\":\"Bearer\",\"device_id\":" +
-         std::to_string(id) + "}";
+  return std::string("{\"access_token\":\"") + token
+      + "\",\"token_type\":\"Bearer\",\"device_id\":" + std::to_string(id)
+      + "}";
 }
 }  // namespace
 
@@ -101,8 +101,9 @@ TEST_CASE("start sends name and platform so the panel can show the operator",
   REQUIRE(body.at("platform") == "linux");
 }
 
-TEST_CASE("start registers the device_code as a secret, because it mints the token",
-          "[device_auth]")
+TEST_CASE(
+    "start registers the device_code as a secret, because it mints the token",
+    "[device_auth]")
 {
   scripted_transport t;
   t.replies.push_back({200, k_code_body});
@@ -113,12 +114,13 @@ TEST_CASE("start registers the device_code as a secret, because it mints the tok
   REQUIRE(code.valid());
 
   // A log line carrying the code must not print it (H2).
-  const std::string redacted = secrets::redact("polling with " + code.device_code);
+  const std::string redacted =
+      secrets::redact("polling with " + code.device_code);
   REQUIRE(redacted.find(code.device_code) == std::string::npos);
 
   // The user_code is NOT a secret -- the operator has to read it out.
-  REQUIRE(secrets::redact(code.user_code).find(code.user_code) !=
-          std::string::npos);
+  REQUIRE(secrets::redact(code.user_code).find(code.user_code)
+          != std::string::npos);
 }
 
 TEST_CASE("start reports a transport failure instead of an empty code",
@@ -191,8 +193,8 @@ TEST_CASE("the issued device token is registered as a secret", "[device_auth]")
   const auto outcome = auth.poll(code);
   REQUIRE(outcome.approved());
 
-  REQUIRE(secrets::redact("bearer " + outcome.token).find(outcome.token) ==
-          std::string::npos);
+  REQUIRE(secrets::redact("bearer " + outcome.token).find(outcome.token)
+          == std::string::npos);
 }
 
 TEST_CASE("an approval carrying no token is a failure, not a success",
@@ -308,8 +310,10 @@ TEST_CASE("a transport failure reads as no response, not as pending",
   REQUIRE_FALSE(outcome.polling());
 }
 
-TEST_CASE("wait_for_approval polls until approved, waiting the interval between tries",
-          "[device_auth]")
+TEST_CASE(
+    "wait_for_approval polls until approved, waiting the interval between "
+    "tries",
+    "[device_auth]")
 {
   scripted_transport t;
   t.replies.push_back({400, R"({"error":"authorization_pending"})"});
@@ -329,7 +333,7 @@ TEST_CASE("wait_for_approval polls until approved, waiting the interval between 
   REQUIRE(outcome.approved());
   REQUIRE(t.paths.size() == 3);
   // Waited once before each retry, and NOT after the successful poll.
-  REQUIRE(sleeps == std::vector<int>{5, 5});
+  REQUIRE(sleeps == std::vector<int> {5, 5});
 }
 
 TEST_CASE("wait_for_approval waits the RAISED interval after a slow_down",
@@ -353,7 +357,7 @@ TEST_CASE("wait_for_approval waits the RAISED interval after a slow_down",
   REQUIRE(outcome.approved());
   // 5 before the first retry, then the RAISED 15 -- the whole point of
   // honouring slow_down.
-  REQUIRE(sleeps == std::vector<int>{5, 15});
+  REQUIRE(sleeps == std::vector<int> {5, 15});
 }
 
 TEST_CASE("wait_for_approval stops when cancelled, without polling again",

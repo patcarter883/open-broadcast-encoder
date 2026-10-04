@@ -110,11 +110,11 @@ auto stats::got_rist_statistics(const rist_stats& statistics,
     if (encode_config.scaling_source.load(std::memory_order_relaxed)
         == bitrate_source::local)
     {
-      returnVal = scale_encoder_bitrate_locked(
-          statistics.stats.sender_peer.quality,
-          stats,
-          encode_config,
-          new_bitrate_out);
+      returnVal =
+          scale_encoder_bitrate_locked(statistics.stats.sender_peer.quality,
+                                       stats,
+                                       encode_config,
+                                       new_bitrate_out);
     }
 
     stats::push_bounded(stats->bandwidth,

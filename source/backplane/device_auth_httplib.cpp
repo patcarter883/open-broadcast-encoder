@@ -31,22 +31,17 @@ backplane::device_auth::transport_fn make_device_auth_transport(
     cli.set_write_timeout(5, 0);
 
     httplib::Headers headers;
-    if (!token.empty())
-    {
+    if (!token.empty()) {
       headers.emplace("Authorization", "Bearer " + token);
     }
 
     httplib::Result res;
-    if (method == "DELETE")
-    {
+    if (method == "DELETE") {
       res = cli.Delete(path, headers);
-    }
-    else
-    {
+    } else {
       res = cli.Post(path, headers, body, "application/json");
     }
-    if (!res)
-    {
+    if (!res) {
       return {0, ""};
     }
     return {res->status, res->body};

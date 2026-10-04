@@ -22,7 +22,8 @@ auto service(const std::string& instance) -> bridge::mdns::service
 }
 }  // namespace
 
-TEST_CASE("records spread across responses merge into one bridge", "[discovery]")
+TEST_CASE("records spread across responses merge into one bridge",
+          "[discovery]")
 {
   std::vector<bridge::mdns::service> seen;
 
@@ -95,19 +96,21 @@ TEST_CASE("two bridges stay separate", "[discovery]")
   REQUIRE(seen.size() == 2);
 }
 
-TEST_CASE("an entry with no instance is dropped rather than stored", "[discovery]")
+TEST_CASE("an entry with no instance is dropped rather than stored",
+          "[discovery]")
 {
   std::vector<bridge::mdns::service> seen;
-  bridge::merge_service(seen, bridge::mdns::service{});
+  bridge::merge_service(seen, bridge::mdns::service {});
 
   REQUIRE(seen.empty());
 }
 
-TEST_CASE("a browse with no bridges returns an empty list promptly", "[discovery]")
+TEST_CASE("a browse with no bridges returns an empty list promptly",
+          "[discovery]")
 {
-  // Whatever the environment (no socket permission, no network, or a real LAN with
-  // nothing on it), a browse must finish inside its window and never throw. A
-  // manual address is the supported fallback.
+  // Whatever the environment (no socket permission, no network, or a real LAN
+  // with nothing on it), a browse must finish inside its window and never
+  // throw. A manual address is the supported fallback.
   const auto started = std::chrono::steady_clock::now();
   const auto found = bridge::discover(std::chrono::milliseconds(150));
   const auto elapsed = std::chrono::steady_clock::now() - started;

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 
-#include "bridge/reporting.h"
-
 #include <stdexcept>
 #include <string>
 #include <utility>
+
+#include "bridge/reporting.h"
 
 #include "lib/lib.h"
 
@@ -44,13 +44,14 @@ nlohmann::json bridge_report_body(const mdns::service& service,
                                   const std::string& new_token)
 {
   nlohmann::json state = report.reported_config.is_object()
-                             ? report.reported_config
-                             : nlohmann::json::object();
-  // `managed` is mirrored from HERE by the backplane. Nesting it in the reported
-  // config is what makes the column honest: it is what the bridge said about itself.
+      ? report.reported_config
+      : nlohmann::json::object();
+  // `managed` is mirrored from HERE by the backplane. Nesting it in the
+  // reported config is what makes the column honest: it is what the bridge said
+  // about itself.
   state["managed"] = report.managed;
 
-  nlohmann::json body{
+  nlohmann::json body {
       {"bridge_uid", service.instance},
       {"api_version", api_version_number(service)},
       {"reported_config", state},
@@ -60,14 +61,14 @@ nlohmann::json bridge_report_body(const mdns::service& service,
     body["lan_host"] = report.address;
   }
 
-  nlohmann::json health{{"ok", report.last_error.empty()}};
+  nlohmann::json health {{"ok", report.last_error.empty()}};
   if (!report.last_error.empty()) {
     health["last_error"] = report.last_error;
   }
   body["health"] = health;
 
-  // Sent ONLY when this run claimed the bridge. Every other report leaves the token
-  // alone so a routine health update cannot overwrite or blank it.
+  // Sent ONLY when this run claimed the bridge. Every other report leaves the
+  // token alone so a routine health update cannot overwrite or blank it.
   if (!new_token.empty()) {
     body["pair_token"] = new_token;
   }
@@ -78,9 +79,9 @@ nlohmann::json bridge_report_body(const mdns::service& service,
 bridge_reporter::bridge_reporter(std::string base_url,
                                  std::string device_token,
                                  backplane_transport_fn transport)
-    : m_base(std::move(base_url)),
-      m_device_token(std::move(device_token)),
-      m_transport(std::move(transport))
+    : m_base(std::move(base_url))
+    , m_device_token(std::move(device_token))
+    , m_transport(std::move(transport))
 {
 }
 
@@ -95,7 +96,8 @@ report_result bridge_reporter::report(const mdns::service& service,
     return result;
   }
 
-  const std::string body = bridge_report_body(service, report, new_token).dump();
+  const std::string body =
+      bridge_report_body(service, report, new_token).dump();
   const auto [status, response] =
       m_transport("POST", k_bridge_path, m_device_token, body);
   result.http_status = status;
@@ -113,19 +115,18 @@ report_result bridge_reporter::report(const mdns::service& service,
   } catch (const nlohmann::json::exception&) {
     // Not JSON, so the status is all we have to go on.
     result.error = http_ok
-                       ? std::string("the backplane did not return JSON")
-                       : std::string("the backplane returned HTTP ") +
-                             std::to_string(status);
+        ? std::string("the backplane did not return JSON")
+        : std::string("the backplane returned HTTP ") + std::to_string(status);
     return result;
   }
 
   if (!http_ok) {
-    // The backplane explains rejections in `message` (a validation failure names the
-    // field). Preferring that over the bare status is the difference between an
-    // operator fixing their input and guessing.
-    result.error = parsed.value("message",
-                                std::string("the backplane returned HTTP ") +
-                                    std::to_string(status));
+    // The backplane explains rejections in `message` (a validation failure
+    // names the field). Preferring that over the bare status is the difference
+    // between an operator fixing their input and guessing.
+    result.error = parsed.value(
+        "message",
+        std::string("the backplane returned HTTP ") + std::to_string(status));
     return result;
   }
 
@@ -151,10 +152,12 @@ std::string bridge_reporter::credential(long bridge_id, std::string& error)
     return {};
   }
 
-  const auto [status, response] = m_transport(
-      "POST",
-      std::string(k_bridge_path) + "/" + std::to_string(bridge_id) + "/credential",
-      m_device_token, "{}");
+  const auto [status, response] =
+      m_transport("POST",
+                  std::string(k_bridge_path) + "/" + std::to_string(bridge_id)
+                      + "/credential",
+                  m_device_token,
+                  "{}");
 
   nlohmann::json parsed;
   try {
@@ -166,8 +169,8 @@ std::string bridge_reporter::credential(long bridge_id, std::string& error)
   }
 
   if (status == 409) {
-    // No token held. This is the ordinary answer for a virgin bridge, and it means
-    // "claim it", not "something is broken".
+    // No token held. This is the ordinary answer for a virgin bridge, and it
+    // means "claim it", not "something is broken".
     error = parsed.value("error_code", std::string("no_token"));
     return {};
   }
@@ -175,9 +178,9 @@ std::string bridge_reporter::credential(long bridge_id, std::string& error)
     if (status == 0) {
       error = "no response from the backplane";
     } else {
-      error = parsed.value("message",
-                           std::string("the backplane returned HTTP ") +
-                               std::to_string(status));
+      error = parsed.value(
+          "message",
+          std::string("the backplane returned HTTP ") + std::to_string(status));
     }
     return {};
   }
@@ -188,7 +191,7 @@ std::string bridge_reporter::credential(long bridge_id, std::string& error)
     return {};
   }
 
-  const std::string token = credential.value("token", std::string{});
+  const std::string token = credential.value("token", std::string {});
   if (!token.empty()) {
     // A credential on the wire: register it so it cannot reach a log pane (H2).
     secrets::register_secret(token);

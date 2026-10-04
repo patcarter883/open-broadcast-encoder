@@ -5,20 +5,19 @@
 #include <utility>
 
 #include "bridge/ubus.h"
-#include "lib/lib.h"
 
 #include "httplib.h"
+#include "lib/lib.h"
 
 namespace
 {
-// Split "http://host:port/ubus" into a base httplib::Client accepts and the path.
-// Returns {base, path}; path is "/" when the URL carries none.
+// Split "http://host:port/ubus" into a base httplib::Client accepts and the
+// path. Returns {base, path}; path is "/" when the URL carries none.
 auto split_url(const std::string& url) -> std::pair<std::string, std::string>
 {
   const auto scheme = url.find("://");
-  const auto path_at = scheme == std::string::npos
-                           ? url.find('/')
-                           : url.find('/', scheme + 3);
+  const auto path_at =
+      scheme == std::string::npos ? url.find('/') : url.find('/', scheme + 3);
   if (path_at == std::string::npos) {
     return {url, "/"};
   }
@@ -26,9 +25,9 @@ auto split_url(const std::string& url) -> std::pair<std::string, std::string>
 }
 }  // namespace
 
-// Build the socket end of the ubus client. The pair token is registered as a secret
-// so it can never appear in a UI log pane (H2) -- it is sent in the request body,
-// which is otherwise loggable by definition.
+// Build the socket end of the ubus client. The pair token is registered as a
+// secret so it can never appear in a UI log pane (H2) -- it is sent in the
+// request body, which is otherwise loggable by definition.
 bridge::ubus_client::transport_fn bridge::make_ubus_transport(
     const std::string& pair_token)
 {
@@ -37,7 +36,8 @@ bridge::ubus_client::transport_fn bridge::make_ubus_transport(
   }
 
   return [](const std::string& url,
-            const std::string& body) -> std::pair<int, std::string> {
+            const std::string& body) -> std::pair<int, std::string>
+  {
     const auto [base, path] = split_url(url);
 
     httplib::Client cli(base);

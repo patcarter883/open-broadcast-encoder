@@ -14,8 +14,8 @@
 #include "lib/lib.h"
 
 // Build an httplib-backed transport for the numbered /v1 endpoints the reporter
-// uses. The device token authorises every call, and is registered as a secret so
-// it cannot reach a log pane (H2).
+// uses. The device token authorises every call, and is registered as a secret
+// so it cannot reach a log pane (H2).
 bridge::backplane_transport_fn make_bridge_reporter_transport(
     const std::string& base_url, const std::string& device_token)
 {
@@ -31,22 +31,17 @@ bridge::backplane_transport_fn make_bridge_reporter_transport(
     cli.set_write_timeout(5, 0);
 
     httplib::Headers headers;
-    if (!token.empty())
-    {
+    if (!token.empty()) {
       headers.emplace("Authorization", "Bearer " + token);
     }
 
     httplib::Result res;
-    if (method == "DELETE")
-    {
+    if (method == "DELETE") {
       res = cli.Delete(path, headers);
-    }
-    else
-    {
+    } else {
       res = cli.Post(path, headers, body, "application/json");
     }
-    if (!res)
-    {
+    if (!res) {
       return {0, ""};
     }
     return {res->status, res->body};

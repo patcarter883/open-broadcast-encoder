@@ -19,6 +19,7 @@
 #  include <arpa/inet.h>
 #endif
 #include <atomic>
+
 #include <gst/gst.h>
 #include <gst/video/video.h>
 #include <nlohmann/json.hpp>
@@ -204,9 +205,11 @@ static void run_loop()
     // A pipeline error stops play_pipeline() but used to leave this loop
     // spinning on an empty sink forever, identical to a healthy stream. Stop
     // the loop and surface the failure instead (C2).
-    if (encoder->state.load(std::memory_order_relaxed) == encode_state::failed) {
-      encode_log("\n*** Encode failed: the pipeline is no longer running. "
-                 "Press Stop, fix the cause, then Start. ***\n");
+    if (encoder->state.load(std::memory_order_relaxed) == encode_state::failed)
+    {
+      encode_log(
+          "\n*** Encode failed: the pipeline is no longer running. "
+          "Press Stop, fix the cause, then Start. ***\n");
       ctx.lib.is_running = false;
       break;
     }
@@ -216,8 +219,9 @@ static void run_loop()
       if (!ctx.transporter->send_buffer(vidbuf.buf_data, 0)) {
         // rist-cpp's sendData returns false when the sender has no live context
         // (and emits no log in a release build); stop rather than spin (C3).
-        encode_log("\n*** RIST send failed: the sender is no longer live. "
-                   "Press Stop, then Start to rebuild it. ***\n");
+        encode_log(
+            "\n*** RIST send failed: the sender is no longer live. "
+            "Press Stop, then Start to rebuild it. ***\n");
         encoder->state.store(encode_state::failed, std::memory_order_relaxed);
         ctx.lib.is_running = false;
         break;
@@ -300,9 +304,9 @@ static void release_receiver()
 }
 
 // ---------------------------------------------------------------------------
-// Bridge (LAN) control (DT-19, DT-21). The encoder is the actuator: it finds the
-// bridge on the LAN, claims it once, and applies the configuration the portal
-// recorded. The bridge never contacts the backplane and holds no fleet
+// Bridge (LAN) control (DT-19, DT-21). The encoder is the actuator: it finds
+// the bridge on the LAN, claims it once, and applies the configuration the
+// portal recorded. The bridge never contacts the backplane and holds no fleet
 // credential (BACKPLANE.md §49).
 //
 // This is the LAN-side slice: find, claim and apply all work with NO hosted
@@ -311,10 +315,10 @@ static void release_receiver()
 // endpoint hand over a token the portal already holds, instead of claiming a
 // virgin bridge.
 //
-// Every action runs on a tracked background thread: bridge::discover() blocks by
-// design and must never touch the FLTK thread. The worker also never writes the
-// config directly -- it goes through user_interface::set_bridge_*, which takes
-// the FLTK lock and updates the model and the widgets together.
+// Every action runs on a tracked background thread: bridge::discover() blocks
+// by design and must never touch the FLTK thread. The worker also never writes
+// the config directly -- it goes through user_interface::set_bridge_*, which
+// takes the FLTK lock and updates the model and the widgets together.
 // ---------------------------------------------------------------------------
 
 namespace
@@ -355,8 +359,8 @@ auto bridge_desired(const bridge_control_config& cfg) -> nlohmann::json
 }
 
 // DT-19: discovery is a convenience, never a dependency. When the browse finds
-// nothing and the operator typed an address, that address stands in and the ubus
-// call becomes the thing that decides whether a bridge is really there.
+// nothing and the operator typed an address, that address stands in and the
+// ubus call becomes the thing that decides whether a bridge is really there.
 auto bridge_discovery(const bridge_control_config& cfg)
     -> bridge::bridge_client::discover_fn
 {
@@ -394,10 +398,10 @@ auto bridge_request(const bridge_control_config& cfg, bool allow_claim)
   request.bridge_uid = cfg.bridge_uid;
   request.known_token = cfg.token;
   request.allow_claim = allow_claim;
-  // Who is claiming, so the bridge can record WHICH controller took it. The claim
-  // is unauthenticated (the token comes FROM the bridge), so this is a self-asserted
-  // hint, never a trust decision -- and the only identity we can honestly offer is
-  // the portal's device id, which exists only once signed in.
+  // Who is claiming, so the bridge can record WHICH controller took it. The
+  // claim is unauthenticated (the token comes FROM the bridge), so this is a
+  // self-asserted hint, never a trust decision -- and the only identity we can
+  // honestly offer is the portal's device id, which exists only once signed in.
   if (ctx.lib.hosted.device_id != 0) {
     request.encoder_uid = "device-" + std::to_string(ctx.lib.hosted.device_id);
   }
@@ -419,9 +423,9 @@ static void bridge_find()
   track_control_thread(std::thread(
       [cfg]
       {
-        const auto match = bridge::find_bridge(
-            bridge_discovery(cfg)(k_bridge_window),
-            bridge_request(cfg, /*allow_claim=*/false));
+        const auto match =
+            bridge::find_bridge(bridge_discovery(cfg)(k_bridge_window),
+                                bridge_request(cfg, /*allow_claim=*/false));
         if (!match.found) {
           transport_log("Bridge: " + match.error + "\n");
           if (ctx.ui != nullptr) {
@@ -444,15 +448,15 @@ static void bridge_find()
         }
         transport_log("Bridge found: " + state + "\n");
         if (ctx.ui != nullptr) {
-          ctx.ui->set_bridge_discovered(service.instance, service.address, state,
-                                        false);
+          ctx.ui->set_bridge_discovered(
+              service.instance, service.address, state, false);
         }
       }));
 }
 
 // Claim a virgin bridge (DT-21 path C). Only ever valid with no token held: the
-// bridge mints one and stores only its hash, so a bridge we already hold a token
-// for must not be claimed again.
+// bridge mints one and stores only its hash, so a bridge we already hold a
+// token for must not be claimed again.
 static void bridge_claim()
 {
   const bridge_control_config cfg = ctx.lib.bridge_ctl;
@@ -472,9 +476,8 @@ static void bridge_claim()
         auto client = make_bridge_client(cfg);
         // No desired state: claim only. An empty desired state never reaches
         // reconcile, so nothing on the bridge is overwritten.
-        const auto outcome =
-            client.reconcile(bridge_request(cfg, /*allow_claim=*/true),
-                             k_bridge_window);
+        const auto outcome = client.reconcile(
+            bridge_request(cfg, /*allow_claim=*/true), k_bridge_window);
         if (!outcome.ok) {
           transport_log("Bridge claim failed: " + outcome.error + "\n");
           if (ctx.ui != nullptr) {
@@ -483,7 +486,8 @@ static void bridge_claim()
           return;
         }
         if (ctx.ui != nullptr) {
-          // Handed out exactly once; the bridge keeps only the hash from here on.
+          // Handed out exactly once; the bridge keeps only the hash from here
+          // on.
           ctx.ui->set_bridge_token(outcome.new_token);
           ctx.ui->set_bridge_discovered(outcome.report.bridge_uid,
                                         outcome.report.address,
@@ -535,26 +539,27 @@ static void bridge_apply()
         // Report what the BRIDGE now says, not what we asked for.
         const std::string managed =
             outcome.report.managed ? "managed" : "unmanaged";
-        std::string state = outcome.report.bridge_uid + " - applied, " + managed;
+        std::string state =
+            outcome.report.bridge_uid + " - applied, " + managed;
         if (!outcome.report.last_error.empty()) {
           state += " (" + outcome.report.last_error + ")";
         }
         transport_log("Bridge: " + state + "\n");
         report_bridge(outcome);
         if (ctx.ui != nullptr) {
-          ctx.ui->set_bridge_discovered(outcome.report.bridge_uid,
-                                        outcome.report.address, state, false);
+          ctx.ui->set_bridge_discovered(
+              outcome.report.bridge_uid, outcome.report.address, state, false);
         }
       }));
 }
 
 // Report a bridge to the portal. Only meaningful when signed in: with no device
-// token there is no account to report to, and the LAN-side path deliberately works
-// without one (a claim's token comes FROM the bridge). The body is built from the
-// advertisement the outcome came from, because the address and the API version live
-// in the TXT record. The token travels ONLY on the report that follows a claim --
-// that is the one moment the portal can learn it, since the bridge keeps just a hash
-// and a routine health update must not blank it.
+// token there is no account to report to, and the LAN-side path deliberately
+// works without one (a claim's token comes FROM the bridge). The body is built
+// from the advertisement the outcome came from, because the address and the API
+// version live in the TXT record. The token travels ONLY on the report that
+// follows a claim -- that is the one moment the portal can learn it, since the
+// bridge keeps just a hash and a routine health update must not blank it.
 static void report_bridge(const bridge::reconcile_outcome& outcome)
 {
   const hosted_config cfg = ctx.lib.hosted;
@@ -568,8 +573,10 @@ static void report_bridge(const bridge::reconcile_outcome& outcome)
       [cfg, service, report, new_token]
       {
         bridge::bridge_reporter reporter(
-            cfg.backplane_url, cfg.device_token,
-            make_bridge_reporter_transport(cfg.backplane_url, cfg.device_token));
+            cfg.backplane_url,
+            cfg.device_token,
+            make_bridge_reporter_transport(cfg.backplane_url,
+                                           cfg.device_token));
         const auto result = reporter.report(service, report, new_token);
         if (!result.ok) {
           transport_log("Bridge report failed: " + result.error + "\n");
@@ -590,27 +597,25 @@ static void report_bridge(const bridge::reconcile_outcome& outcome)
 
 namespace
 {
-// Set when the operator signs out, or abandons the sign-in, so an in-flight poll
-// stops instead of polling for the code's full ten-minute life.
-std::atomic<bool> g_hosted_signin_cancel{false};
+// Set when the operator signs out, or abandons the sign-in, so an in-flight
+// poll stops instead of polling for the code's full ten-minute life.
+std::atomic<bool> g_hosted_signin_cancel {false};
 }  // namespace
 
 static void hosted_sign_in()
 {
   const hosted_config cfg = ctx.lib.hosted;
-  if (cfg.backplane_url.empty())
-  {
-    if (ctx.ui != nullptr)
-    {
+  if (cfg.backplane_url.empty()) {
+    if (ctx.ui != nullptr) {
       ctx.ui->set_hosted_state("Set the backplane URL first", true);
     }
     return;
   }
 
   g_hosted_signin_cancel.store(false);
-  if (ctx.ui != nullptr)
-  {
-    ctx.ui->set_hosted_state("Asking the backplane for a sign-in code...", false);
+  if (ctx.ui != nullptr) {
+    ctx.ui->set_hosted_state("Asking the backplane for a sign-in code...",
+                             false);
   }
 
   track_control_thread(std::thread(
@@ -621,49 +626,44 @@ static void hosted_sign_in()
 
         std::string error;
         auto code = auth.start("open-broadcast-encoder", "linux", error);
-        if (!code.valid())
-        {
+        if (!code.valid()) {
           transport_log("Hosted sign-in failed: " + error + "\n");
-          if (ctx.ui != nullptr)
-          {
+          if (ctx.ui != nullptr) {
             ctx.ui->set_hosted_state("Sign-in failed: " + error, true);
           }
           return;
         }
 
-        // The user_code is meant to be READ OUT, so it belongs in the UI and the
-        // log. The device_code behind it is the secret, and is never shown.
+        // The user_code is meant to be READ OUT, so it belongs in the UI and
+        // the log. The device_code behind it is the secret, and is never shown.
         const std::string instruction =
             "Approve " + code.user_code + " at " + code.verification_uri;
         transport_log("Hosted sign-in: " + instruction + "\n");
-        if (ctx.ui != nullptr)
-        {
+        if (ctx.ui != nullptr) {
           ctx.ui->set_hosted_state(instruction, false);
         }
 
         auto outcome = auth.wait_for_approval(
             code, [] { return g_hosted_signin_cancel.load(); });
 
-        if (!outcome.approved())
-        {
+        if (!outcome.approved()) {
           transport_log("Hosted sign-in: " + outcome.error + "\n");
-          if (ctx.ui != nullptr)
-          {
+          if (ctx.ui != nullptr) {
             ctx.ui->set_hosted_state("Sign-in failed: " + outcome.error, true);
           }
           return;
         }
 
-        if (ctx.ui != nullptr)
-        {
+        if (ctx.ui != nullptr) {
           ctx.ui->set_hosted_token(outcome.token);
           ctx.ui->set_hosted_ids(outcome.device_id, cfg.bridge_id);
           ctx.ui->set_hosted_state(
-              "Signed in as device " + std::to_string(outcome.device_id), false);
+              "Signed in as device " + std::to_string(outcome.device_id),
+              false);
         }
-        transport_log("Hosted: signed in as device " +
-                      std::to_string(outcome.device_id) +
-                      ". Save settings to keep it.\n");
+        transport_log("Hosted: signed in as device "
+                      + std::to_string(outcome.device_id)
+                      + ". Save settings to keep it.\n");
       }));
 }
 
@@ -672,28 +672,28 @@ static void hosted_sign_out()
   // Stop an in-flight poll as well as clearing the token: otherwise a sign-in
   // the operator abandoned keeps polling and can re-sign them in.
   g_hosted_signin_cancel.store(true);
-  if (ctx.ui != nullptr)
-  {
-    ctx.ui->set_hosted_token(std::string{});
+  if (ctx.ui != nullptr) {
+    ctx.ui->set_hosted_token(std::string {});
     ctx.ui->set_hosted_state("Signed out.", false);
   }
   transport_log("Hosted: signed out (device token cleared).\n");
 }
 
 // ---------------------------------------------------------------------------
-// ONE Allocate action (DT-20.1, DT-22). Allocate the hosted session, then -- if the
-// portal put a bridge in the chain -- apply that bridge over the LAN and report it.
+// ONE Allocate action (DT-20.1, DT-22). Allocate the hosted session, then -- if
+// the portal put a bridge in the chain -- apply that bridge over the LAN and
+// report it.
 //
 // One action, not three, because the bridge's upstream target IS the node the
-// allocator picks: the bridge cannot be configured before the session exists, and
-// split steps leave a window with a live session and nothing on the air.
+// allocator picks: the bridge cannot be configured before the session exists,
+// and split steps leave a window with a live session and nothing on the air.
 //
 // The encoder is the actuator -- it holds the device credential AND can see the
 // customer LAN, which the backplane can do neither of (BACKPLANE.md §49).
 //
-// Blocks end to end (browse, ubus, HTTP), so it runs on a tracked background thread
-// and reports through the thread-safe setters. It never writes a config directly and
-// never renders a token.
+// Blocks end to end (browse, ubus, HTTP), so it runs on a tracked background
+// thread and reports through the thread-safe setters. It never writes a config
+// directly and never renders a token.
 // ---------------------------------------------------------------------------
 static void hosted_allocate()
 {
@@ -702,8 +702,8 @@ static void hosted_allocate()
 
   if (hosted.backplane_url.empty() || hosted.device_token.empty()) {
     if (ctx.ui != nullptr) {
-      ctx.ui->set_hosted_state("Sign in first - allocation needs a device token",
-                               true);
+      ctx.ui->set_hosted_state(
+          "Sign in first - allocation needs a device token", true);
     }
     return;
   }
@@ -715,16 +715,18 @@ static void hosted_allocate()
       [hosted, bridge_cfg]
       {
         backplane_client backplane(
-            hosted.backplane_url, hosted.device_token,
+            hosted.backplane_url,
+            hosted.device_token,
             make_httplib_transport(hosted.backplane_url, hosted.device_token));
-        // M2.7: the credentials reach disk the instant allocation returns, before
-        // the session is used, so a crash cannot silently orphan a billable
-        // allocation.
+        // M2.7: the credentials reach disk the instant allocation returns,
+        // before the session is used, so a crash cannot silently orphan a
+        // billable allocation.
         backplane.set_persist([](const hosted_session& s)
                               { settings::save_hosted_session(s); });
 
         bridge::bridge_reporter reporter(
-            hosted.backplane_url, hosted.device_token,
+            hosted.backplane_url,
+            hosted.device_token,
             make_bridge_reporter_transport(hosted.backplane_url,
                                            hosted.device_token));
 
@@ -733,7 +735,8 @@ static void hosted_allocate()
         request.listen_url = bridge_cfg.listen_url;
         request.interface_name = bridge_cfg.interface_name;
         request.known_token = bridge_cfg.token;
-        // Fallback only -- the portal's answer in the allocation is authoritative.
+        // Fallback only -- the portal's answer in the allocation is
+        // authoritative.
         request.bridge_uid = bridge_cfg.bridge_uid;
         if (hosted.device_id != 0) {
           request.encoder_uid = "device-" + std::to_string(hosted.device_id);
@@ -755,13 +758,13 @@ static void hosted_allocate()
 
         const auto outcome = actuator.run(request, k_bridge_window);
 
-        // A live session is billable whether or not the rest worked, so it is the
-        // first thing the operator hears about.
+        // A live session is billable whether or not the rest worked, so it is
+        // the first thing the operator hears about.
         if (!outcome.session.session_id.empty()) {
-          transport_log("Allocated: " + outcome.session.session_id
-                        + (outcome.bridged ? " via " + outcome.bridge_uid
-                                           : " (direct)")
-                        + "\n");
+          transport_log(
+              "Allocated: " + outcome.session.session_id
+              + (outcome.bridged ? " via " + outcome.bridge_uid : " (direct)")
+              + "\n");
         }
 
         if (!outcome.ok) {
@@ -774,11 +777,11 @@ static void hosted_allocate()
           } else {
             // Half-applied: the session EXISTS and is billable. Say it plainly
             // rather than reporting a bare failure that hides it.
-            ctx.ui->set_hosted_state(
-                "Allocated " + outcome.session.session_id
-                    + " but the bridge did not apply (" + outcome.error
-                    + ") - release or retry",
-                true);
+            ctx.ui->set_hosted_state("Allocated " + outcome.session.session_id
+                                         + " but the bridge did not apply ("
+                                         + outcome.error
+                                         + ") - release or retry",
+                                     true);
             ctx.ui->set_bridge_message("Bridge apply failed: " + outcome.error,
                                        true);
           }
@@ -789,7 +792,7 @@ static void hosted_allocate()
           ctx.ui->set_hosted_state(
               outcome.bridged
                   ? "Allocated " + outcome.session.session_id + " via "
-                        + outcome.bridge_uid
+                      + outcome.bridge_uid
                   : "Allocated " + outcome.session.session_id + " (direct)",
               false);
           // Handed over exactly once, and never rendered.
@@ -798,13 +801,14 @@ static void hosted_allocate()
           }
           if (outcome.bridged) {
             ctx.ui->set_bridge_discovered(
-                outcome.bridge_uid, std::string {},
+                outcome.bridge_uid,
+                std::string {},
                 outcome.report.bridge_uid + " - applied, "
                     + (outcome.report.managed ? "managed" : "unmanaged"),
                 false);
           }
-          // Point the encoder at the chain the allocation decided: the bridge when
-          // one is in the path, the node otherwise.
+          // Point the encoder at the chain the allocation decided: the bridge
+          // when one is in the path, the node otherwise.
           ctx.ui->set_encoder_target(outcome.encoder_target);
         }
         if (!outcome.reported) {

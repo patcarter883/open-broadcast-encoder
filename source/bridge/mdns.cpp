@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 
-#include "bridge/mdns.h"
-
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
@@ -11,6 +9,8 @@
 #include <map>
 #include <string>
 #include <vector>
+
+#include "bridge/mdns.h"
 
 namespace bridge::mdns
 {
@@ -31,8 +31,8 @@ void push_u16(std::vector<std::uint8_t>& out, std::uint16_t value)
   out.push_back(static_cast<std::uint8_t>(value & 0xFF));
 }
 
-// Split a dotted name into labels. mDNS is case-insensitive, so comparisons fold
-// case, but the original bytes are preserved for reporting.
+// Split a dotted name into labels. mDNS is case-insensitive, so comparisons
+// fold case, but the original bytes are preserved for reporting.
 std::vector<std::string> labels(const std::string& name)
 {
   std::vector<std::string> out;
@@ -50,14 +50,17 @@ std::vector<std::string> labels(const std::string& name)
 
 std::string lowercase(std::string text)
 {
-  std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
-    return static_cast<char>(std::tolower(c));
-  });
+  std::transform(text.begin(),
+                 text.end(),
+                 text.begin(),
+                 [](unsigned char c)
+                 { return static_cast<char>(std::tolower(c)); });
   return text;
 }
 
-// Read a DNS name at `start`, following compression pointers. `next` receives the
-// offset just past the name as it appears at `start`, so a caller can continue.
+// Read a DNS name at `start`, following compression pointers. `next` receives
+// the offset just past the name as it appears at `start`, so a caller can
+// continue.
 std::string read_name(const std::vector<std::uint8_t>& d,
                       std::size_t start,
                       std::size_t* next,
@@ -121,16 +124,16 @@ std::string read_name(const std::vector<std::uint8_t>& d,
 
 std::string dotted_ipv4(const std::vector<std::uint8_t>& d, std::size_t at)
 {
-  return std::to_string(d[at]) + "." + std::to_string(d[at + 1]) + "." +
-         std::to_string(d[at + 2]) + "." + std::to_string(d[at + 3]);
+  return std::to_string(d[at]) + "." + std::to_string(d[at + 1]) + "."
+      + std::to_string(d[at + 2]) + "." + std::to_string(d[at + 3]);
 }
 
 std::string ipv6_text(const std::vector<std::uint8_t>& d, std::size_t at)
 {
   std::string out;
   for (int group = 0; group < 8; ++group) {
-    const auto value =
-        static_cast<std::uint16_t>((d[at + group * 2] << 8) | d[at + group * 2 + 1]);
+    const auto value = static_cast<std::uint16_t>((d[at + group * 2] << 8)
+                                                  | d[at + group * 2 + 1]);
     if (group != 0) {
       out.push_back(':');
     }
@@ -163,7 +166,7 @@ bool belongs_to_service(const std::string& fqdn, const std::string& wanted)
 std::string service::txt_value(const std::string& key) const
 {
   const auto it = txt.find(key);
-  return it == txt.end() ? std::string{} : it->second;
+  return it == txt.end() ? std::string {} : it->second;
 }
 
 std::vector<std::uint8_t> encode_query(const std::string& service_name)
@@ -206,7 +209,7 @@ std::vector<service> parse_response(const std::vector<std::uint8_t>& packet)
 
   const std::string wanted = lowercase(k_service);
 
-  std::map<std::string, service> by_name;      // keyed by the full instance name
+  std::map<std::string, service> by_name;  // keyed by the full instance name
   std::map<std::string, std::string> addresses;  // host name -> address text
 
   std::size_t pos = k_header_size;
@@ -221,8 +224,8 @@ std::vector<service> parse_response(const std::vector<std::uint8_t>& packet)
     pos += 4;
   }
 
-  const std::uint32_t records = static_cast<std::uint32_t>(answer_count) +
-                                authority_count + additional_count;
+  const std::uint32_t records = static_cast<std::uint32_t>(answer_count)
+      + authority_count + additional_count;
   for (std::uint32_t i = 0; i < records; ++i) {
     const std::string name = read_name(packet, pos, &pos, &bad);
     if (bad || pos + 10 > packet.size()) {
@@ -278,8 +281,8 @@ std::vector<service> parse_response(const std::vector<std::uint8_t>& packet)
         if (at + 1 + length > end) {
           return {};
         }
-        const std::string text(
-            reinterpret_cast<const char*>(&packet[at + 1]), length);
+        const std::string text(reinterpret_cast<const char*>(&packet[at + 1]),
+                               length);
         const auto equals = text.find('=');
         if (equals != std::string::npos) {
           entry.txt[text.substr(0, equals)] = text.substr(equals + 1);

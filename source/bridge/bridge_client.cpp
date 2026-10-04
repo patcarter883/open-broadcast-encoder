@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 
-#include "bridge/bridge_client.h"
-
 #include <algorithm>
 #include <cctype>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "bridge/bridge_client.h"
 
 namespace bridge
 {
@@ -18,9 +18,11 @@ namespace
 std::string folded(const std::string& text)
 {
   std::string out = text;
-  std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) {
-    return static_cast<char>(std::tolower(c));
-  });
+  std::transform(out.begin(),
+                 out.end(),
+                 out.begin(),
+                 [](unsigned char c)
+                 { return static_cast<char>(std::tolower(c)); });
   return out;
 }
 
@@ -65,7 +67,8 @@ find_result find_bridge(const std::vector<mdns::service>& found,
       }
     }
     result.error_code = "bridge_not_found";
-    result.error = "no bridge advertising " + request.bridge_uid + " is on this LAN";
+    result.error =
+        "no bridge advertising " + request.bridge_uid + " is on this LAN";
     return result;
   }
 
@@ -95,10 +98,11 @@ bridge_decision decide(const mdns::service& service,
   const bool published_claimed = service.txt_value(k_txt_claimed) == "1";
 
   if (!request.known_token.empty()) {
-    // We hold a token, so the only remaining question is whether this is still the
-    // same box. A different fingerprint means it was reset or swapped.
-    if (!request.fingerprint.empty() && !published.empty() &&
-        published != request.fingerprint) {
+    // We hold a token, so the only remaining question is whether this is still
+    // the same box. A different fingerprint means it was reset or swapped.
+    if (!request.fingerprint.empty() && !published.empty()
+        && published != request.fingerprint)
+    {
       decision.error_code = "fingerprint_mismatch";
       decision.error =
           "the bridge was reset or replaced -- it must be claimed again";
@@ -110,8 +114,8 @@ bridge_decision decide(const mdns::service& service,
     return decision;
   }
 
-  // No token, so the bridge must be virgin. A fingerprint or a claimed flag means
-  // somebody already owns it, and claiming it would take it from them.
+  // No token, so the bridge must be virgin. A fingerprint or a claimed flag
+  // means somebody already owns it, and claiming it would take it from them.
   if (published_claimed || !published.empty()) {
     decision.error_code = "already_claimed";
     decision.error = "the bridge is already claimed by another controller";
@@ -130,7 +134,8 @@ bridge_decision decide(const mdns::service& service,
 }
 
 bridge_client::bridge_client(discover_fn discover, ubus_factory_fn make_ubus)
-    : m_discover(std::move(discover)), m_make_ubus(std::move(make_ubus))
+    : m_discover(std::move(discover))
+    , m_make_ubus(std::move(make_ubus))
 {
 }
 
@@ -185,8 +190,8 @@ reconcile_outcome bridge_client::reconcile(const reconcile_request& request,
     }
     const std::string token = claim_token(claimed);
     if (token.empty()) {
-      // Without the token the claim is worthless: the bridge stored a hash and can
-      // never hand the plaintext out again.
+      // Without the token the claim is worthless: the bridge stored a hash and
+      // can never hand the plaintext out again.
       fail(outcome, "no_token", "the bridge returned no token for the claim");
       return outcome;
     }
@@ -196,7 +201,8 @@ reconcile_outcome bridge_client::reconcile(const reconcile_request& request,
 
   // Only apply when there is something to apply. reconcile replaces outputs
   // WHOLESALE, so an empty desired state would wipe a working bridge's outputs.
-  const bool should_apply = request.desired.is_object() && !request.desired.empty();
+  const bool should_apply =
+      request.desired.is_object() && !request.desired.empty();
   if (should_apply) {
     const auto applied = client->reconcile(request.desired);
     if (!applied.ok) {
@@ -210,7 +216,8 @@ reconcile_outcome bridge_client::reconcile(const reconcile_request& request,
   const auto state = client->get_config();
   if (state.ok) {
     outcome.report.reported_config = state.data;
-    outcome.report.managed = state.data.value("managed", outcome.report.managed);
+    outcome.report.managed =
+        state.data.value("managed", outcome.report.managed);
   }
 
   outcome.ok = true;

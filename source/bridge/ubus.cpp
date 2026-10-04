@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 
-#include "bridge/ubus.h"
-
 #include <string>
 #include <utility>
+
+#include "bridge/ubus.h"
 
 namespace bridge
 {
@@ -37,14 +37,16 @@ std::string build_request(const std::string& method, const nlohmann::json& args)
 {
   // ubus takes exactly four params: session, object, method, arguments. The
   // arguments must be an object even when empty.
-  nlohmann::json request{
+  nlohmann::json request {
       {"jsonrpc", "2.0"},
       {"id", 1},
       {"method", "call"},
       {"params",
-       nlohmann::json::array({std::string(k_no_session), "rist2rist", method,
-                              args.is_object() ? args
-                                               : nlohmann::json::object()})},
+       nlohmann::json::array(
+           {std::string(k_no_session),
+            "rist2rist",
+            method,
+            args.is_object() ? args : nlohmann::json::object()})},
   };
   return request.dump();
 }
@@ -77,15 +79,17 @@ ubus_result parse_response(int http_status, const std::string& body)
     return result;
   }
 
-  if (!reply.contains("result") || !reply["result"].is_array() ||
-      reply["result"].size() < 2 || !reply["result"][1].is_object()) {
+  if (!reply.contains("result") || !reply["result"].is_array()
+      || reply["result"].size() < 2 || !reply["result"][1].is_object())
+  {
     result.error_code = "unexpected_reply";
     result.error = "unexpected JSON-RPC reply from the bridge";
     return result;
   }
 
-  result.ubus_status =
-      reply["result"][0].is_number_integer() ? reply["result"][0].get<int>() : -1;
+  result.ubus_status = reply["result"][0].is_number_integer()
+      ? reply["result"][0].get<int>()
+      : -1;
   result.data = reply["result"][1];
 
   if (result.ubus_status != 0) {
@@ -94,17 +98,16 @@ ubus_result parse_response(int http_status, const std::string& body)
     result.error_code = "ubus_" + std::to_string(result.ubus_status);
     const char* described = describe_ubus_status(result.ubus_status);
     result.error = described != nullptr
-                       ? described
-                       : "ubus refused the call (" +
-                             std::to_string(result.ubus_status) + ")";
+        ? described
+        : "ubus refused the call (" + std::to_string(result.ubus_status) + ")";
     return result;
   }
 
   result.ok = result.data.value("ok", false);
   if (!result.ok) {
     result.error_code = result.data.value("error", std::string("failed"));
-    result.error = result.data.value("message",
-                                     std::string("the bridge refused the call"));
+    result.error = result.data.value(
+        "message", std::string("the bridge refused the call"));
   }
   return result;
 }
@@ -112,9 +115,9 @@ ubus_result parse_response(int http_status, const std::string& body)
 ubus_client::ubus_client(std::string base_url,
                          std::string pair_token,
                          transport_fn transport)
-    : m_base_url(std::move(base_url)),
-      m_token(std::move(pair_token)),
-      m_transport(std::move(transport))
+    : m_base_url(std::move(base_url))
+    , m_token(std::move(pair_token))
+    , m_transport(std::move(transport))
 {
 }
 
@@ -129,20 +132,21 @@ ubus_result ubus_client::call(const std::string& method,
   }
 
   nlohmann::json merged = args.is_object() ? args : nlohmann::json::object();
-  // The token rides in the arguments, not in a header: our ACL grants the methods
-  // to the unauthenticated group and the plugin checks the token itself.
+  // The token rides in the arguments, not in a header: our ACL grants the
+  // methods to the unauthenticated group and the plugin checks the token
+  // itself.
   if (!m_token.empty()) {
     merged["token"] = m_token;
   }
 
-  const auto [status, body] = m_transport(m_base_url + "/ubus",
-                                          build_request(method, merged));
+  const auto [status, body] =
+      m_transport(m_base_url + "/ubus", build_request(method, merged));
   return parse_response(status, body);
 }
 
 ubus_result ubus_client::claim(const std::string& device_uid)
 {
-  return call("claim", nlohmann::json{{"device_uid", device_uid}});
+  return call("claim", nlohmann::json {{"device_uid", device_uid}});
 }
 
 ubus_result ubus_client::get_config()
@@ -170,7 +174,7 @@ std::string claim_token(const ubus_result& result)
   if (!result.ok) {
     return {};
   }
-  return result.data.value("token", std::string{});
+  return result.data.value("token", std::string {});
 }
 
 }  // namespace bridge

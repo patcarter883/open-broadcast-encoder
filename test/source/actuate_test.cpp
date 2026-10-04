@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 //
-// ONE Allocate action = allocate, apply the bridge on the LAN, report. These tests
-// exist to pin the ORDERING and the failure handling, because those are what make
-// the single action safe: the bridge's upstream target is the node the allocator
-// picked, so it cannot be configured before the session exists.
-
-#include <catch2/catch_test_macros.hpp>
+// ONE Allocate action = allocate, apply the bridge on the LAN, report. These
+// tests exist to pin the ORDERING and the failure handling, because those are
+// what make the single action safe: the bridge's upstream target is the node
+// the allocator picked, so it cannot be configured before the session exists.
 
 #include <string>
 
 #include "bridge/actuate.h"
+
+#include <catch2/catch_test_macros.hpp>
 
 using namespace bridge;
 
@@ -49,15 +49,15 @@ struct fakes
   bool reconcile_ok = true;
   std::string reconcile_error_code = "fingerprint_mismatch";
   std::string reconcile_error = "the bridge was reset since fulfilment";
-  // What the bridge reports it is listening on. Default matches the request, so a
-  // test that does not care about the read-back still gets a working target.
+  // What the bridge reports it is listening on. Default matches the request, so
+  // a test that does not care about the read-back still gets a working target.
   std::string reconciled_listen_url = "rist://192.168.8.1:6000";
 
   bool report_ok = true;
   std::string report_error = "no response from backplane";
 
-  // The pair token the portal holds. Empty = the portal has none (a genuine 409),
-  // which is ordinary for a virgin bridge.
+  // The pair token the portal holds. Empty = the portal has none (a genuine
+  // 409), which is ordinary for a virgin bridge.
   std::string credential_token = "pair-token-from-portal";
   std::string credential_error = "no token";
 
@@ -73,7 +73,8 @@ struct fakes
   actuator make()
   {
     return actuator(
-        [this](const std::string&) -> alloc_result {
+        [this](const std::string&) -> alloc_result
+        {
           ++alloc_calls;
           alloc_result r;
           r.ok = alloc_ok;
@@ -81,8 +82,9 @@ struct fakes
           r.error = alloc_ok ? "" : alloc_error;
           return r;
         },
-        [this](const reconcile_request& req, std::chrono::milliseconds)
-            -> reconcile_outcome {
+        [this](const reconcile_request& req,
+               std::chrono::milliseconds) -> reconcile_outcome
+        {
           ++reconcile_calls;
           seen_request = req;
           reconcile_outcome o;
@@ -102,8 +104,10 @@ struct fakes
           o.error = reconcile_error;
           return o;
         },
-        [this](const mdns::service& svc, const bridge_report&,
-               const std::string& new_token) -> report_result {
+        [this](const mdns::service& svc,
+               const bridge_report&,
+               const std::string& new_token) -> report_result
+        {
           ++report_calls;
           seen_service_instance = svc.instance;
           seen_new_token = new_token;
@@ -113,7 +117,8 @@ struct fakes
           r.error = report_ok ? "" : report_error;
           return r;
         },
-        [this](long bridge_id, std::string& err) -> std::string {
+        [this](long bridge_id, std::string& err) -> std::string
+        {
           ++credential_calls;
           seen_credential_bridge_id = bridge_id;
           err = credential_token.empty() ? credential_error : "";
@@ -184,16 +189,16 @@ TEST_CASE("a bridged allocation points the bridge at the allocated node",
   CHECK(out.bridged);
   REQUIRE(f.reconcile_calls == 1);
 
-  // DT-20 single-source: the bridge forwards to the node the ALLOCATOR picked, not
-  // to anything the caller supplied.
+  // DT-20 single-source: the bridge forwards to the node the ALLOCATOR picked,
+  // not to anything the caller supplied.
   const auto& outputs = f.seen_request.desired.at("outputs");
   REQUIRE(outputs.size() == 1);
   CHECK(outputs.at(0).at("address") == "rist://syd1-a.example.au:5000");
   CHECK(f.seen_request.desired.at("listen_url") == "rist://192.168.8.1:6000");
   CHECK(f.seen_request.bridge_uid == "rist2rist-aa:bb:cc:dd:ee:ff");
 
-  // The ENCODER sends to the bridge. If it kept dialling the node, the bridge would
-  // sit in the chain un-used.
+  // The ENCODER sends to the bridge. If it kept dialling the node, the bridge
+  // would sit in the chain un-used.
   CHECK(out.encoder_target == "rist://192.168.8.1:6000");
 
   // The claim's token goes to the portal, which is the only place it can live.
@@ -205,12 +210,14 @@ TEST_CASE("a bridged allocation points the bridge at the allocated node",
   CHECK(out.error_code.empty());
 }
 
-TEST_CASE("the encoder uses the listen_url the bridge REPORTED, not the one asked for",
-          "[bridge][actuate]")
+TEST_CASE(
+    "the encoder uses the listen_url the bridge REPORTED, not the one asked "
+    "for",
+    "[bridge][actuate]")
 {
   fakes f;
-  // The bridge moved the port. Believing our own request would point the encoder at
-  // a port nothing is listening on.
+  // The bridge moved the port. Believing our own request would point the
+  // encoder at a port nothing is listening on.
   f.reconciled_listen_url = "rist://192.168.8.1:7007";
   actuator a = f.make();
 
@@ -221,8 +228,10 @@ TEST_CASE("the encoder uses the listen_url the bridge REPORTED, not the one aske
   CHECK(out.encoder_target == "rist://192.168.8.1:7007");
 }
 
-TEST_CASE("a bridged chain with nowhere to send fails rather than bypassing the bridge",
-          "[bridge][actuate]")
+TEST_CASE(
+    "a bridged chain with nowhere to send fails rather than bypassing the "
+    "bridge",
+    "[bridge][actuate]")
 {
   fakes f;
   f.reconciled_listen_url = "";  // the bridge reported no listen_url
@@ -236,13 +245,15 @@ TEST_CASE("a bridged chain with nowhere to send fails rather than bypassing the 
   CHECK_FALSE(out.bridged);
   CHECK(out.error_code == "no_listen_url");
   // Falling back to the node's URL would silently route around the bridge the
-  // operator configured -- which is the failure this whole model exists to prevent.
+  // operator configured -- which is the failure this whole model exists to
+  // prevent.
   CHECK(out.encoder_target.empty());
   CHECK(f.report_calls == 0);
 }
 
-TEST_CASE("a failed reconcile keeps the live session so the caller can release it",
-          "[bridge][actuate]")
+TEST_CASE(
+    "a failed reconcile keeps the live session so the caller can release it",
+    "[bridge][actuate]")
 {
   fakes f;
   f.reconcile_ok = false;
@@ -253,8 +264,8 @@ TEST_CASE("a failed reconcile keeps the live session so the caller can release i
 
   REQUIRE_FALSE(out.ok);
   CHECK_FALSE(out.bridged);
-  // The session exists and is billable: hiding it behind a generic failure would
-  // orphan it.
+  // The session exists and is billable: hiding it behind a generic failure
+  // would orphan it.
   CHECK(out.session.session_id == "s_abc");
   CHECK(out.error_code == "fingerprint_mismatch");
   CHECK(f.report_calls == 0);
@@ -285,7 +296,8 @@ TEST_CASE("the portal's bridge wins over the request's fallback",
   f.session = bridged_session();
   actuator a = f.make();
   actuate_request req = bridged_request();
-  req.bridge_uid = "rist2rist-99:99:99:99:99:99";  // stale local idea of the chain
+  req.bridge_uid =
+      "rist2rist-99:99:99:99:99:99";  // stale local idea of the chain
   req.known_token = "stale-local-token";
   req.bridge_address.clear();
 
@@ -293,8 +305,9 @@ TEST_CASE("the portal's bridge wins over the request's fallback",
 
   REQUIRE(out.ok);
   CHECK(out.bridged);
-  // DT-20.1: the operator's transport is authoritative. A stale local setting must
-  // not be able to redirect a session the portal routed through a different bridge.
+  // DT-20.1: the operator's transport is authoritative. A stale local setting
+  // must not be able to redirect a session the portal routed through a
+  // different bridge.
   CHECK(f.seen_request.bridge_uid == "rist2rist-aa:bb:cc:dd:ee:ff");
   CHECK(out.bridge_uid == "rist2rist-aa:bb:cc:dd:ee:ff");
   // A local token is used as-is; no need to ask the portal for its copy.
@@ -309,15 +322,17 @@ TEST_CASE("a bridge the portal holds is applied with the portal's token",
   f.session = bridged_session();
   actuator a = f.make();
   actuate_request req = bridged_request();
-  req.bridge_uid.clear();    // nothing local to go on
-  req.known_token.clear();   // this encoder never claimed the bridge
+  req.bridge_uid.clear();  // nothing local to go on
+  req.known_token.clear();  // this encoder never claimed the bridge
 
   const actuate_outcome out = a.run(req, std::chrono::milliseconds {2000});
 
   REQUIRE(out.ok);
   CHECK(f.credential_calls == 1);
-  CHECK(f.seen_credential_bridge_id == 42);  // asked for the bridge the PORTAL named
-  // The portal's copy is the only one left: the bridge itself keeps just a hash.
+  CHECK(f.seen_credential_bridge_id
+        == 42);  // asked for the bridge the PORTAL named
+  // The portal's copy is the only one left: the bridge itself keeps just a
+  // hash.
   CHECK(f.seen_request.known_token == "pair-token-from-portal");
 }
 
@@ -334,8 +349,8 @@ TEST_CASE("a virgin bridge still claims when the portal holds no token",
 
   const actuate_outcome out = a.run(req, std::chrono::milliseconds {2000});
 
-  // An empty token must NOT abort the run: claiming is how a token comes to exist
-  // (DT-21 path C). decide() owns that judgement, not this layer.
+  // An empty token must NOT abort the run: claiming is how a token comes to
+  // exist (DT-21 path C). decide() owns that judgement, not this layer.
   REQUIRE(out.ok);
   CHECK(f.reconcile_calls == 1);
   CHECK(f.seen_request.known_token.empty());
@@ -353,7 +368,8 @@ TEST_CASE("bridge_desired_config maps the session to the bridge's upstream",
 
   CHECK(desired.at("listen_url") == "rist://192.168.8.1:6000");
   REQUIRE(desired.at("outputs").size() == 1);
-  CHECK(desired.at("outputs").at(0).at("address") == "rist://syd1-a.example.au:5000");
+  CHECK(desired.at("outputs").at(0).at("address")
+        == "rist://syd1-a.example.au:5000");
   CHECK(desired.at("outputs").at(0).at("interface") == "wan");
   CHECK(desired.at("outputs").at(0).at("weight") == "1");
 }

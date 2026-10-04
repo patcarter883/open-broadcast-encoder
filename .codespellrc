@@ -2,5 +2,10 @@
 builtin = clear,rare,en-GB_to_en-US,names,informal,code
 check-filenames =
 check-hidden =
-skip = */.git,*/build,*/prefix
+skip = */.git,*/build,*/build-*,*/prefix
 quiet-level = 2
+# "deque" is the C++ standard container (std::deque), not a typo for "dequeue".
+# codespell flags it, and the planning notes under .planning/ use it legitimately,
+# so the spell step failed on EVERY run -- and because lint must pass before test
+# runs, that skipped the whole test job. Nothing was wrong with the code.
+ignore-words-list = deque

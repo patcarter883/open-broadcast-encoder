@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 //
-// The backplane's bridge-report contract: the body's shape, and what the encoder
-// does with each answer. Scripted transport -- no server.
+// The backplane's bridge-report contract: the body's shape, and what the
+// encoder does with each answer. Scripted transport -- no server.
 
 #include <map>
 #include <string>
@@ -42,13 +42,15 @@ struct fake_backplane
 
   int status = 201;
   std::string response =
-      json{{"ok", true}, {"bridge", json{{"id", 7}}}}.dump();
+      json {{"ok", true}, {"bridge", json {{"id", 7}}}}.dump();
 
   auto transport() -> bridge::backplane_transport_fn
   {
-    return [this](const std::string& method, const std::string& path,
+    return [this](const std::string& method,
+                  const std::string& path,
                   const std::string& token,
-                  const std::string& body) -> std::pair<int, std::string> {
+                  const std::string& body) -> std::pair<int, std::string>
+    {
       this->method = method;
       this->path = path;
       this->token = token;
@@ -72,8 +74,8 @@ TEST_CASE("the report names the bridge and its address", "[reporting]")
   report.address = "192.168.8.1";
   report.managed = true;
 
-  const auto body = bridge::bridge_report_body(
-      advertised({{"api", "1"}}), report, "");
+  const auto body =
+      bridge::bridge_report_body(advertised({{"api", "1"}}), report, "");
 
   REQUIRE(body["bridge_uid"] == "rist2rist-11:22:33:44:55:66");
   REQUIRE(body["lan_host"] == "192.168.8.1");
@@ -83,9 +85,9 @@ TEST_CASE("the report names the bridge and its address", "[reporting]")
 TEST_CASE("managed is nested in the reported config, never top level",
           "[reporting]")
 {
-  // The backplane mirrors `managed` from reported_config.managed precisely so that a
-  // caller cannot assert it. Sending it top-level would be silently ignored -- or
-  // worse, imply a control we do not have.
+  // The backplane mirrors `managed` from reported_config.managed precisely so
+  // that a caller cannot assert it. Sending it top-level would be silently
+  // ignored -- or worse, imply a control we do not have.
   bridge::bridge_report report;
   report.address = "192.168.8.1";
   report.managed = true;
@@ -101,8 +103,8 @@ TEST_CASE("the bridge's own config is reported, not overwritten", "[reporting]")
   bridge::bridge_report report;
   report.address = "192.168.8.1";
   report.managed = false;
-  report.reported_config = json{{"listen_url", "rist://0.0.0.0:6000"},
-                                {"running", true}};
+  report.reported_config =
+      json {{"listen_url", "rist://0.0.0.0:6000"}, {"running", true}};
 
   const auto body = bridge::bridge_report_body(advertised(), report, "");
 
@@ -127,8 +129,8 @@ TEST_CASE("health is ok unless there is an error to report", "[reporting]")
 {
   bridge::bridge_report clean;
   clean.address = "192.168.8.1";
-  REQUIRE(bridge::bridge_report_body(advertised(), clean, "")["health"]["ok"] ==
-          true);
+  REQUIRE(bridge::bridge_report_body(advertised(), clean, "")["health"]["ok"]
+          == true);
 
   bridge::bridge_report broken;
   broken.address = "192.168.8.1";
@@ -145,8 +147,8 @@ TEST_CASE("the token is sent ONLY when this run claimed the bridge",
   report.address = "192.168.8.1";
 
   // A routine health update must not touch the stored token.
-  REQUIRE_FALSE(
-      bridge::bridge_report_body(advertised(), report, "").contains("pair_token"));
+  REQUIRE_FALSE(bridge::bridge_report_body(advertised(), report, "")
+                    .contains("pair_token"));
 
   // The claim is the one moment the portal can learn it.
   const auto claimed =
@@ -189,8 +191,8 @@ TEST_CASE("a report posts to the bridges collection with the device token",
           "[reporting]")
 {
   fake_backplane backplane;
-  bridge::bridge_reporter reporter("https://api.example.au", "dev-token",
-                                   backplane.transport());
+  bridge::bridge_reporter reporter(
+      "https://api.example.au", "dev-token", backplane.transport());
 
   bridge::bridge_report report;
   report.address = "192.168.8.1";
@@ -207,8 +209,8 @@ TEST_CASE("a report posts to the bridges collection with the device token",
 TEST_CASE("a 200 and a 201 are both a success", "[reporting]")
 {
   fake_backplane backplane;
-  bridge::bridge_reporter reporter("https://api.example.au", "dev-token",
-                                   backplane.transport());
+  bridge::bridge_reporter reporter(
+      "https://api.example.au", "dev-token", backplane.transport());
   bridge::bridge_report report;
 
   backplane.status = 201;
@@ -222,11 +224,12 @@ TEST_CASE("a rejected report carries the backplane's reason", "[reporting]")
 {
   fake_backplane backplane;
   backplane.status = 422;
-  backplane.response = json{{"ok", false}, {"message", "bad lan_host"}}.dump();
-  bridge::bridge_reporter reporter("https://api.example.au", "dev-token",
-                                   backplane.transport());
+  backplane.response = json {{"ok", false}, {"message", "bad lan_host"}}.dump();
+  bridge::bridge_reporter reporter(
+      "https://api.example.au", "dev-token", backplane.transport());
 
-  const auto result = reporter.report(advertised(), bridge::bridge_report{}, "");
+  const auto result =
+      reporter.report(advertised(), bridge::bridge_report {}, "");
 
   REQUIRE_FALSE(result.ok);
   REQUIRE(result.error == "bad lan_host");
@@ -238,10 +241,11 @@ TEST_CASE("an unreachable backplane is a named failure", "[reporting]")
   fake_backplane backplane;
   backplane.status = 0;
   backplane.response.clear();
-  bridge::bridge_reporter reporter("https://api.example.au", "dev-token",
-                                   backplane.transport());
+  bridge::bridge_reporter reporter(
+      "https://api.example.au", "dev-token", backplane.transport());
 
-  const auto result = reporter.report(advertised(), bridge::bridge_report{}, "");
+  const auto result =
+      reporter.report(advertised(), bridge::bridge_report {}, "");
 
   REQUIRE_FALSE(result.ok);
   REQUIRE(result.error == "no response from the backplane");
@@ -252,10 +256,11 @@ TEST_CASE("a non-JSON answer is refused rather than assumed", "[reporting]")
   fake_backplane backplane;
   backplane.status = 200;
   backplane.response = "<html>nope</html>";
-  bridge::bridge_reporter reporter("https://api.example.au", "dev-token",
-                                   backplane.transport());
+  bridge::bridge_reporter reporter(
+      "https://api.example.au", "dev-token", backplane.transport());
 
-  const auto result = reporter.report(advertised(), bridge::bridge_report{}, "");
+  const auto result =
+      reporter.report(advertised(), bridge::bridge_report {}, "");
 
   REQUIRE_FALSE(result.ok);
   REQUIRE(result.error == "the backplane did not return JSON");
@@ -269,11 +274,12 @@ TEST_CASE("the credential is fetched by the backplane's bridge id",
   fake_backplane backplane;
   backplane.status = 200;
   backplane.response =
-      json{{"ok", true},
-           {"credential", json{{"bridge_uid", "rist2rist-aa"}, {"token", "tok-1"}}}}
+      json {{"ok", true},
+            {"credential",
+             json {{"bridge_uid", "rist2rist-aa"}, {"token", "tok-1"}}}}
           .dump();
-  bridge::bridge_reporter reporter("https://api.example.au", "dev-token",
-                                   backplane.transport());
+  bridge::bridge_reporter reporter(
+      "https://api.example.au", "dev-token", backplane.transport());
 
   std::string error;
   const auto token = reporter.credential(7, error);
@@ -291,11 +297,12 @@ TEST_CASE("no token held is an ordinary answer, not a failure", "[reporting]")
   // error would send the operator chasing a non-problem.
   fake_backplane backplane;
   backplane.status = 409;
-  backplane.response = json{{"ok", false}, {"error_code", "no_token"},
-                            {"message", "no token is held for this bridge"}}
+  backplane.response = json {{"ok", false},
+                             {"error_code", "no_token"},
+                             {"message", "no token is held for this bridge"}}
                            .dump();
-  bridge::bridge_reporter reporter("https://api.example.au", "dev-token",
-                                   backplane.transport());
+  bridge::bridge_reporter reporter(
+      "https://api.example.au", "dev-token", backplane.transport());
 
   std::string error;
   const auto token = reporter.credential(7, error);
@@ -304,13 +311,14 @@ TEST_CASE("no token held is an ordinary answer, not a failure", "[reporting]")
   REQUIRE(error == "no_token");
 }
 
-TEST_CASE("a cross-account or missing bridge is reported as such", "[reporting]")
+TEST_CASE("a cross-account or missing bridge is reported as such",
+          "[reporting]")
 {
   fake_backplane backplane;
   backplane.status = 404;
-  backplane.response = json{{"ok", false}, {"error_code", "not_found"}}.dump();
-  bridge::bridge_reporter reporter("https://api.example.au", "dev-token",
-                                   backplane.transport());
+  backplane.response = json {{"ok", false}, {"error_code", "not_found"}}.dump();
+  bridge::bridge_reporter reporter(
+      "https://api.example.au", "dev-token", backplane.transport());
 
   std::string error;
   const auto token = reporter.credential(99, error);
@@ -323,7 +331,8 @@ TEST_CASE("a bridge reporter with no transport fails cleanly", "[reporting]")
 {
   bridge::bridge_reporter reporter("https://api.example.au", "dev-token");
 
-  const auto result = reporter.report(advertised(), bridge::bridge_report{}, "");
+  const auto result =
+      reporter.report(advertised(), bridge::bridge_report {}, "");
   REQUIRE_FALSE(result.ok);
   REQUIRE(result.error == "no transport is configured");
 
