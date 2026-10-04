@@ -696,6 +696,68 @@ user_interface::user_interface()
         flx_receiver->end();
       }  // Fl_Flex* flx_receiver
       {
+        flx_bridge = new Fl_Flex(25, 442, 1323, 130, "Bridge (LAN)");
+        flx_bridge->box(FL_BORDER_BOX);
+        {
+          Fl_Flex* row = new Fl_Flex(25, 464, 1323, 25);
+          row->type(1);
+          {
+            input_bridge_address =
+                new Fl_Input(0, 0, 200, 25, "Bridge address");
+            input_bridge_address->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+          }  // Fl_Input* input_bridge_address
+          {
+            btn_bridge_find = new Fl_Button(0, 0, 90, 25, "Find");
+          }  // Fl_Button* btn_bridge_find
+          {
+            btn_bridge_claim = new Fl_Button(0, 0, 90, 25, "Claim");
+          }  // Fl_Button* btn_bridge_claim
+          {
+            btn_bridge_apply = new Fl_Button(0, 0, 90, 25, "Apply");
+          }  // Fl_Button* btn_bridge_apply
+          row->gap(10);
+          row->end();
+        }  // Fl_Flex* row
+        {
+          Fl_Flex* row = new Fl_Flex(25, 489, 1323, 25);
+          row->type(1);
+          {
+            input_bridge_listen =
+                new Fl_Input(0, 0, 230, 25, "Bridge listens on");
+            input_bridge_listen->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+            input_bridge_listen->value("rist://0.0.0.0:5000");
+          }  // Fl_Input* input_bridge_listen
+          {
+            input_bridge_forward =
+                new Fl_Input(0, 0, 230, 25, "Bridge forwards to");
+            input_bridge_forward->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+          }  // Fl_Input* input_bridge_forward
+          {
+            input_bridge_interface = new Fl_Input(0, 0, 90, 25, "Interface");
+            input_bridge_interface->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+            input_bridge_interface->value("wan");
+          }  // Fl_Input* input_bridge_interface
+          {
+            bridge_token_output = new Fl_Output(0, 0, 140, 25, "Pair token");
+            bridge_token_output->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+            bridge_token_output->value("not claimed");
+          }  // Fl_Output* bridge_token_output
+          row->gap(10);
+          row->end();
+        }  // Fl_Flex* row
+        {
+          // The state line gets its own full-width row. It is the longest text
+          // in the group AND it carries the bridge's address, so letting a flex
+          // row distribute it would clip the one thing the operator must read.
+          bridge_state_output = new Fl_Output(25, 514, 1323, 25, "Bridge state");
+          bridge_state_output->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+          bridge_state_output->value("Not found yet - press Find.");
+        }  // Fl_Output* bridge_state_output
+        flx_bridge->margin(8, 22, 8, 8);
+        flx_bridge->gap(12);
+        flx_bridge->end();
+      }  // Fl_Flex* flx_bridge
+      {
         flx_bottom = new Fl_Flex(25, 442, 1323, 200);
         flx_bottom->type(1);
         {
@@ -708,6 +770,7 @@ user_interface::user_interface()
       }  // Fl_Flex* flx_bottom
       pack->margin(25, 25, 25, 25);
       pack->fixed(flx_receiver, 150);
+      pack->fixed(flx_bridge, 130);
       pack->fixed(flx_bottom, 200);
       pack->end();
     }  // Fl_Flex* pack
@@ -1054,6 +1117,50 @@ void user_interface::receiver_destinations_cb(receiver_control_config* rc)
   rc->destinations = parse_destinations(input_destinations->value());
 }
 
+// ---- Bridge (LAN) control callbacks ---------------------------------------
+
+void user_interface::bridge_address_cb(bridge_control_config* bridge_config)
+{
+  bridge_config->address = input_bridge_address->value();
+  // A new address means whatever bridge we had found is no longer the one being
+  // pointed at, so drop the identity rather than acting on a stale uid.
+  bridge_config->bridge_uid.clear();
+}
+
+void user_interface::bridge_listen_cb(bridge_control_config* bridge_config)
+{
+  bridge_config->listen_url = input_bridge_listen->value();
+}
+
+void user_interface::bridge_forward_cb(bridge_control_config* bridge_config)
+{
+  bridge_config->forward_to = input_bridge_forward->value();
+}
+
+void user_interface::bridge_interface_cb(bridge_control_config* bridge_config)
+{
+  bridge_config->interface_name = input_bridge_interface->value();
+}
+
+// The three actions themselves live in main.cpp: they need discovery and the
+// ubus transport, and every one of them runs on a tracked background thread so
+// the browse cannot block the UI.
+
+void user_interface::bridge_find(FuncPtr find_funcptr)
+{
+  find_funcptr();
+}
+
+void user_interface::bridge_claim(FuncPtr claim_funcptr)
+{
+  claim_funcptr();
+}
+
+void user_interface::bridge_apply(FuncPtr apply_funcptr)
+{
+  apply_funcptr();
+}
+
 void user_interface::start(void (*start_funcptr)())
 {
   lock();
@@ -1082,7 +1189,8 @@ void user_interface::save_settings(FuncPtr save_settings_funcptr)
 void user_interface::apply_settings(const input_config& input_c,
                                     const encode_config& encode_c,
                                     const output_config& output_c,
-                                    const receiver_control_config& receiver_c)
+                                    const receiver_control_config& receiver_c,
+                                    const bridge_control_config& bridge_c)
 {
   // ---- Input ----
   select_choice_by_userdata(choice_input_protocol,
@@ -1150,7 +1258,75 @@ void user_interface::apply_settings(const input_config& input_c,
   input_destinations->value(
       format_destinations(receiver_c.destinations).c_str());
 
+  // ---- Bridge (LAN) ----
+  // Written directly rather than through the setters: this runs once on the
+  // main thread before show(), and the setters take the FLTK lock.
+  input_bridge_address->value(bridge_c.address.c_str());
+  input_bridge_listen->value(bridge_c.listen_url.c_str());
+  input_bridge_forward->value(bridge_c.forward_to.c_str());
+  input_bridge_interface->value(bridge_c.interface_name.c_str());
+  bridge_token_output->value(bridge_c.token.empty() ? "not claimed" : "set");
+  bridge_state_output->value(bridge_c.bridge_uid.empty()
+                                 ? "Not found yet - press Find."
+                                 : bridge_c.bridge_uid.c_str());
+
   layout();
+}
+
+// ---- Bridge (LAN) state writable from a background thread ------------------
+// Every worker-driven UI write goes through one of these: the bridge actions
+// run on a tracked thread (bridge::discover() blocks by design), so neither the
+// widgets nor the config may be touched without the FLTK lock. Holding the lock
+// is what makes updating the model here safe -- FLTK dispatches widget
+// callbacks under the same lock.
+
+void user_interface::set_bridge_discovered(const std::string& uid,
+                                           const std::string& address,
+                                           const std::string& text,
+                                           bool is_error)
+{
+  lock();
+  if (bridge_config_ptr != nullptr) {
+    if (!uid.empty()) {
+      bridge_config_ptr->bridge_uid = uid;
+    }
+    if (!address.empty()) {
+      bridge_config_ptr->address = address;
+      input_bridge_address->value(address.c_str());
+    }
+  }
+  bridge_state_output->value(text.c_str());
+  bridge_state_output->textcolor(is_error ? FL_RED : FL_BLACK);
+  bridge_state_output->redraw();
+  unlock();
+  Fl::awake();
+}
+
+void user_interface::set_bridge_token(const std::string& token)
+{
+  // M1.9/H2: the token is never rendered, logged or put in a URL. Register it
+  // before anything else can see it, and show only that one is held.
+  if (!token.empty()) {
+    secrets::register_secret(token);
+  }
+  lock();
+  if (bridge_config_ptr != nullptr) {
+    bridge_config_ptr->token = token;
+  }
+  bridge_token_output->value(token.empty() ? "not claimed" : "set");
+  bridge_token_output->redraw();
+  unlock();
+  Fl::awake();
+}
+
+void user_interface::set_bridge_message(const std::string& text, bool is_error)
+{
+  lock();
+  bridge_state_output->value(text.c_str());
+  bridge_state_output->textcolor(is_error ? FL_RED : FL_BLACK);
+  bridge_state_output->redraw();
+  unlock();
+  Fl::awake();
 }
 
 void user_interface::refresh_ndi_devices(FuncPtr refresh_ndi_funcptr)
@@ -1167,13 +1343,17 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                                        encode_config* encode_c,
                                        output_config* output_c,
                                        receiver_control_config* receiver_c,
+                                       bridge_control_config* bridge_c,
                                        FuncPtr start_funcptr,
                                        FuncPtr stop_funcptr,
                                        FuncPtr ndi_refresh_funcptr,
                                        FuncPtr input_rist_address_funcptr,
                                        FuncPtr preview_src_funcptr,
                                        FuncPtr scaling_source_changed_funcptr,
-                                       FuncPtr save_settings_funcptr)
+                                       FuncPtr save_settings_funcptr,
+                                       FuncPtr bridge_find_funcptr,
+                                       FuncPtr bridge_claim_funcptr,
+                                       FuncPtr bridge_apply_funcptr)
 {
   main_window->callback([](Fl_Widget* w, void*) { w->hide(); });
 
@@ -1367,4 +1547,53 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        receiver_destinations_cb,
                        receiver_control_config*,
                        receiver_c);
+
+  // ---- Bridge (LAN) control section (DT-19, DT-21) ----
+  // Held so the thread-safe setters can update the model as well as the widgets.
+  bridge_config_ptr = bridge_c;
+
+  input_bridge_address->when(FL_WHEN_CHANGED);
+  input_bridge_listen->when(FL_WHEN_CHANGED);
+  input_bridge_forward->when(FL_WHEN_CHANGED);
+  input_bridge_interface->when(FL_WHEN_CHANGED);
+
+  FL_METHOD_CALLBACK_1(input_bridge_address,
+                       user_interface,
+                       this,
+                       bridge_address_cb,
+                       bridge_control_config*,
+                       bridge_c);
+
+  FL_METHOD_CALLBACK_1(input_bridge_listen,
+                       user_interface,
+                       this,
+                       bridge_listen_cb,
+                       bridge_control_config*,
+                       bridge_c);
+
+  FL_METHOD_CALLBACK_1(input_bridge_forward,
+                       user_interface,
+                       this,
+                       bridge_forward_cb,
+                       bridge_control_config*,
+                       bridge_c);
+
+  FL_METHOD_CALLBACK_1(input_bridge_interface,
+                       user_interface,
+                       this,
+                       bridge_interface_cb,
+                       bridge_control_config*,
+                       bridge_c);
+
+  FL_METHOD_CALLBACK_1(
+      btn_bridge_find, user_interface, this, bridge_find, FuncPtr,
+      bridge_find_funcptr);
+
+  FL_METHOD_CALLBACK_1(
+      btn_bridge_claim, user_interface, this, bridge_claim, FuncPtr,
+      bridge_claim_funcptr);
+
+  FL_METHOD_CALLBACK_1(
+      btn_bridge_apply, user_interface, this, bridge_apply, FuncPtr,
+      bridge_apply_funcptr);
 }

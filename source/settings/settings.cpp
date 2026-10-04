@@ -299,6 +299,16 @@ bool save(const library& lib)
       {"destinations", dests},
   };
 
+  const bridge_control_config& bc = lib.bridge_ctl;
+  root["bridge"] = {
+      {"address", bc.address},
+      {"bridge_uid", bc.bridge_uid},
+      {"token", bc.token},
+      {"listen_url", bc.listen_url},
+      {"forward_to", bc.forward_to},
+      {"interface", bc.interface_name},
+  };
+
   const std::filesystem::path path = settings_file_path();
   std::error_code ec;
   std::filesystem::create_directories(path.parent_path(), ec);
@@ -422,10 +432,19 @@ bool load(library& lib)
     }
   }
 
+  if (auto it = root.find("bridge"); it != root.end() && it->is_object()) {
+    const json& j = *it;
+    bridge_control_config& bc = lib.bridge_ctl;
+    get_to(j, "address", bc.address);
+    get_to(j, "bridge_uid", bc.bridge_uid);
+    get_to(j, "token", bc.token);
+    get_to(j, "listen_url", bc.listen_url);
+    get_to(j, "forward_to", bc.forward_to);
+    get_to(j, "interface", bc.interface_name);
+  }
+
   return true;
 }
-
-// --- Hosted-mode session persistence (M2.7) --------------------------------
 
 std::filesystem::path hosted_session_path()
 {

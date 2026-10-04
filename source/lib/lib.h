@@ -165,6 +165,30 @@ struct receiver_control_config
   std::vector<receiver_destination> destinations;
 };
 
+// ---------------------------------------------------------------------------
+// Bridge control (DT-19, DT-21). The rist2rist bridge on the customer LAN: the
+// encoder finds it, claims it ONCE, then applies the configuration it should
+// run. The bridge never contacts the backplane and holds no fleet credential.
+//
+// This is the LAN-side slice: discovery, claim and apply all work with no
+// hosted backend, because a claim's token comes FROM the bridge. Where the
+// token comes from is the only thing the portal changes.
+// ---------------------------------------------------------------------------
+struct bridge_control_config
+{
+  // Manual fallback (DT-19): discovery is a convenience, never a dependency, so
+  // an address here is used when the browse finds nothing.
+  std::string address;
+  std::string bridge_uid;  // the mDNS instance, once found or claimed
+  // The pair token. A SECRET: registered with the secrets registry so it cannot
+  // reach a log pane, and shown in the UI only as "set"/"not set".
+  std::string token;
+  std::string listen_url{"rist://0.0.0.0:5000"};  // what the BRIDGE listens on
+  std::string forward_to;      // the external ingest node it forwards to
+  std::string interface_name{"wan"};  // the bridge's uplink to bond over
+  std::string last_error;      // shown in the UI; not persisted
+};
+
 inline std::pair<std::string, int> parse_address(const std::string& addr)
 {
   // Note: IPv6 addresses must use the bracketed [host]:port form for the
@@ -212,6 +236,7 @@ struct library
   encode_config encode_cfg;
   output_config output_cfg;
   receiver_control_config receiver_ctl;
+  bridge_control_config bridge_ctl;
 
   cumulative_stats stats;
 

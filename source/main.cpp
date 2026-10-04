@@ -20,7 +20,12 @@
 #endif
 #include <gst/gst.h>
 #include <gst/video/video.h>
+#include <nlohmann/json.hpp>
 
+#include "bridge/bridge_client.h"
+#include "bridge/discovery.h"
+#include "bridge/mdns.h"
+#include "bridge/ubus.h"
 #include "control/control.h"
 #include "encode.h"
 #include "lib.h"
@@ -289,6 +294,243 @@ static void release_receiver()
       }));
 }
 
+// ---------------------------------------------------------------------------
+// Bridge (LAN) control (DT-19, DT-21). The encoder is the actuator: it finds the
+// bridge on the LAN, claims it once, and applies the configuration the portal
+// recorded. The bridge never contacts the backplane and holds no fleet
+// credential (BACKPLANE.md §49).
+//
+// This is the LAN-side slice: find, claim and apply all work with NO hosted
+// backend, because a claim's token comes FROM the bridge. Only the token's
+// SOURCE changes when the portal is wired in -- path A has the credential
+// endpoint hand over a token the portal already holds, instead of claiming a
+// virgin bridge.
+//
+// Every action runs on a tracked background thread: bridge::discover() blocks by
+// design and must never touch the FLTK thread. The worker also never writes the
+// config directly -- it goes through user_interface::set_bridge_*, which takes
+// the FLTK lock and updates the model and the widgets together.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+// Long enough for a bridge to answer an mDNS query on a quiet LAN, short enough
+// that a missing bridge is not a hang.
+constexpr auto k_bridge_window = std::chrono::milliseconds(1500);
+
+// The operator may type a bare host; the bridge's own destination list wants a
+// URL.
+auto as_rist_url(const std::string& address) -> std::string
+{
+  if (address.empty() || address.rfind("rist://", 0) == 0) {
+    return address;
+  }
+  return "rist://" + address;
+}
+
+// What we push to the bridge: where it listens, and where it forwards. Only
+// non-empty values are sent -- reconcile replaces the output list WHOLESALE, so
+// an empty entry would be a destructive no-op rather than a no-op.
+auto bridge_desired(const bridge_control_config& cfg) -> nlohmann::json
+{
+  nlohmann::json desired = nlohmann::json::object();
+  if (!cfg.listen_url.empty()) {
+    desired["listen_url"] = cfg.listen_url;
+  }
+  if (!cfg.forward_to.empty()) {
+    nlohmann::json output = nlohmann::json::object();
+    output["address"] = as_rist_url(cfg.forward_to);
+    if (!cfg.interface_name.empty()) {
+      output["interface"] = cfg.interface_name;
+    }
+    output["weight"] = "1";
+    desired["outputs"] = nlohmann::json::array({output});
+  }
+  return desired;
+}
+
+// DT-19: discovery is a convenience, never a dependency. When the browse finds
+// nothing and the operator typed an address, that address stands in and the ubus
+// call becomes the thing that decides whether a bridge is really there.
+auto bridge_discovery(const bridge_control_config& cfg)
+    -> bridge::bridge_client::discover_fn
+{
+  return [cfg](std::chrono::milliseconds window)
+  {
+    auto found = bridge::discover(window);
+    if (found.empty() && !cfg.address.empty()) {
+      bridge::mdns::service manual;
+      manual.instance = cfg.bridge_uid.empty() ? "manual" : cfg.bridge_uid;
+      manual.address = cfg.address;
+      found.push_back(std::move(manual));
+    }
+    return found;
+  };
+}
+
+auto make_bridge_client(const bridge_control_config& cfg)
+{
+  return bridge::bridge_client(
+      bridge_discovery(cfg),
+      [](const std::string& base_url,
+         const std::string& token) -> std::unique_ptr<bridge::ubus_client>
+      {
+        // make_ubus_transport registers the token as a secret, so it cannot
+        // reach a log pane even if a request is logged (H2).
+        return std::make_unique<bridge::ubus_client>(
+            base_url, token, bridge::make_ubus_transport(token));
+      });
+}
+
+auto bridge_request(const bridge_control_config& cfg, bool allow_claim)
+    -> bridge::reconcile_request
+{
+  bridge::reconcile_request request;
+  request.bridge_uid = cfg.bridge_uid;
+  request.known_token = cfg.token;
+  request.allow_claim = allow_claim;
+  return request;
+}
+}  // namespace
+
+// Browse and report what is there. Reads only: it never claims, so pressing
+// Find before Claim cannot take the bridge from anyone.
+static void bridge_find()
+{
+  const bridge_control_config cfg = ctx.lib.bridge_ctl;
+  if (ctx.ui != nullptr) {
+    ctx.ui->set_bridge_message("Looking for a bridge...", false);
+  }
+  track_control_thread(std::thread(
+      [cfg]
+      {
+        const auto match = bridge::find_bridge(
+            bridge_discovery(cfg)(k_bridge_window),
+            bridge_request(cfg, /*allow_claim=*/false));
+        if (!match.found) {
+          transport_log("Bridge: " + match.error + "\n");
+          if (ctx.ui != nullptr) {
+            ctx.ui->set_bridge_message(match.error, true);
+          }
+          return;
+        }
+
+        const auto& service = match.service;
+        // Only a fingerprint is ever advertised, never the token (DT-21).
+        const std::string fingerprint =
+            service.txt_value(bridge::k_txt_fingerprint);
+        std::string state = service.instance + " at " + service.address;
+        if (fingerprint.empty()) {
+          state += " - virgin, claimable";
+        } else if (cfg.token.empty()) {
+          state += " - claimed elsewhere";
+        } else {
+          state += " - claimed";
+        }
+        transport_log("Bridge found: " + state + "\n");
+        if (ctx.ui != nullptr) {
+          ctx.ui->set_bridge_discovered(service.instance, service.address, state,
+                                        false);
+        }
+      }));
+}
+
+// Claim a virgin bridge (DT-21 path C). Only ever valid with no token held: the
+// bridge mints one and stores only its hash, so a bridge we already hold a token
+// for must not be claimed again.
+static void bridge_claim()
+{
+  const bridge_control_config cfg = ctx.lib.bridge_ctl;
+  if (!cfg.token.empty()) {
+    transport_log("Bridge: this encoder already holds a pair token.\n");
+    if (ctx.ui != nullptr) {
+      ctx.ui->set_bridge_message("Already claimed by this encoder", false);
+    }
+    return;
+  }
+  if (ctx.ui != nullptr) {
+    ctx.ui->set_bridge_message("Claiming...", false);
+  }
+  track_control_thread(std::thread(
+      [cfg]
+      {
+        auto client = make_bridge_client(cfg);
+        // No desired state: claim only. An empty desired state never reaches
+        // reconcile, so nothing on the bridge is overwritten.
+        const auto outcome =
+            client.reconcile(bridge_request(cfg, /*allow_claim=*/true),
+                             k_bridge_window);
+        if (!outcome.ok) {
+          transport_log("Bridge claim failed: " + outcome.error + "\n");
+          if (ctx.ui != nullptr) {
+            ctx.ui->set_bridge_message("Claim failed: " + outcome.error, true);
+          }
+          return;
+        }
+        if (ctx.ui != nullptr) {
+          // Handed out exactly once; the bridge keeps only the hash from here on.
+          ctx.ui->set_bridge_token(outcome.new_token);
+          ctx.ui->set_bridge_discovered(outcome.report.bridge_uid,
+                                        outcome.report.address,
+                                        "Claimed " + outcome.report.bridge_uid,
+                                        false);
+        }
+        transport_log("Bridge claimed: " + outcome.report.bridge_uid
+                      + ". Save settings to keep the token.\n");
+      }));
+}
+
+// Apply the desired state with the token we hold.
+static void bridge_apply()
+{
+  const bridge_control_config cfg = ctx.lib.bridge_ctl;
+  if (cfg.token.empty()) {
+    if (ctx.ui != nullptr) {
+      ctx.ui->set_bridge_message("Claim the bridge first - no pair token held",
+                                 true);
+    }
+    return;
+  }
+  const auto desired = bridge_desired(cfg);
+  if (desired.empty()) {
+    if (ctx.ui != nullptr) {
+      ctx.ui->set_bridge_message(
+          "Nothing to apply: set the listen url and a forwarding target", true);
+    }
+    return;
+  }
+  if (ctx.ui != nullptr) {
+    ctx.ui->set_bridge_message("Applying...", false);
+  }
+  track_control_thread(std::thread(
+      [cfg, desired]
+      {
+        auto client = make_bridge_client(cfg);
+        auto request = bridge_request(cfg, /*allow_claim=*/false);
+        request.desired = desired;
+        const auto outcome = client.reconcile(request, k_bridge_window);
+        if (!outcome.ok) {
+          transport_log("Bridge apply failed: " + outcome.error + "\n");
+          if (ctx.ui != nullptr) {
+            ctx.ui->set_bridge_message("Apply failed: " + outcome.error, true);
+          }
+          return;
+        }
+        // Report what the BRIDGE now says, not what we asked for.
+        const std::string managed =
+            outcome.report.managed ? "managed" : "unmanaged";
+        std::string state = outcome.report.bridge_uid + " - applied, " + managed;
+        if (!outcome.report.last_error.empty()) {
+          state += " (" + outcome.report.last_error + ")";
+        }
+        transport_log("Bridge: " + state + "\n");
+        if (ctx.ui != nullptr) {
+          ctx.ui->set_bridge_discovered(outcome.report.bridge_uid,
+                                        outcome.report.address, state, false);
+        }
+      }));
+}
+
 static void run()
 {
   // Stop the NDI preview before opening the encode pipeline. Preview and encode
@@ -522,6 +764,7 @@ auto main(int argc, char** argv) -> int
       &(ctx.lib.encode_cfg),
       &(ctx.lib.output_cfg),
       &(ctx.lib.receiver_ctl),
+      &(ctx.lib.bridge_ctl),
       &run,
       &stop,
       &refresh_ndi_devices,
@@ -531,15 +774,25 @@ auto main(int argc, char** argv) -> int
       nullptr,
       &preview_input,
       &scaling_source_changed,
-      &save_settings);
+      &save_settings,
+      &bridge_find,
+      &bridge_claim,
+      &bridge_apply);
 
   // Restore persisted settings (if any) over the UI defaults set above, then
   // mirror them into the widgets so the operator sees their saved values.
   if (settings::load(ctx.lib)) {
+    // The pair token is persisted in plaintext (the settings file is 0600, the
+    // same rule the receiver token follows). Register it before anything else
+    // can log it so redact() masks it from the first line onward.
+    if (!ctx.lib.bridge_ctl.token.empty()) {
+      secrets::register_secret(ctx.lib.bridge_ctl.token);
+    }
     ctx.ui->apply_settings(ctx.lib.input_cfg,
                            ctx.lib.encode_cfg,
                            ctx.lib.output_cfg,
-                           ctx.lib.receiver_ctl);
+                           ctx.lib.receiver_ctl,
+                           ctx.lib.bridge_ctl);
   }
 
   // NOTE: the RIST sender is created at Start, inside run_loop() on its own
