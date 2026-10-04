@@ -758,6 +758,43 @@ user_interface::user_interface()
         flx_bridge->end();
       }  // Fl_Flex* flx_bridge
       {
+        flx_hosted = new Fl_Flex(25, 442, 1323, 92, "Hosted (portal)");
+        flx_hosted->box(FL_BORDER_BOX);
+        {
+          Fl_Flex* row = new Fl_Flex(25, 464, 1323, 25);
+          row->type(1);
+          {
+            input_backplane_url =
+                new Fl_Input(0, 0, 420, 25, "Backplane URL");
+            input_backplane_url->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+          }  // Fl_Input* input_backplane_url
+          {
+            btn_hosted_signin = new Fl_Button(0, 0, 90, 25, "Sign in");
+          }  // Fl_Button* btn_hosted_signin
+          {
+            btn_hosted_signout = new Fl_Button(0, 0, 90, 25, "Sign out");
+          }  // Fl_Button* btn_hosted_signout
+          {
+            hosted_token_output = new Fl_Output(0, 0, 140, 25, "Device token");
+            hosted_token_output->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+            hosted_token_output->value("not signed in");
+          }  // Fl_Output* hosted_token_output
+          row->gap(10);
+          row->end();
+        }  // Fl_Flex* row
+        {
+          // Its own full-width row, like the bridge state line -- the sign-in
+          // instruction has to be readable in one piece.
+          hosted_state_output = new Fl_Output(25, 489, 1323, 25, "Hosted state");
+          hosted_state_output->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+          hosted_state_output->value(
+              "Not signed in - the portal half stays inactive until you sign in.");
+        }  // Fl_Output* hosted_state_output
+        flx_hosted->margin(8, 22, 8, 8);
+        flx_hosted->gap(12);
+        flx_hosted->end();
+      }  // Fl_Flex* flx_hosted
+      {
         flx_bottom = new Fl_Flex(25, 442, 1323, 200);
         flx_bottom->type(1);
         {
@@ -771,6 +808,7 @@ user_interface::user_interface()
       pack->margin(25, 25, 25, 25);
       pack->fixed(flx_receiver, 150);
       pack->fixed(flx_bridge, 130);
+      pack->fixed(flx_hosted, 92);
       pack->fixed(flx_bottom, 200);
       pack->end();
     }  // Fl_Flex* pack
@@ -1161,6 +1199,30 @@ void user_interface::bridge_apply(FuncPtr apply_funcptr)
   apply_funcptr();
 }
 
+// ---- Hosted (portal) control callbacks -------------------------------------
+
+void user_interface::hosted_url_cb(hosted_config* hosted_config)
+{
+  hosted_config->backplane_url = input_backplane_url->value();
+  // Deliberately does NOT clear the device token. This fires on every keystroke,
+  // so clearing here would sign the operator out as they type the URL; a token
+  // from a different backplane is refused by that backplane instead, which the
+  // state line reports.
+}
+
+// The sign-in itself lives in main.cpp: it needs the device-authorization client
+// and runs on a tracked background thread, because polling blocks.
+
+void user_interface::hosted_sign_in(FuncPtr signin_funcptr)
+{
+  signin_funcptr();
+}
+
+void user_interface::hosted_sign_out(FuncPtr signout_funcptr)
+{
+  signout_funcptr();
+}
+
 void user_interface::start(void (*start_funcptr)())
 {
   lock();
@@ -1190,7 +1252,8 @@ void user_interface::apply_settings(const input_config& input_c,
                                     const encode_config& encode_c,
                                     const output_config& output_c,
                                     const receiver_control_config& receiver_c,
-                                    const bridge_control_config& bridge_c)
+                                    const bridge_control_config& bridge_c,
+                                    const hosted_config& hosted_c)
 {
   // ---- Input ----
   select_choice_by_userdata(choice_input_protocol,
@@ -1270,6 +1333,15 @@ void user_interface::apply_settings(const input_config& input_c,
                                  ? "Not found yet - press Find."
                                  : bridge_c.bridge_uid.c_str());
 
+  // ---- Hosted (portal) ----
+  input_backplane_url->value(hosted_c.backplane_url.c_str());
+  hosted_token_output->value(hosted_c.device_token.empty() ? "not signed in"
+                                                           : "set");
+  hosted_state_output->value(
+      hosted_c.device_token.empty()
+          ? "Not signed in - the portal half stays inactive until you sign in."
+          : "Signed in.");
+
   layout();
 }
 
@@ -1329,6 +1401,51 @@ void user_interface::set_bridge_message(const std::string& text, bool is_error)
   Fl::awake();
 }
 
+void user_interface::set_hosted_state(const std::string& text, bool is_error)
+{
+  lock();
+  hosted_state_output->value(text.c_str());
+  hosted_state_output->textcolor(is_error ? FL_RED : FL_BLACK);
+  hosted_state_output->redraw();
+  unlock();
+  Fl::awake();
+}
+
+void user_interface::set_hosted_token(const std::string& token)
+{
+  // The device token authorises everything against the account, so it is never
+  // rendered: register it before it can reach a log line, and show only that one
+  // is held (H2).
+  if (!token.empty()) {
+    secrets::register_secret(token);
+  }
+  lock();
+  if (hosted_config_ptr != nullptr) {
+    hosted_config_ptr->device_token = token;
+    if (token.empty()) {
+      // Signing out invalidates the derived ids too: they belong to the account
+      // the token was minted for.
+      hosted_config_ptr->device_id = 0;
+      hosted_config_ptr->bridge_id = 0;
+    }
+  }
+  hosted_token_output->value(token.empty() ? "not signed in" : "set");
+  hosted_token_output->redraw();
+  unlock();
+  Fl::awake();
+}
+
+void user_interface::set_hosted_ids(long device_id, long bridge_id)
+{
+  lock();
+  if (hosted_config_ptr != nullptr) {
+    hosted_config_ptr->device_id = device_id;
+    hosted_config_ptr->bridge_id = bridge_id;
+  }
+  unlock();
+  Fl::awake();
+}
+
 void user_interface::refresh_ndi_devices(FuncPtr refresh_ndi_funcptr)
 {
   refresh_ndi_funcptr();
@@ -1344,6 +1461,7 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                                        output_config* output_c,
                                        receiver_control_config* receiver_c,
                                        bridge_control_config* bridge_c,
+                                       hosted_config* hosted_c,
                                        FuncPtr start_funcptr,
                                        FuncPtr stop_funcptr,
                                        FuncPtr ndi_refresh_funcptr,
@@ -1353,7 +1471,9 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                                        FuncPtr save_settings_funcptr,
                                        FuncPtr bridge_find_funcptr,
                                        FuncPtr bridge_claim_funcptr,
-                                       FuncPtr bridge_apply_funcptr)
+                                       FuncPtr bridge_apply_funcptr,
+                                       FuncPtr hosted_signin_funcptr,
+                                       FuncPtr hosted_signout_funcptr)
 {
   main_window->callback([](Fl_Widget* w, void*) { w->hide(); });
 
@@ -1596,4 +1716,24 @@ void user_interface::init_ui_callbacks(input_config* input_c,
   FL_METHOD_CALLBACK_1(
       btn_bridge_apply, user_interface, this, bridge_apply, FuncPtr,
       bridge_apply_funcptr);
+
+  // ---- Hosted (portal) control section ----
+  hosted_config_ptr = hosted_c;
+
+  input_backplane_url->when(FL_WHEN_CHANGED);
+
+  FL_METHOD_CALLBACK_1(input_backplane_url,
+                       user_interface,
+                       this,
+                       hosted_url_cb,
+                       hosted_config*,
+                       hosted_c);
+
+  FL_METHOD_CALLBACK_1(
+      btn_hosted_signin, user_interface, this, hosted_sign_in, FuncPtr,
+      hosted_signin_funcptr);
+
+  FL_METHOD_CALLBACK_1(
+      btn_hosted_signout, user_interface, this, hosted_sign_out, FuncPtr,
+      hosted_signout_funcptr);
 }

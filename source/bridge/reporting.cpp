@@ -13,7 +13,7 @@ namespace bridge
 {
 namespace
 {
-constexpr const char* k_bridge_path = "/v1/bridges";
+constexpr const char* k_bridge_path = "/api/v1/bridges";
 
 // The backplane validates api_version as an integer in 1..65535, while the
 // advertisement carries it as text.

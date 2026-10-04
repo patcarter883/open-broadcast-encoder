@@ -14,8 +14,8 @@ namespace backplane
 {
 namespace
 {
-constexpr const char* k_code_path = "/v1/auth/device/code";
-constexpr const char* k_token_path = "/v1/auth/device/token";
+constexpr const char* k_code_path = "/api/v1/auth/device/code";
+constexpr const char* k_token_path = "/api/v1/auth/device/token";
 
 // The default sleeper. Kept as a free function so the test can swap in a
 // counting no-op and assert the RFC pacing without spending the time.

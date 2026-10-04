@@ -83,7 +83,7 @@ TEST_CASE("start parses the code and the polling hints the server chose",
   // The server's interval is the one that matters -- it is what the poll loop
   // must respect, so it is taken from the response, not hardcoded.
   REQUIRE(code.interval == 5);
-  REQUIRE(t.paths.at(0) == "/v1/auth/device/code");
+  REQUIRE(t.paths.at(0) == "/api/v1/auth/device/code");
 }
 
 TEST_CASE("start sends name and platform so the panel can show the operator",

@@ -20,6 +20,7 @@ target_sources(bridge_lib ${warning_guard}
     bridge_client.cpp
     reporting.h
     reporting.cpp
+    reporting_httplib.cpp
 )
 
 target_include_directories(bridge_lib PUBLIC

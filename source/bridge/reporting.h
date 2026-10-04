@@ -85,3 +85,9 @@ private:
 };
 
 }  // namespace bridge
+
+// Build an httplib-backed transport for the reporter's endpoints. Defined in
+// reporting_httplib.cpp so this header stays free of httplib and links into the
+// tests.
+bridge::backplane_transport_fn make_bridge_reporter_transport(
+    const std::string& base_url, const std::string& device_token);

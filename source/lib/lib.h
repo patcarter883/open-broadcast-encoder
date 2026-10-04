@@ -189,6 +189,25 @@ struct bridge_control_config
   std::string last_error;      // shown in the UI; not persisted
 };
 
+// ---------------------------------------------------------------------------
+// Hosted control plane (BACKPLANE §2/§4). The encoder is self-host-only until
+// this is populated: `backplane_url` + `device_token` are what let it onboard
+// as a device and reach the portal at all.
+//
+// The device token is a SECRET (it authorises everything against the account),
+// so it is registered with the secrets registry and shown in the UI only as
+// set/not-set.
+// ---------------------------------------------------------------------------
+struct hosted_config
+{
+  std::string backplane_url;  // e.g. https://api.backplane.example.au
+  std::string device_token;   // SECRET; from the RFC 8628 device flow
+  long device_id = 0;         // the backplane's id for this encoder
+  // The backplane's row for the bridge this encoder is driving. Learned from the
+  // report, and needed to fetch a pair token the portal holds (DT-21 path A).
+  long bridge_id = 0;
+};
+
 inline std::pair<std::string, int> parse_address(const std::string& addr)
 {
   // Note: IPv6 addresses must use the bracketed [host]:port form for the
@@ -237,6 +256,7 @@ struct library
   output_config output_cfg;
   receiver_control_config receiver_ctl;
   bridge_control_config bridge_ctl;
+  hosted_config hosted;
 
   cumulative_stats stats;
 

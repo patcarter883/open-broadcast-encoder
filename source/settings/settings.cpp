@@ -309,6 +309,14 @@ bool save(const library& lib)
       {"interface", bc.interface_name},
   };
 
+  const hosted_config& hc = lib.hosted;
+  root["hosted"] = {
+      {"backplane_url", hc.backplane_url},
+      {"device_token", hc.device_token},
+      {"device_id", hc.device_id},
+      {"bridge_id", hc.bridge_id},
+  };
+
   const std::filesystem::path path = settings_file_path();
   std::error_code ec;
   std::filesystem::create_directories(path.parent_path(), ec);
@@ -441,6 +449,15 @@ bool load(library& lib)
     get_to(j, "listen_url", bc.listen_url);
     get_to(j, "forward_to", bc.forward_to);
     get_to(j, "interface", bc.interface_name);
+  }
+
+  if (auto it = root.find("hosted"); it != root.end() && it->is_object()) {
+    const json& j = *it;
+    hosted_config& hc = lib.hosted;
+    get_to(j, "backplane_url", hc.backplane_url);
+    get_to(j, "device_token", hc.device_token);
+    hc.device_id = j.value("device_id", 0L);
+    hc.bridge_id = j.value("bridge_id", 0L);
   }
 
   return true;

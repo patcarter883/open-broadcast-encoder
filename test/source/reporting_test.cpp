@@ -200,7 +200,7 @@ TEST_CASE("a report posts to the bridges collection with the device token",
   REQUIRE(result.ok);
   REQUIRE(result.bridge_id == 7);
   REQUIRE(backplane.method == "POST");
-  REQUIRE(backplane.path == "/v1/bridges");
+  REQUIRE(backplane.path == "/api/v1/bridges");
   REQUIRE(backplane.token == "dev-token");
 }
 
@@ -281,7 +281,7 @@ TEST_CASE("the credential is fetched by the backplane's bridge id",
   REQUIRE(token == "tok-1");
   REQUIRE(error.empty());
   REQUIRE(backplane.method == "POST");
-  REQUIRE(backplane.path == "/v1/bridges/7/credential");
+  REQUIRE(backplane.path == "/api/v1/bridges/7/credential");
   REQUIRE(backplane.token == "dev-token");
 }
 

@@ -89,6 +89,16 @@ public:
   Fl_Button* btn_bridge_find;
   Fl_Button* btn_bridge_claim;
   Fl_Button* btn_bridge_apply;
+  // Hosted control plane (BACKPLANE §2). Until the encoder is signed in it is
+  // self-host-only: no device token means the portal half has no runtime path.
+  // The device token is never displayed -- hosted_token_output says only whether
+  // one is held.
+  Fl_Flex* flx_hosted;
+  Fl_Input* input_backplane_url;
+  Fl_Output* hosted_state_output;
+  Fl_Output* hosted_token_output;
+  Fl_Button* btn_hosted_signin;
+  Fl_Button* btn_hosted_signout;
   Fl_Grid* grid_stats;
   Fl_Output* bandwidth_output;
   Fl_Output* link_quality_output;
@@ -115,6 +125,7 @@ public:
                          output_config* output_c,
                          receiver_control_config* receiver_c,
                          bridge_control_config* bridge_c,
+                         hosted_config* hosted_c,
                          FuncPtr start_funcptr,
                          FuncPtr stop_funcptr,
                          FuncPtr ndi_refresh_funcptr,
@@ -124,14 +135,17 @@ public:
                          FuncPtr save_settings_funcptr,
                          FuncPtr bridge_find_funcptr,
                          FuncPtr bridge_claim_funcptr,
-                         FuncPtr bridge_apply_funcptr);
+                         FuncPtr bridge_apply_funcptr,
+                         FuncPtr hosted_signin_funcptr,
+                         FuncPtr hosted_signout_funcptr);
   // Push persisted configs into the widgets after settings::load(). Call once,
   // on the main thread, after init_ui_callbacks() and before show().
   void apply_settings(const input_config& input_c,
                       const encode_config& encode_c,
                       const output_config& output_c,
                       const receiver_control_config& receiver_c,
-                      const bridge_control_config& bridge_c);
+                      const bridge_control_config& bridge_c,
+                      const hosted_config& hosted_c);
   // Show the encode lifecycle state. Safe to call from a non-UI thread: takes
   // the FLTK lock for the widget write and, when is_failed, presents the
   // buttons as stopped (Start available, Stop inactive) because the send loop
@@ -147,6 +161,14 @@ public:
                              bool is_error);
   void set_bridge_token(const std::string& token);
   void set_bridge_message(const std::string& text, bool is_error);
+  // Hosted sign-in state. Same rules: takes the FLTK lock, so it is safe from a
+  // background thread, and the token is never rendered -- only set/not-set.
+  void set_hosted_state(const std::string& text, bool is_error);
+  void set_hosted_token(const std::string& token);
+  // The ids the token was minted against, and the backplane's row for the bridge
+  // this encoder is driving. Written together because they are learned at
+  // different times and a partial update would zero the other.
+  void set_hosted_ids(long device_id, long bridge_id);
   void transport_log_append(const std::string& msg) const;
   void encode_log_append(const std::string& msg) const;
   void init_ui();
@@ -196,6 +218,13 @@ private:
   // init_ui_callbacks) so the thread-safe setters can update the model as well
   // as the widgets -- a worker thread must never write the config directly.
   bridge_control_config* bridge_config_ptr = nullptr;
+  // Hosted control-plane callbacks
+  void hosted_url_cb(hosted_config* hosted_config);
+  void hosted_sign_in(FuncPtr signin_funcptr);
+  void hosted_sign_out(FuncPtr signout_funcptr);
+  // The model the hosted widgets edit; set once in init_ui_callbacks, so the
+  // thread-safe setters update the model as well as the widgets.
+  hosted_config* hosted_config_ptr = nullptr;
   void start(FuncPtr start_funcptr);
   void stop(FuncPtr stop_funcptr);
   void save_settings(FuncPtr save_settings_funcptr);

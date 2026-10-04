@@ -18,13 +18,17 @@
 #else
 #  include <arpa/inet.h>
 #endif
+#include <atomic>
 #include <gst/gst.h>
 #include <gst/video/video.h>
 #include <nlohmann/json.hpp>
 
+#include "backplane/backplane.h"
+#include "backplane/device_auth.h"
 #include "bridge/bridge_client.h"
 #include "bridge/discovery.h"
 #include "bridge/mdns.h"
+#include "bridge/reporting.h"
 #include "bridge/ubus.h"
 #include "control/control.h"
 #include "encode.h"
@@ -531,6 +535,106 @@ static void bridge_apply()
       }));
 }
 
+// ---------------------------------------------------------------------------
+// Hosted sign-in (BACKPLANE §2, RFC 8628). Until this completes, the encoder is
+// SELF-HOST-ONLY: with no device token the portal half -- bridge reporting and
+// the credential fetch -- has no runtime path at all.
+//
+// Runs on a tracked background thread because polling waits between attempts.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+// Set when the operator signs out, or abandons the sign-in, so an in-flight poll
+// stops instead of polling for the code's full ten-minute life.
+std::atomic<bool> g_hosted_signin_cancel{false};
+}  // namespace
+
+static void hosted_sign_in()
+{
+  const hosted_config cfg = ctx.lib.hosted;
+  if (cfg.backplane_url.empty())
+  {
+    if (ctx.ui != nullptr)
+    {
+      ctx.ui->set_hosted_state("Set the backplane URL first", true);
+    }
+    return;
+  }
+
+  g_hosted_signin_cancel.store(false);
+  if (ctx.ui != nullptr)
+  {
+    ctx.ui->set_hosted_state("Asking the backplane for a sign-in code...", false);
+  }
+
+  track_control_thread(std::thread(
+      [cfg]
+      {
+        backplane::device_auth auth(
+            cfg.backplane_url, make_device_auth_transport(cfg.backplane_url));
+
+        std::string error;
+        auto code = auth.start("open-broadcast-encoder", "linux", error);
+        if (!code.valid())
+        {
+          transport_log("Hosted sign-in failed: " + error + "\n");
+          if (ctx.ui != nullptr)
+          {
+            ctx.ui->set_hosted_state("Sign-in failed: " + error, true);
+          }
+          return;
+        }
+
+        // The user_code is meant to be READ OUT, so it belongs in the UI and the
+        // log. The device_code behind it is the secret, and is never shown.
+        const std::string instruction =
+            "Approve " + code.user_code + " at " + code.verification_uri;
+        transport_log("Hosted sign-in: " + instruction + "\n");
+        if (ctx.ui != nullptr)
+        {
+          ctx.ui->set_hosted_state(instruction, false);
+        }
+
+        auto outcome = auth.wait_for_approval(
+            code, [] { return g_hosted_signin_cancel.load(); });
+
+        if (!outcome.approved())
+        {
+          transport_log("Hosted sign-in: " + outcome.error + "\n");
+          if (ctx.ui != nullptr)
+          {
+            ctx.ui->set_hosted_state("Sign-in failed: " + outcome.error, true);
+          }
+          return;
+        }
+
+        if (ctx.ui != nullptr)
+        {
+          ctx.ui->set_hosted_token(outcome.token);
+          ctx.ui->set_hosted_ids(outcome.device_id, cfg.bridge_id);
+          ctx.ui->set_hosted_state(
+              "Signed in as device " + std::to_string(outcome.device_id), false);
+        }
+        transport_log("Hosted: signed in as device " +
+                      std::to_string(outcome.device_id) +
+                      ". Save settings to keep it.\n");
+      }));
+}
+
+static void hosted_sign_out()
+{
+  // Stop an in-flight poll as well as clearing the token: otherwise a sign-in
+  // the operator abandoned keeps polling and can re-sign them in.
+  g_hosted_signin_cancel.store(true);
+  if (ctx.ui != nullptr)
+  {
+    ctx.ui->set_hosted_token(std::string{});
+    ctx.ui->set_hosted_state("Signed out.", false);
+  }
+  transport_log("Hosted: signed out (device token cleared).\n");
+}
+
 static void run()
 {
   // Stop the NDI preview before opening the encode pipeline. Preview and encode
@@ -765,6 +869,7 @@ auto main(int argc, char** argv) -> int
       &(ctx.lib.output_cfg),
       &(ctx.lib.receiver_ctl),
       &(ctx.lib.bridge_ctl),
+      &(ctx.lib.hosted),
       &run,
       &stop,
       &refresh_ndi_devices,
@@ -777,22 +882,28 @@ auto main(int argc, char** argv) -> int
       &save_settings,
       &bridge_find,
       &bridge_claim,
-      &bridge_apply);
+      &bridge_apply,
+      &hosted_sign_in,
+      &hosted_sign_out);
 
   // Restore persisted settings (if any) over the UI defaults set above, then
   // mirror them into the widgets so the operator sees their saved values.
   if (settings::load(ctx.lib)) {
-    // The pair token is persisted in plaintext (the settings file is 0600, the
-    // same rule the receiver token follows). Register it before anything else
-    // can log it so redact() masks it from the first line onward.
+    // Both tokens are persisted in plaintext (the settings file is 0600, the
+    // same rule the receiver token follows). Register them before anything else
+    // can log them so redact() masks them from the first line onward.
     if (!ctx.lib.bridge_ctl.token.empty()) {
       secrets::register_secret(ctx.lib.bridge_ctl.token);
+    }
+    if (!ctx.lib.hosted.device_token.empty()) {
+      secrets::register_secret(ctx.lib.hosted.device_token);
     }
     ctx.ui->apply_settings(ctx.lib.input_cfg,
                            ctx.lib.encode_cfg,
                            ctx.lib.output_cfg,
                            ctx.lib.receiver_ctl,
-                           ctx.lib.bridge_ctl);
+                           ctx.lib.bridge_ctl,
+                           ctx.lib.hosted);
   }
 
   // NOTE: the RIST sender is created at Start, inside run_loop() on its own
