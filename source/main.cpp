@@ -397,6 +397,9 @@ auto bridge_request(const bridge_control_config& cfg, bool allow_claim)
 }
 }  // namespace
 
+// Defined below, after the bridge actions that call it.
+static void report_bridge(const bridge::reconcile_outcome& outcome);
+
 // Browse and report what is there. Reads only: it never claims, so pressing
 // Find before Claim cannot take the bridge from anyone.
 static void bridge_find()
@@ -481,6 +484,7 @@ static void bridge_claim()
         }
         transport_log("Bridge claimed: " + outcome.report.bridge_uid
                       + ". Save settings to keep the token.\n");
+        report_bridge(outcome);
       }));
 }
 
@@ -528,10 +532,43 @@ static void bridge_apply()
           state += " (" + outcome.report.last_error + ")";
         }
         transport_log("Bridge: " + state + "\n");
+        report_bridge(outcome);
         if (ctx.ui != nullptr) {
           ctx.ui->set_bridge_discovered(outcome.report.bridge_uid,
                                         outcome.report.address, state, false);
         }
+      }));
+}
+
+// Report a bridge to the portal. Only meaningful when signed in: with no device
+// token there is no account to report to, and the LAN-side path deliberately works
+// without one (a claim's token comes FROM the bridge). The body is built from the
+// advertisement the outcome came from, because the address and the API version live
+// in the TXT record. The token travels ONLY on the report that follows a claim --
+// that is the one moment the portal can learn it, since the bridge keeps just a hash
+// and a routine health update must not blank it.
+static void report_bridge(const bridge::reconcile_outcome& outcome)
+{
+  const hosted_config cfg = ctx.lib.hosted;
+  if (cfg.device_token.empty() || cfg.backplane_url.empty()) {
+    return;  // self-host-only: nothing to report to
+  }
+  const auto service = outcome.service;
+  const auto report = outcome.report;
+  const std::string new_token = outcome.new_token;
+  track_control_thread(std::thread(
+      [cfg, service, report, new_token]
+      {
+        bridge::bridge_reporter reporter(
+            cfg.backplane_url, cfg.device_token,
+            make_bridge_reporter_transport(cfg.backplane_url, cfg.device_token));
+        const auto result = reporter.report(service, report, new_token);
+        if (!result.ok) {
+          transport_log("Bridge report failed: " + result.error + "\n");
+          return;
+        }
+        transport_log("Bridge reported to the portal (id "
+                      + std::to_string(result.bridge_id) + ").\n");
       }));
 }
 

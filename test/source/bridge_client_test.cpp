@@ -384,6 +384,49 @@ TEST_CASE("the report carries what the bridge says, not what we asked for",
   REQUIRE(outcome.report.api_version.empty());
 }
 
+TEST_CASE("the outcome carries the advertisement a report can be built from",
+          "[bridge_client]")
+{
+  // The bridge report body needs the ADDRESS and the API VERSION, and both live in
+  // the advertisement rather than in the bridge's config. Carrying the advertisement
+  // on the outcome is what lets the caller report without a second browse and
+  // without rebuilding it from the report alone (which would lose both).
+  fake_bridge fake;
+  bridge::bridge_client client(
+      discovery({advertised(k_virgin, {{"api", "2"}, {"managed", "1"}},
+                            "10.0.0.7")}),
+      factory(fake));
+
+  const auto outcome = client.reconcile(
+      bridge::reconcile_request{.bridge_uid = k_virgin, .known_token = "tok-1",
+                                .desired = json{{"listen_url", "rist://c:3"}}},
+      std::chrono::milliseconds(1));
+
+  REQUIRE(outcome.ok);
+  REQUIRE(outcome.service.instance == k_virgin);
+  REQUIRE(outcome.service.address == "10.0.0.7");
+  REQUIRE(outcome.service.txt_value(bridge::k_txt_api) == "2");
+}
+
+TEST_CASE("a refused outcome still carries the advertisement", "[bridge_client]")
+{
+  // The service is recorded before the decision, so the failure path keeps it too --
+  // a report of "this bridge refused" still needs to say WHICH bridge.
+  fake_bridge fake;
+  bridge::bridge_client client(
+      discovery({advertised(k_virgin, {{"fingerprint", "ab12cd34"}}, "10.0.0.9")}),
+      factory(fake));
+
+  const auto outcome = client.reconcile(
+      bridge::reconcile_request{.bridge_uid = k_virgin},
+      std::chrono::milliseconds(1));
+
+  REQUIRE_FALSE(outcome.ok);
+  REQUIRE(outcome.error_code == "already_claimed");
+  REQUIRE(outcome.service.instance == k_virgin);
+  REQUIRE(outcome.service.address == "10.0.0.9");
+}
+
 TEST_CASE("the TXT state is reported before anything is attempted",
           "[bridge_client]")
 {

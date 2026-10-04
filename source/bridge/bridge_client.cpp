@@ -151,6 +151,7 @@ reconcile_outcome bridge_client::reconcile(const reconcile_request& request,
   }
 
   const auto& service = match.service;
+  outcome.service = service;
   outcome.report.bridge_uid = service.instance;
   outcome.report.address = service.address;
   outcome.report.api_version = service.txt_value(k_txt_api);

@@ -77,6 +77,10 @@ struct reconcile_outcome
   bridge_action action = bridge_action::none;
   std::string new_token;  // set only when THIS call claimed the bridge
   bridge_report report;
+  // The advertisement this outcome came from. The report body needs it -- the
+  // address and the API version live in the TXT record -- and rebuilding that from
+  // the report alone would lose them, while re-browsing would be a second browse.
+  mdns::service service;
   std::string error_code;
   std::string error;
 };
