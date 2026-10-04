@@ -329,6 +329,42 @@ TEST_CASE("a virgin bridge is claimed, then configured with the new token",
   REQUIRE(outcome.report.bridge_uid == k_virgin);
 }
 
+TEST_CASE("the claim carries the ENCODER's identity, not the bridge's own name",
+          "[bridge_client]")
+{
+  // The bridge records claimed_by from this field. Passing the bridge's own mDNS
+  // instance made claimed_by a self-referential restatement of the bridge's name --
+  // a field whose whole job is to say WHICH controller claimed it, filled with the
+  // wrong thing, and persisted to the router's config as if it meant something.
+  fake_bridge fake;
+  bridge::bridge_client client(discovery({advertised(k_virgin)}), factory(fake));
+
+  const auto outcome = client.reconcile(
+      bridge::reconcile_request{.bridge_uid = k_virgin, .encoder_uid = "device-7"},
+      std::chrono::milliseconds(1));
+
+  REQUIRE(outcome.ok);
+  REQUIRE(outcome.action == bridge::bridge_action::claim);
+  const auto& claim = fake.bodies.at(0);
+  REQUIRE(claim["params"][2] == "claim");
+  REQUIRE(claim["params"][3]["device_uid"] == "device-7");
+  REQUIRE(claim["params"][3]["device_uid"] != k_virgin);
+}
+
+TEST_CASE("an encoder with no identity sends an empty device_uid, not the bridge's name",
+          "[bridge_client]")
+{
+  fake_bridge fake;
+  bridge::bridge_client client(discovery({advertised(k_virgin)}), factory(fake));
+
+  const auto outcome = client.reconcile(
+      bridge::reconcile_request{.bridge_uid = k_virgin},
+      std::chrono::milliseconds(1));
+
+  REQUIRE(outcome.ok);
+  REQUIRE(fake.bodies.at(0)["params"][3]["device_uid"] == "");
+}
+
 TEST_CASE("an empty desired config is never applied, so outputs are not wiped",
           "[bridge_client]")
 {

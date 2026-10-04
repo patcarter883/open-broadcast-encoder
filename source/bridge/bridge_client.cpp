@@ -178,7 +178,7 @@ reconcile_outcome bridge_client::reconcile(const reconcile_request& request,
   outcome.action = decision.action;
 
   if (decision.action == bridge_action::claim) {
-    const auto claimed = client->claim(service.instance);
+    const auto claimed = client->claim(request.encoder_uid);
     if (!claimed.ok) {
       fail(outcome, claimed.error_code, claimed.error);
       return outcome;

@@ -393,6 +393,13 @@ auto bridge_request(const bridge_control_config& cfg, bool allow_claim)
   request.bridge_uid = cfg.bridge_uid;
   request.known_token = cfg.token;
   request.allow_claim = allow_claim;
+  // Who is claiming, so the bridge can record WHICH controller took it. The claim
+  // is unauthenticated (the token comes FROM the bridge), so this is a self-asserted
+  // hint, never a trust decision -- and the only identity we can honestly offer is
+  // the portal's device id, which exists only once signed in.
+  if (ctx.lib.hosted.device_id != 0) {
+    request.encoder_uid = "device-" + std::to_string(ctx.lib.hosted.device_id);
+  }
   return request;
 }
 }  // namespace

@@ -42,6 +42,10 @@ struct reconcile_request
   std::string known_token;  // the pair token the portal holds, if any
   nlohmann::json desired;   // listen_url + outputs, the portal's desired state
   bool allow_claim = true;  // false where claiming a virgin bridge is not wanted
+  // Who is claiming, for the bridge to record. A claim is UNAUTHENTICATED -- the
+  // token comes FROM the bridge -- so this is a self-asserted hint about which
+  // controller took the bridge, never a basis for trust.
+  std::string encoder_uid;
 };
 
 // Health and state as reported back to the backplane.
