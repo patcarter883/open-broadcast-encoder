@@ -24,17 +24,24 @@ constexpr const char* k_good =
     "\"session_id\":\"s_abc\",\"outputs\":[]}}}";
 
 // A scripted transport that records call order and returns a canned allocate.
+// `bodies`, when given, captures each request body so a test can assert what the
+// client actually SENT (not just what the response handling did).
 auto scripted(std::vector<std::string>& calls,
               int alloc_status,
-              std::string alloc_body) -> backplane_client::transport_fn
+              std::string alloc_body,
+              std::vector<std::string>* bodies = nullptr)
+    -> backplane_client::transport_fn
 {
-  return [&calls, alloc_status, alloc_body = std::move(alloc_body)](
+  return [&calls, alloc_status, alloc_body = std::move(alloc_body), bodies](
              const std::string& method,
              const std::string& path,
              const std::string&,
-             const std::string&) -> std::pair<int, std::string>
+             const std::string& body) -> std::pair<int, std::string>
   {
     calls.push_back(method + " " + path);
+    if (bodies != nullptr) {
+      bodies->push_back(body);
+    }
     if (method == "POST" && path == "/api/v1/sessions") {
       return {alloc_status, alloc_body};
     }
@@ -60,7 +67,7 @@ TEST_CASE("allocate persists credentials before returning", "[backplane][m2.7]")
         persisted_flag = true;
       });
 
-  const alloc_result r = client.allocate("syd1", {1, 2}, true);
+  const alloc_result r = client.allocate("syd1");
 
   REQUIRE(r.ok);
   CHECK(persisted_flag);  // persist ran during allocate(), before it returned
@@ -69,6 +76,30 @@ TEST_CASE("allocate persists credentials before returning", "[backplane][m2.7]")
   CHECK(persisted.psk == "deadbeef");
   CHECK_FALSE(persisted.start_body_json.empty());
   CHECK(r.session.session_id == "s_abc");
+}
+
+// DT-22: the request must NOT carry transport configuration. The fan-out and
+// recording are the OPERATOR's decision on the backplane; sending them from here
+// would make the encoder a second source of truth, and the backplane refuses
+// them outright (422) rather than silently preferring one. Assert what the
+// client actually put on the wire, not merely that it can build such a body.
+TEST_CASE("the allocate request carries no transport config",
+          "[backplane][dt22]")
+{
+  std::vector<std::string> calls;
+  std::vector<std::string> bodies;
+  backplane_client client(
+      "https://api.example.au", "devtok", scripted(calls, 201, k_good, &bodies));
+
+  const alloc_result r = client.allocate("syd1");
+
+  REQUIRE(r.ok);
+  REQUIRE(bodies.size() == 1);
+  CHECK(bodies.at(0).find("schema_version") != std::string::npos);
+  CHECK(bodies.at(0).find("syd1") != std::string::npos);
+  CHECK(bodies.at(0).find("destination_ids") == std::string::npos);
+  CHECK(bodies.at(0).find("record") == std::string::npos);
+  CHECK(bodies.at(0).find("ingest_overrides") == std::string::npos);
 }
 
 TEST_CASE("hosted_session survives a JSON round trip", "[backplane][m2.7]")
@@ -100,8 +131,7 @@ TEST_CASE("abandon-and-reallocate deletes then allocates, in order",
       "https://api.example.au", "devtok", scripted(calls, 201, k_good));
   client.set_persist([&](const hosted_session&) { ++persists; });
 
-  const alloc_result r =
-      client.abandon_and_reallocate("s_lost", "syd1", {1}, false);
+  const alloc_result r = client.abandon_and_reallocate("s_lost", "syd1");
 
   REQUIRE(r.ok);
   REQUIRE(calls.size() == 2);
@@ -123,7 +153,7 @@ TEST_CASE("allocation failure surfaces error and does not persist",
                                    "limit\",\"message\":\"limit\"}"));
   client.set_persist([&](const hosted_session&) { persisted = true; });
 
-  const alloc_result r = client.allocate("syd1", {1}, false);
+  const alloc_result r = client.allocate("syd1");
 
   CHECK_FALSE(r.ok);
   CHECK_FALSE(persisted);
@@ -142,5 +172,5 @@ TEST_CASE("no response from backplane is a clean failure", "[backplane][m2.7]")
 
   std::string err;
   CHECK_FALSE(client.deallocate("s_x", err));
-  CHECK_FALSE(client.allocate("syd1", {}, false).ok);
+  CHECK_FALSE(client.allocate("syd1").ok);
 }

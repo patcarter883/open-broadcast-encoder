@@ -76,23 +76,23 @@ backplane_client::backplane_client(std::string base_url,
 {
 }
 
-alloc_result backplane_client::allocate(
-    const std::string& pop,
-    const std::vector<long>& destination_ids,
-    bool record)
+alloc_result backplane_client::allocate(const std::string& pop)
 {
   alloc_result r;
   if (!m_transport) {
     r.error = "no transport configured";
     return r;
   }
+  // DT-22: schema_version (and the optional POP) is ALL the request carries.
+  // The fan-out and recording are the operator's transport row on the backplane;
+  // sending them here would make the encoder a second source of truth for the
+  // same decision, and the backplane now REFUSES them outright (422) rather than
+  // silently preferring one.
   json req;
   req["schema_version"] = 1;
   if (!pop.empty()) {
     req["pop"] = pop;
   }
-  req["destination_ids"] = destination_ids;
-  req["record"] = record;
 
   const auto [status, body] =
       m_transport("POST", "/api/v1/sessions", m_device_token, req.dump());
@@ -147,13 +147,11 @@ bool backplane_client::deallocate(const std::string& session_id,
 
 alloc_result backplane_client::abandon_and_reallocate(
     const std::string& lost_session_id,
-    const std::string& pop,
-    const std::vector<long>& destination_ids,
-    bool record)
+    const std::string& pop)
 {
   std::string err;
   // Best-effort release of the orphan; a failure here (e.g. it was already
   // reaped) must not block getting a working session.
   deallocate(lost_session_id, err);
-  return allocate(pop, destination_ids, record);
+  return allocate(pop);
 }

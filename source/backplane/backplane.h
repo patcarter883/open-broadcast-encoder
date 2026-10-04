@@ -65,11 +65,12 @@ public:
 
   void set_persist(persist_fn persist) { m_persist = std::move(persist); }
 
-  // Allocate a session. On success, persist() is invoked with the credentials
-  // BEFORE returning them to the caller (persist-before-use).
-  alloc_result allocate(const std::string& pop,
-                        const std::vector<long>& destination_ids,
-                        bool record);
+  // Allocate a session (DT-22). The request carries ONLY the POP: the fan-out,
+  // recording and ingest overrides come from the transport row the operator
+  // configured in the portal, and the caller cannot override them. An encoder
+  // with no transport row is refused with 409 `no_transport` — so this fails
+  // loudly rather than opening a session with no outputs.
+  alloc_result allocate(const std::string& pop);
 
   // Deallocate (the kill switch / abandon step). The device token authorises
   // it. Returns true on success (or if already gone).
@@ -78,9 +79,7 @@ public:
   // Abandon-and-reallocate (M2.7): DELETE the lost/orphaned session, then
   // allocate a fresh one with the same request. One user action.
   alloc_result abandon_and_reallocate(const std::string& lost_session_id,
-                                      const std::string& pop,
-                                      const std::vector<long>& destination_ids,
-                                      bool record);
+                                      const std::string& pop);
 
 private:
   std::string m_base;          // e.g. https://api.backplane.example.au
