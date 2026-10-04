@@ -18,6 +18,8 @@ target_sources(bridge_lib ${warning_guard}
     discovery.cpp
     bridge_client.h
     bridge_client.cpp
+    reporting.h
+    reporting.cpp
 )
 
 target_include_directories(bridge_lib PUBLIC
