@@ -69,6 +69,18 @@ target_compile_features(discovery_test PRIVATE cxx_std_20)
 
 catch_discover_tests(discovery_test)
 
+add_executable(bridge_client_test source/bridge_client_test.cpp)
+target_link_libraries(
+    bridge_client_test PRIVATE
+    bridge_lib
+    open-broadcast-encoder_lib
+    nlohmann_json::nlohmann_json
+    Catch2::Catch2WithMain
+)
+target_compile_features(bridge_client_test PRIVATE cxx_std_20)
+
+catch_discover_tests(bridge_client_test)
+
 # raw_format.cpp carries no GStreamer or libobs types, so this test compiles the
 # translation unit directly rather than linking encode_lib: the mapping is a
 # contract with an external format (libobs' enum values, arriving on the raw

@@ -16,6 +16,8 @@ target_sources(bridge_lib ${warning_guard}
     mdns.cpp
     discovery.h
     discovery.cpp
+    bridge_client.h
+    bridge_client.cpp
 )
 
 target_include_directories(bridge_lib PUBLIC
