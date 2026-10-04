@@ -11,4 +11,5 @@ CMakeUserPresets.json
 compile_commands.json
 build-ninja/
 build_test/
+build-dev/
 build-external/
