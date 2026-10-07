@@ -115,6 +115,67 @@ bool control_client::start(const receiver_control_config& cfg,
   return post_json(host, port, token, "/start", body.dump(), err);
 }
 
+bool control_client::start_hosted(const std::string& control_url,
+                                  const std::string& control_token,
+                                  const std::string& start_body_json,
+                                  codec source_codec,
+                                  std::string& err)
+{
+  // Split the allocation's control_url into the origin httplib wants and the
+  // path /start hangs off. The URL carries the per-session path (e.g.
+  // https://node.example.au/s/s_9f2c), and httplib::Client(origin) discards any
+  // path it was given, so the two halves must be separated here.
+  const auto scheme = control_url.find("://");
+  const auto path_at =
+      control_url.find('/', scheme == std::string::npos ? 0 : scheme + 3);
+  const std::string origin = path_at == std::string::npos
+      ? control_url
+      : control_url.substr(0, path_at);
+  const std::string path =
+      (path_at == std::string::npos ? std::string {}
+                                    : control_url.substr(path_at))
+      + "/start";
+  if (origin.empty()) {
+    err = "allocation returned an empty control_url";
+    return false;
+  }
+
+  json body = json::parse(start_body_json, nullptr, false);
+  if (body.is_discarded() || !body.is_object()) {
+    err = "allocation returned an unparseable start_body";
+    return false;
+  }
+  // The portal's document, with only the two fields it cannot know corrected.
+  // The outputs -- ids, urls, keys and any opt-in transcode target -- are the
+  // portal's decision and go through untouched (DT-22).
+  body["schema_version"] = 3;
+  body["source"]["codec"] = codec_str(source_codec);
+
+  secrets::register_secret(control_token);  // M1.9
+  httplib::Client cli(origin);
+  cli.set_connection_timeout(3, 0);
+  cli.set_read_timeout(8, 0);
+  cli.set_write_timeout(5, 0);
+  httplib::Headers headers;
+  if (!control_token.empty()) {
+    headers.emplace("Authorization", "Bearer " + control_token);
+  }
+
+  httplib::Result res =
+      cli.Post(path, headers, body.dump(), "application/json");
+  if (!res) {
+    err = "no response from the receiver's control plane at " + origin + path
+        + " (" + httplib::to_string(res.error()) + ")";
+    return false;
+  }
+  if (res->status < 200 || res->status >= 300) {
+    err = "receiver refused the start body: HTTP " + std::to_string(res->status)
+        + " " + res->body;
+    return false;
+  }
+  return true;
+}
+
 bool control_client::stop(const std::string& session_id, std::string& err)
 {
   json body;

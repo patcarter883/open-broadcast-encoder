@@ -23,6 +23,23 @@ public:
              codec source_codec,
              std::string& err);
 
+  // Apply an allocation: POST a body the PORTAL built to the receiver's control
+  // plane. BACKPLANE.md:264 is explicit that the encoder sends this "body
+  // verbatim to <control_url>/start", so the URL is absolute and may be https
+  // (the node proxies it). Only the two fields the portal cannot know are
+  // overridden -- schema_version, which the receiver refuses when stale, and
+  // source.codec, the codec this encoder will actually send. Every output
+  // therefore passes through untouched, including its opt-in transcode target,
+  // and the portal stays the single configuration location (DT-22).
+  //
+  // Static because the hosted path has no host/port pair to construct with --
+  // only the URL the allocation returned.
+  static bool start_hosted(const std::string& control_url,
+                           const std::string& control_token,
+                           const std::string& start_body_json,
+                           codec source_codec,
+                           std::string& err);
+
   // POST /stop for the given session.
   bool stop(const std::string& session_id, std::string& err);
 

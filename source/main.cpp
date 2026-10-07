@@ -695,10 +695,40 @@ static void hosted_sign_out()
 // thread and reports through the thread-safe setters. It never writes a config
 // directly and never renders a token.
 // ---------------------------------------------------------------------------
+// The allocation decided the chain; the encoder now has to push that decision
+// to the receiver. Without this a hosted session allocates, bills, and fans out
+// to NOTHING -- the node starts a receiver with no outputs, because the outputs
+// live in the start body the allocation returned (BACKPLANE.md:264). Runs on
+// the allocation worker, never the FLTK thread.
+static void apply_allocation_to_receiver(const hosted_session& session,
+                                         codec source_codec)
+{
+  if (session.start_body_json.empty()) {
+    transport_log("Allocated " + session.session_id
+                  + " but the allocation carried no start body; the receiver is"
+                    " left unconfigured.\n");
+    return;
+  }
+  std::string err;
+  if (control_client::start_hosted(session.control_url,
+                                   session.control_token,
+                                   session.start_body_json,
+                                   source_codec,
+                                   err))
+  {
+    transport_log("Receiver configured for session " + session.session_id
+                  + ".\n");
+  } else {
+    transport_log("Receiver start failed: " + err + "\n");
+  }
+}
+
 static void hosted_allocate()
 {
   const hosted_config hosted = ctx.lib.hosted;
   const bridge_control_config bridge_cfg = ctx.lib.bridge_ctl;
+  // Copied on the UI thread: the worker below must never read ctx itself.
+  const codec source_codec = ctx.lib.encode_cfg.selected_codec;
 
   if (hosted.backplane_url.empty() || hosted.device_token.empty()) {
     if (ctx.ui != nullptr) {
@@ -712,7 +742,7 @@ static void hosted_allocate()
   }
 
   track_control_thread(std::thread(
-      [hosted, bridge_cfg]
+      [hosted, bridge_cfg, source_codec]
       {
         backplane_client backplane(
             hosted.backplane_url,
@@ -811,6 +841,9 @@ static void hosted_allocate()
           // when one is in the path, the node otherwise.
           ctx.ui->set_encoder_target(outcome.encoder_target);
         }
+        // The session exists and is billable, so the receiver must be told what
+        // to fan out to even when there is no UI to report to.
+        apply_allocation_to_receiver(outcome.session, source_codec);
         if (!outcome.reported) {
           transport_log("Bridge report failed: " + outcome.error + "\n");
         }
