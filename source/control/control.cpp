@@ -115,6 +115,25 @@ bool control_client::start(const receiver_control_config& cfg,
   return post_json(host, port, token, "/start", body.dump(), err);
 }
 
+bool control_client::prepare_hosted_body(const std::string& start_body_json,
+                                         codec source_codec,
+                                         std::string& out_body,
+                                         std::string& err)
+{
+  json body = json::parse(start_body_json, nullptr, false);
+  if (body.is_discarded() || !body.is_object()) {
+    err = "allocation returned an unparseable start_body";
+    return false;
+  }
+  // The portal's document, with only the two fields it cannot know corrected.
+  // The outputs -- ids, urls, keys and any opt-in transcode target -- are the
+  // portal's decision and go through untouched (DT-22).
+  body["schema_version"] = 3;
+  body["source"]["codec"] = codec_str(source_codec);
+  out_body = body.dump();
+  return true;
+}
+
 bool control_client::start_hosted(const std::string& control_url,
                                   const std::string& control_token,
                                   const std::string& start_body_json,
@@ -140,16 +159,10 @@ bool control_client::start_hosted(const std::string& control_url,
     return false;
   }
 
-  json body = json::parse(start_body_json, nullptr, false);
-  if (body.is_discarded() || !body.is_object()) {
-    err = "allocation returned an unparseable start_body";
+  std::string body;
+  if (!prepare_hosted_body(start_body_json, source_codec, body, err)) {
     return false;
   }
-  // The portal's document, with only the two fields it cannot know corrected.
-  // The outputs -- ids, urls, keys and any opt-in transcode target -- are the
-  // portal's decision and go through untouched (DT-22).
-  body["schema_version"] = 3;
-  body["source"]["codec"] = codec_str(source_codec);
 
   secrets::register_secret(control_token);  // M1.9
   httplib::Client cli(origin);
@@ -161,8 +174,7 @@ bool control_client::start_hosted(const std::string& control_url,
     headers.emplace("Authorization", "Bearer " + control_token);
   }
 
-  httplib::Result res =
-      cli.Post(path, headers, body.dump(), "application/json");
+  httplib::Result res = cli.Post(path, headers, body, "application/json");
   if (!res) {
     err = "no response from the receiver's control plane at " + origin + path
         + " (" + httplib::to_string(res.error()) + ")";

@@ -134,6 +134,21 @@ target_compile_features(actuate_test PRIVATE cxx_std_20)
 
 catch_discover_tests(actuate_test)
 
+# The body the encoder sends to a hosted receiver's control plane. control_client
+# talks httplib directly, so prepare_hosted_body() is split out as a pure
+# string-in/string-out step precisely so this contract can be pinned from a
+# fixture instead of an HTTP server.
+add_executable(control_client_test source/control_client_test.cpp)
+target_link_libraries(
+    control_client_test PRIVATE
+    control_lib
+    nlohmann_json::nlohmann_json
+    Catch2::Catch2WithMain
+)
+target_compile_features(control_client_test PRIVATE cxx_std_20)
+
+catch_discover_tests(control_client_test)
+
 # ---- End-of-file commands ----
 
 add_folders(Test)
