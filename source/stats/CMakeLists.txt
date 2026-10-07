@@ -20,6 +20,8 @@ target_sources(stats_lib ${warning_guard}
   PUBLIC
     stats.h
     stats.cpp
+    bitrate_scale.h
+    bitrate_scale.cpp
 )
 
 target_include_directories(

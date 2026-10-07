@@ -8,6 +8,8 @@
 
 #include "stats.h"
 
+#include "stats/bitrate_scale.h"
+
 #include "ui/ui.h"
 
 auto stats::scale_encoder_bitrate_locked(double quality,
@@ -15,58 +17,10 @@ auto stats::scale_encoder_bitrate_locked(double quality,
                                          const encode_config& encode_config,
                                          int* new_bitrate_out) -> bool
 {
-  if (stats == nullptr) {
-    return false;
-  }
-  if (encode_config.bitrate.load(std::memory_order_relaxed) <= 0) {
-    return false;
-  }
-  if (std::isnan(quality) || std::isinf(quality)) {
-    return false;
-  }
-
-  int bitrateDelta = 0;
-  double qualDiffPct = 0.0;
-  int adjBitrate = 0;
-  const double maxBitrate = static_cast<double>(
-      encode_config.bitrate.load(std::memory_order_relaxed));
-  bool returnVal = false;
-
-  if (stats->previous_quality > 0.0
-      && static_cast<int>(quality) != static_cast<int>(stats->previous_quality))
-  {
-    qualDiffPct = quality / stats->previous_quality;
-    adjBitrate = static_cast<int>(stats->current_bitrate * qualDiffPct);
-    bitrateDelta = adjBitrate - stats->current_bitrate;
-  }
-
-  if (static_cast<int>(stats->previous_quality) == 100
-      && static_cast<int>(quality) == 100
-      && static_cast<double>(stats->current_bitrate) < maxBitrate
-      && maxBitrate > 0.0)
-  {
-    qualDiffPct = static_cast<double>(stats->current_bitrate) / maxBitrate;
-    adjBitrate = static_cast<int>(stats->current_bitrate * (1.0 + qualDiffPct));
-    bitrateDelta = adjBitrate - stats->current_bitrate;
-  }
-
-  if (bitrateDelta != 0
-      || maxBitrate < static_cast<double>(stats->current_bitrate))
-  {
-    int candidate = stats->current_bitrate + bitrateDelta / 2;
-    int newBitrate =
-        std::max(std::min(candidate, static_cast<int>(maxBitrate)), 1000);
-    stats->current_bitrate = newBitrate;
-    returnVal = true;
-  }
-
-  stats->previous_quality = quality;
-
-  if (new_bitrate_out != nullptr) {
-    *new_bitrate_out = returnVal ? stats->current_bitrate : 0;
-  }
-
-  return returnVal;
+  // The algorithm lives in bitrate_scale.cpp, NOT here, so the bonding rig's
+  // ABR test and production cannot drift apart. One definition.
+  return bitrate_scale::scale_locked(
+      quality, stats, encode_config, new_bitrate_out);
 }
 
 auto stats::scale_encoder_bitrate(double quality,

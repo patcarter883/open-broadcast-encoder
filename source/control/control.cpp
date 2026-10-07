@@ -93,7 +93,7 @@ bool control_client::start(const receiver_control_config& cfg,
   // invalid_schema (there is no compatibility shim), so this version MUST track
   // the receiver's contract; see docs/CONTRACT.md.
   json body;
-  body["schema_version"] = 3;
+  body["schema_version"] = k_receiver_schema_version;
   body["session_id"] = cfg.session_id;
   body["source"]["codec"] = codec_str(source_codec);
 
@@ -128,7 +128,7 @@ bool control_client::prepare_hosted_body(const std::string& start_body_json,
   // The portal's document, with only the two fields it cannot know corrected.
   // The outputs -- ids, urls, keys and any opt-in transcode target -- are the
   // portal's decision and go through untouched (DT-22).
-  body["schema_version"] = 3;
+  body["schema_version"] = k_receiver_schema_version;
   body["source"]["codec"] = codec_str(source_codec);
   out_body = body.dump();
   return true;
@@ -194,7 +194,7 @@ bool control_client::stop(const std::string& session_id, std::string& err)
   // /stop does not enforce schema_version (CONTRACT §5, deliberately lenient so
   // a stuck encoder can always halt the stream), but we send the current
   // version anyway so both halves of the control plane agree.
-  body["schema_version"] = 3;
+  body["schema_version"] = k_receiver_schema_version;
   body["session_id"] = session_id;
   return post_json(host, port, token, "/stop", body.dump(), err);
 }

@@ -79,6 +79,14 @@ struct cumulative_stats
   double previous_quality = 0.0;
   int wan_quality = 0;
   uint32_t wan_rtt = 0;
+  // ABR decision window (bitrate_scale.cpp). Kept with the rest of the scaling
+  // state so both entry points share one copy: the local RIST stats path and
+  // the remote_oob path are mutually exclusive, but only one of them may be
+  // able to move the bitrate at a time.
+  int64_t last_decision_ms = 0;
+  int64_t last_decrease_ms = 0;
+  double window_quality_sum = 0.0;
+  int window_quality_count = 0;
 };
 
 struct input_config

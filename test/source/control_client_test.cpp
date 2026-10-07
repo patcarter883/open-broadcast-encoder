@@ -41,8 +41,11 @@ TEST_CASE("a hosted start body corrects only what the portal cannot know",
   const json body = json::parse(out);
 
   // The portal may lag the receiver's contract; the encoder must never ship a
-  // v2.
-  REQUIRE(body["schema_version"] == 3);
+  // stale version. The receiver accepts only an exact match, so this pins the
+  // version that actually goes on the wire -- currently 4 (av1 target + output
+  // scale). If the receiver's contract moves, this must move with
+  // control_client::k_receiver_schema_version or every /start is refused.
+  REQUIRE(body["schema_version"] == 4);
   // The portal can only guess the ingest codec. The encoder knows.
   REQUIRE(body["source"]["codec"] == "h265");
   REQUIRE(body["session_id"] == "s_9f2c");
