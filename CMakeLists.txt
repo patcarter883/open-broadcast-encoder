@@ -23,6 +23,19 @@ find_package(NDI REQUIRED)
 
 find_package(nlohmann_json 3.2 REQUIRED)
 
+# cpp-httplib is vendored (external/httplib.h) and, without this define, it REFUSES
+# an https URL outright -- the scheme check throws
+# std::invalid_argument("'https' scheme is not supported."), and the SSL client is
+# never created. Every production endpoint this app talks to is https: the
+# backplane API and each relay node's control_url. TLS is therefore not optional.
+# The macro changes httplib's client layout, so it must be defined for EVERY
+# translation unit that includes httplib.h -- hence an INTERFACE target rather than
+# a per-library definition that could drift.
+find_package(OpenSSL REQUIRED)
+add_library(httplib_ssl INTERFACE)
+target_compile_definitions(httplib_ssl INTERFACE CPPHTTPLIB_OPENSSL_SUPPORT)
+target_link_libraries(httplib_ssl INTERFACE OpenSSL::SSL OpenSSL::Crypto)
+
 find_package(PkgConfig REQUIRED)
     pkg_search_module(gstreamer REQUIRED IMPORTED_TARGET gstreamer-1.0>=1.28)
     pkg_search_module(gstreamer-sdp REQUIRED IMPORTED_TARGET gstreamer-sdp-1.0>=1.28)

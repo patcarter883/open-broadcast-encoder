@@ -15,7 +15,7 @@
 
 #include "backplane/device_auth.h"
 
-#include "httplib.h"
+#include "lib/httplib_tls.h"
 
 backplane::device_auth::transport_fn make_device_auth_transport(
     const std::string& base_url)

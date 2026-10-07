@@ -9,6 +9,7 @@ project(open-broadcast-encoderTests LANGUAGES CXX)
 find_package(Catch2 REQUIRED)
 include(Catch)
 
+
 # ---- Tests ----
 
 add_executable(open-broadcast-encoder_test source/open-broadcast-encoder_test.cpp)

@@ -10,7 +10,7 @@
 
 #include "bridge/reporting.h"
 
-#include "httplib.h"
+#include "lib/httplib_tls.h"
 #include "lib/lib.h"
 
 // Build an httplib-backed transport for the numbered /v1 endpoints the reporter

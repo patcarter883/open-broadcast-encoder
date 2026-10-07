@@ -29,3 +29,8 @@ target_link_libraries(backplane_lib PRIVATE
     nlohmann_json::nlohmann_json
     Threads::Threads
 )
+# PUBLIC, not PRIVATE: these libraries expose their sources with target_sources(),
+# so OTHER targets -- settings_lib, every test -- recompile the translation units
+# that include httplib. They must inherit both the TLS define and the OpenSSL link,
+# or they trip lib/httplib_tls.h's #error (and would otherwise be ODR mismatches).
+target_link_libraries(backplane_lib PUBLIC httplib_ssl)
