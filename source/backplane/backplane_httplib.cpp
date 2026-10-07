@@ -39,6 +39,10 @@ backplane_client::transport_fn make_httplib_transport(
     httplib::Result res;
     if (method == "DELETE") {
       res = cli.Delete(path, headers);
+    } else if (method == "GET") {
+      // Without this branch a GET was sent as a POST, which the backplane
+      // answers with 405 -- a confusing failure for what looks like a read.
+      res = cli.Get(path, headers);
     } else {
       res = cli.Post(path, headers, body, "application/json");
     }

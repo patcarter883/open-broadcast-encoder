@@ -100,6 +100,74 @@ backplane_client::backplane_client(std::string base_url,
 {
 }
 
+std::string format_destination_list(
+    const std::vector<backplane_client::destination_view>& destinations)
+{
+  if (destinations.empty()) {
+    return "Hosted: this account has no saved destinations yet -- add one in "
+           "the portal before allocating.\n";
+  }
+  std::string out =
+      "Hosted destinations on this account (the portal decides the fan-out and "
+      "its transcode):\n";
+  for (const auto& d : destinations) {
+    out += "  " + (d.label.empty() ? std::string {"(unlabelled)"} : d.label);
+    out += " (" + (d.type.empty() ? std::string {"?"} : d.type) + ") -> ";
+    if (d.transcode.empty()) {
+      out += "copy";
+    } else if (d.transcode == "h264") {
+      out += "transcode H.264";
+    } else if (d.transcode == "h265") {
+      out += "transcode H.265";
+    } else {
+      // Anything the portal one day allows that this build does not word for:
+      // still show it, because hiding a real setting is worse than an odd
+      // label.
+      out += "transcode " + d.transcode;
+    }
+    out += "\n";
+  }
+  return out;
+}
+
+backplane_client::destinations_result backplane_client::list_destinations()
+{
+  destinations_result r;
+  if (!m_transport) {
+    r.error = "no transport configured";
+    return r;
+  }
+  // The real path is /api/v1/destinations. BACKPLANE.md writes every endpoint
+  // as /v1/..., which 404s -- `artisan route:list` is the ground truth.
+  const auto [status, body] =
+      m_transport("GET", "/api/v1/destinations", m_device_token, "");
+  if (status == 0) {
+    r.error = "no response from backplane";
+    return r;
+  }
+  const json resp = json::parse(body, nullptr, false);
+  if (status / 100 != 2 || resp.is_discarded() || !resp.is_object()) {
+    r.error = resp.is_object()
+        ? resp.value("message", "could not read destinations")
+        : "could not read destinations";
+    return r;
+  }
+  for (const json& d : resp.value("destinations", json::array())) {
+    if (!d.is_object()) {
+      continue;
+    }
+    destination_view v;
+    v.label = d.value("label", std::string {});
+    v.type = d.value("type", std::string {});
+    if (auto t = d.find("transcode"); t != d.end() && t->is_string()) {
+      v.transcode = t->get<std::string>();
+    }
+    r.destinations.push_back(std::move(v));
+  }
+  r.ok = true;
+  return r;
+}
+
 alloc_result backplane_client::allocate(const std::string& pop)
 {
   alloc_result r;

@@ -664,6 +664,21 @@ static void hosted_sign_in()
         transport_log("Hosted: signed in as device "
                       + std::to_string(outcome.device_id)
                       + ". Save settings to keep it.\n");
+
+        // MT5.3: show what the host will DO before the operator allocates --
+        // "YT (rtmp) -> transcode H.264". Read-only by construction: a
+        // destination's transcode target is the portal's decision (DT-22), and
+        // this is the one place the operator sees it without opening the
+        // portal.
+        backplane_client destinations_client(
+            cfg.backplane_url,
+            outcome.token,
+            make_httplib_transport(cfg.backplane_url, outcome.token));
+        const auto destinations = destinations_client.list_destinations();
+        transport_log(
+            destinations.ok ? format_destination_list(destinations.destinations)
+                            : "Hosted: could not read the destination list ("
+                    + destinations.error + "). Allocating still works.\n");
       }));
 }
 

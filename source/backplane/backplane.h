@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 // hosted_session — the credentials a hosted allocation hands back (BACKPLANE
 // §4.2). These are the SAME three values a self-hoster types by hand (rist
@@ -94,6 +95,29 @@ public:
   alloc_result abandon_and_reallocate(const std::string& lost_session_id,
                                       const std::string& pop);
 
+  // One saved destination as the portal sees it (§4). `transcode` is the portal's
+  // opt-in target for that output -- empty means copy. DISPLAY ONLY: the decision
+  // is the portal's (DT-22), and showing it here must not become a second place it
+  // can be configured.
+  struct destination_view
+  {
+    std::string label;
+    std::string type;
+    std::string transcode;
+  };
+
+  struct destinations_result
+  {
+    bool ok = false;
+    std::vector<destination_view> destinations;
+    std::string error;
+  };
+
+  // Read the account's saved destinations so the operator can see what the host
+  // will do ("YT (rtmp) -> transcode H.265") before starting. Visibility only, so
+  // a failure is non-fatal: the allocation remains the authority.
+  destinations_result list_destinations();
+
 private:
   std::string m_base;          // e.g. https://api.backplane.example.au
   std::string m_device_token;
@@ -104,6 +128,13 @@ private:
 // Build an httplib-backed transport for the backplane endpoints. Defined in
 // backplane_httplib.cpp so this header stays free of httplib and links into the
 // tests. Registers the device token as a secret, so it cannot reach a log pane.
+// The read-only "what the host will do" text, one line per destination, for the
+// log pane. Pure, so it is testable without a UI: display wording belongs in
+// exactly one place, and an empty list has to read as empty rather than as a
+// blank line the operator cannot interpret.
+std::string format_destination_list(
+    const std::vector<backplane_client::destination_view>& destinations);
+
 backplane_client::transport_fn make_httplib_transport(
     const std::string& base_url, const std::string& device_token);
 

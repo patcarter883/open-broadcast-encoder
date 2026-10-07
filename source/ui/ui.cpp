@@ -391,7 +391,11 @@ user_interface::user_interface()
             Fl_Flex* o = new Fl_Flex(25, 215, 433, 165, "Encode");
             o->box(FL_BORDER_BOX);
             {
-              choice_codec = new Fl_Choice(31, 161, 421, 25, "Codec");
+              // "Send as": this is the codec the ENCODER puts on the wire. What
+              // the host then does with it per destination is the portal's
+              // transcode setting, shown in the log at sign-in.
+              choice_codec =
+                  new Fl_Choice(31, 161, 421, 25, "Send as (over RIST)");
               choice_codec->down_box(FL_BORDER_BOX);
               choice_codec->align(Fl_Align(FL_ALIGN_TOP_LEFT));
               choice_codec->menu(menu_choice_codec);

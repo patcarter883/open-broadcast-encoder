@@ -245,3 +245,90 @@ TEST_CASE("no response from backplane is a clean failure", "[backplane][m2.7]")
   CHECK_FALSE(client.deallocate("s_x", err));
   CHECK_FALSE(client.allocate("syd1").ok);
 }
+
+// MT5.3: the operator sees the portal's per-destination transcode target before
+// streaming. Read-only -- the encoder must never become a second place where
+// the fan-out or its transcode is configured (DT-22), only somewhere it is
+// visible.
+TEST_CASE("the destination list shows each destination's transcode target",
+          "[backplane][mt5.3]")
+{
+  std::vector<std::string> calls;
+  const std::string body =
+      R"({"ok":true,"schema_version":3,"destinations":[)"
+      R"({"id":1,"label":"YT","type":"rtmp","transcode":"h264","url":"rtmp://a"},)"
+      R"({"id":2,"label":"Twitch","type":"srt","transcode":null,"url":"srt://b"},)"
+      R"({"id":3,"label":"Lan","type":"rist"}]})";
+
+  backplane_client c(
+      "https://api.example.au",
+      "dev-tok",
+      [&calls, body](const std::string& method,
+                     const std::string& path,
+                     const std::string&,
+                     const std::string&) -> std::pair<int, std::string>
+      {
+        calls.push_back(method + " " + path);
+        return {200, body};
+      });
+
+  const auto r = c.list_destinations();
+  REQUIRE(r.ok);
+  REQUIRE(r.destinations.size() == 3);
+  CHECK(r.destinations[0].label == "YT");
+  CHECK(r.destinations[0].type == "rtmp");
+  CHECK(r.destinations[0].transcode == "h264");
+  // an explicit null and an absent key both mean copy, not "h264"
+  CHECK(r.destinations[1].transcode.empty());
+  CHECK(r.destinations[2].transcode.empty());
+  // a read must be a GET: sent as a POST the backplane answers 405
+  CHECK(calls == std::vector<std::string> {"GET /api/v1/destinations"});
+}
+
+TEST_CASE("a destination list failure is non-fatal", "[backplane][mt5.3]")
+{
+  backplane_client c("https://api.example.au",
+                     "dev-tok",
+                     [](const std::string&,
+                        const std::string&,
+                        const std::string&,
+                        const std::string&) -> std::pair<int, std::string> {
+                       return {500, R"({"message":"server exploded"})"};
+                     });
+
+  const auto r = c.list_destinations();
+  CHECK_FALSE(r.ok);
+  CHECK(r.destinations.empty());
+  CHECK(r.error == "server exploded");
+}
+
+// MT5.3: the exact wording the operator reads before allocating. Pinned because
+// a silent wording change here is invisible until someone is mid-incident.
+TEST_CASE("the destination list reads as what the host will do",
+          "[backplane][mt5.3]")
+{
+  using dv = backplane_client::destination_view;
+  const std::string text =
+      format_destination_list({dv {"YT", "rtmp", "h264"},
+                               dv {"Twitch", "srt", std::string {}},
+                               dv {"Feed", "rist", "h265"}});
+
+  CHECK(text.find("YT (rtmp) -> transcode H.264") != std::string::npos);
+  CHECK(text.find("Twitch (srt) -> copy") != std::string::npos);
+  CHECK(text.find("Feed (rist) -> transcode H.265") != std::string::npos);
+}
+
+TEST_CASE("an empty destination list says so", "[backplane][mt5.3]")
+{
+  const std::string text = format_destination_list({});
+  CHECK(text.find("no saved destinations") != std::string::npos);
+}
+
+TEST_CASE("a transcode target this build does not word for is still shown",
+          "[backplane][mt5.3]")
+{
+  using dv = backplane_client::destination_view;
+  const std::string text =
+      format_destination_list({dv {"Future", "rtmp", "av1"}});
+  CHECK(text.find("transcode av1") != std::string::npos);
+}

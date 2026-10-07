@@ -99,7 +99,7 @@ class user_interface {open
               xywh {25 215 433 165} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {4  0 25  1 25  2 25  3 25 }
             } {
               Fl_Choice choice_codec {
-                label Codec open
+                label {Send as (over RIST)} open
                 xywh {31 161 421 25} down_box BORDER_BOX align 5
               } {
                 MenuItem {} {
