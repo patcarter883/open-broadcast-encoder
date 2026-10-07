@@ -286,16 +286,6 @@ bool save(const library& lib)
       {"control_host", rc.control_host},
       {"control_port", rc.control_port},
       {"token", rc.token},
-      {"reencode", rc.reencode},
-      {"video",
-       {
-           {"encoder", encoder_str(rc.video.enc)},
-           {"codec", codec_str(rc.video.out_codec)},
-           {"bitrate", rc.video.bitrate},
-           {"upscale", rc.video.upscale},
-           {"width", rc.video.width},
-           {"height", rc.video.height},
-       }},
       {"destinations", dests},
   };
 
@@ -410,17 +400,9 @@ bool load(library& lib)
     get_to(j, "control_host", rc.control_host);
     get_to(j, "control_port", rc.control_port);
     get_to(j, "token", rc.token);
-    get_to(j, "reencode", rc.reencode);
-
-    if (auto v = j.find("video"); v != j.end() && v->is_object()) {
-      const json& vj = *v;
-      get_encoder(vj, "encoder", rc.video.enc);
-      get_codec(vj, "codec", rc.video.out_codec);
-      get_to(vj, "bitrate", rc.video.bitrate);
-      get_to(vj, "upscale", rc.video.upscale);
-      get_to(vj, "width", rc.video.width);
-      get_to(vj, "height", rc.video.height);
-    }
+    // A settings file written before the local reencode tier was removed still
+    // carries "reencode"/"video" keys. They are simply ignored, so an upgrade
+    // does not need to rewrite the file.
 
     if (auto d = j.find("destinations"); d != j.end() && d->is_array()) {
       std::vector<receiver_destination> dests;

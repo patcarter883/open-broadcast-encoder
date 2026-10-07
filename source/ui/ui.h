@@ -70,11 +70,6 @@ public:
   Fl_Check_Button* check_receiver_enabled;
   Fl_Input* input_control_address;
   Fl_Input* input_control_token;
-  Fl_Check_Button* check_reencode;
-  Fl_Choice* choice_reencode_codec;
-  Fl_Choice* choice_reencode_encoder;
-  Fl_Input* input_reencode_bitrate;
-  Fl_Check_Button* check_upscale;
   Fl_Multiline_Input* input_destinations;
   // Bridge (LAN) control section (DT-19, DT-21). The encoder finds the bridge,
   // claims it once, then applies the portal's desired state. The pair token is
@@ -210,11 +205,6 @@ private:
   void receiver_enabled_cb(receiver_control_config* receiver_config);
   void receiver_address_cb(receiver_control_config* receiver_config);
   void receiver_token_cb(receiver_control_config* receiver_config);
-  void receiver_reencode_cb(receiver_control_config* receiver_config);
-  void receiver_codec_cb(receiver_control_config* receiver_config);
-  void receiver_encoder_cb(receiver_control_config* receiver_config);
-  void receiver_bitrate_cb(receiver_control_config* receiver_config);
-  void receiver_upscale_cb(receiver_control_config* receiver_config);
   void receiver_destinations_cb(receiver_control_config* receiver_config);
   // Bridge (LAN) control callbacks
   void bridge_address_cb(bridge_control_config* bridge_config);

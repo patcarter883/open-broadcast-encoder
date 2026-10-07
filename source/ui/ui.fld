@@ -360,26 +360,6 @@ class user_interface {open
               label Token
               xywh {335 464 160 25} align 5
             }
-            Fl_Check_Button check_reencode {
-              label Reencode
-              xywh {505 464 100 25}
-            }
-            Fl_Choice choice_reencode_codec {
-              label Codec
-              xywh {615 464 110 25} align 5 down_box BORDER_BOX
-            }
-            Fl_Choice choice_reencode_encoder {
-              label Encoder
-              xywh {735 464 110 25} align 5 down_box BORDER_BOX
-            }
-            Fl_Input input_reencode_bitrate {
-              label {Bitrate kbps}
-              xywh {855 464 110 25} align 5
-            }
-            Fl_Check_Button check_upscale {
-              label {Upscale 1440p}
-              xywh {975 464 120 25}
-            }
           }
           Fl_Multiline_Input input_destinations {
             label {Destinations (one per line:  rtmp|rtmps|srt|rist  <url>  [key])}

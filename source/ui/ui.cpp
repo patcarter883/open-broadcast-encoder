@@ -653,30 +653,6 @@ user_interface::user_interface()
             input_control_token = new Fl_Input(0, 0, 160, 25, "Token");
             input_control_token->align(Fl_Align(FL_ALIGN_TOP_LEFT));
           }  // Fl_Input* input_control_token
-          {
-            check_reencode = new Fl_Check_Button(0, 0, 100, 25, "Reencode");
-          }  // Fl_Check_Button* check_reencode
-          {
-            choice_reencode_codec = new Fl_Choice(0, 0, 110, 25, "Codec");
-            choice_reencode_codec->down_box(FL_BORDER_BOX);
-            choice_reencode_codec->align(Fl_Align(FL_ALIGN_TOP_LEFT));
-            choice_reencode_codec->menu(menu_choice_codec);
-          }  // Fl_Choice* choice_reencode_codec
-          {
-            choice_reencode_encoder = new Fl_Choice(0, 0, 110, 25, "Encoder");
-            choice_reencode_encoder->down_box(FL_BORDER_BOX);
-            choice_reencode_encoder->align(Fl_Align(FL_ALIGN_TOP_LEFT));
-            choice_reencode_encoder->menu(menu_choice_encoder);
-          }  // Fl_Choice* choice_reencode_encoder
-          {
-            input_reencode_bitrate =
-                new Fl_Input(0, 0, 110, 25, "Bitrate kbps");
-            input_reencode_bitrate->align(Fl_Align(FL_ALIGN_TOP_LEFT));
-            input_reencode_bitrate->value("8000");
-          }  // Fl_Input* input_reencode_bitrate
-          {
-            check_upscale = new Fl_Check_Button(0, 0, 120, 25, "Upscale 1440p");
-          }  // Fl_Check_Button* check_upscale
           row->gap(10);
           row->end();
         }  // Fl_Flex* row
@@ -1113,48 +1089,6 @@ void user_interface::receiver_token_cb(receiver_control_config* rc)
   rc->token = (raw != nullptr) ? raw : "";
 }
 
-void user_interface::receiver_reencode_cb(receiver_control_config* rc)
-{
-  rc->reencode = check_reencode->value() != 0;
-}
-
-void user_interface::receiver_codec_cb(receiver_control_config* rc)
-{
-  const Fl_Menu_Item* mv = choice_reencode_codec->mvalue();
-  if (mv == nullptr) {
-    return;
-  }
-  rc->video.out_codec =
-      static_cast<codec>(reinterpret_cast<uintptr_t>(mv->user_data()));
-}
-
-void user_interface::receiver_encoder_cb(receiver_control_config* rc)
-{
-  const Fl_Menu_Item* mv = choice_reencode_encoder->mvalue();
-  if (mv == nullptr) {
-    return;
-  }
-  rc->video.enc =
-      static_cast<encoder>(reinterpret_cast<uintptr_t>(mv->user_data()));
-}
-
-void user_interface::receiver_bitrate_cb(receiver_control_config* rc)
-{
-  const char* raw = input_reencode_bitrate->value();
-  if (raw == nullptr) {
-    return;
-  }
-  try {
-    rc->video.bitrate = std::stoi(raw);
-  } catch (...) {  // NOLINT(bugprone-empty-catch) — keep previous value
-  }
-}
-
-void user_interface::receiver_upscale_cb(receiver_control_config* rc)
-{
-  rc->video.upscale = check_upscale->value() != 0;
-}
-
 void user_interface::receiver_destinations_cb(receiver_control_config* rc)
 {
   rc->destinations = parse_destinations(input_destinations->value());
@@ -1323,14 +1257,6 @@ void user_interface::apply_settings(const input_config& input_c,
       (receiver_c.control_host + ":" + std::to_string(receiver_c.control_port))
           .c_str());
   input_control_token->value(receiver_c.token.c_str());
-  check_reencode->value(receiver_c.reencode ? 1 : 0);
-  select_choice_by_userdata(choice_reencode_codec,
-                            static_cast<long>(receiver_c.video.out_codec));
-  select_choice_by_userdata(choice_reencode_encoder,
-                            static_cast<long>(receiver_c.video.enc));
-  input_reencode_bitrate->value(
-      std::to_string(receiver_c.video.bitrate).c_str());
-  check_upscale->value(receiver_c.video.upscale ? 1 : 0);
   input_destinations->value(
       format_destinations(receiver_c.destinations).c_str());
 
@@ -1637,16 +1563,9 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        ndi_refresh_funcptr);
 
   // ---- Receiver / restream control section ----
-  // Default the reencode codec/encoder choices so the model matches the
-  // displayed selection (h264 / software) before the user touches them.
-  choice_reencode_codec->value(0);  // h264 (index 0 of menu_choice_codec)
-  choice_reencode_encoder->value(
-      3);  // Software (index 3 of menu_choice_encoder)
-
   // Update the model live as the user types/toggles.
   input_control_address->when(FL_WHEN_CHANGED);
   input_control_token->when(FL_WHEN_CHANGED);
-  input_reencode_bitrate->when(FL_WHEN_CHANGED);
   input_destinations->when(FL_WHEN_CHANGED);
 
   FL_METHOD_CALLBACK_1(check_receiver_enabled,
@@ -1667,41 +1586,6 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        user_interface,
                        this,
                        receiver_token_cb,
-                       receiver_control_config*,
-                       receiver_c);
-
-  FL_METHOD_CALLBACK_1(check_reencode,
-                       user_interface,
-                       this,
-                       receiver_reencode_cb,
-                       receiver_control_config*,
-                       receiver_c);
-
-  FL_METHOD_CALLBACK_1(choice_reencode_codec,
-                       user_interface,
-                       this,
-                       receiver_codec_cb,
-                       receiver_control_config*,
-                       receiver_c);
-
-  FL_METHOD_CALLBACK_1(choice_reencode_encoder,
-                       user_interface,
-                       this,
-                       receiver_encoder_cb,
-                       receiver_control_config*,
-                       receiver_c);
-
-  FL_METHOD_CALLBACK_1(input_reencode_bitrate,
-                       user_interface,
-                       this,
-                       receiver_bitrate_cb,
-                       receiver_control_config*,
-                       receiver_c);
-
-  FL_METHOD_CALLBACK_1(check_upscale,
-                       user_interface,
-                       this,
-                       receiver_upscale_cb,
                        receiver_control_config*,
                        receiver_c);
 

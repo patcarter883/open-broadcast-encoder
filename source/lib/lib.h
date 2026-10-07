@@ -135,16 +135,6 @@ enum class output_proto : std::uint8_t
   rist
 };
 
-struct reencode_config
-{
-  encoder enc = encoder::software;
-  codec out_codec = codec::h264;
-  int bitrate = 8000;  // kbps
-  bool upscale = false;
-  int width = 2560;
-  int height = 1440;
-};
-
 struct receiver_destination
 {
   output_proto proto = output_proto::rtmp;
@@ -159,9 +149,12 @@ struct receiver_control_config
   int control_port = 8080;
   std::string token;
   std::string session_id;
-  // v1: copy vs reencode applies to all destinations uniformly.
-  bool reencode = false;
-  reencode_config video;  // used when reencode == true
+  // Transcode is NOT decided here. The portal owns the fan-out and each
+  // destination's opt-in transcode target (DT-22), and the encoder sends its
+  // `/start` body through verbatim -- see apply_allocation_to_receiver(). A local
+  // copy-vs-reencode setting used to live here and was never sent to the receiver:
+  // it collected a decision nothing acted on, so it is gone rather than kept
+  // alongside the portal's, which would be a second source of truth.
   std::vector<receiver_destination> destinations;
 };
 
