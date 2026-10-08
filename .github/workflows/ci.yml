@@ -79,24 +79,47 @@ jobs:
         file: build/coverage/coverage.info
         token: ${{ secrets.CODECOV_TOKEN }}
 
+  # The Linux test/sanitize jobs run inside a container that genuinely carries
+  # GStreamer >= 1.28 (the floor declared in CMakeLists.txt). The default
+  # ubuntu-22.04 runner ships GStreamer 1.20 and fails at Configure, and no job
+  # installs GStreamer. Fedora 44 is a released distro whose packages include
+  # GStreamer 1.28.7; `pkg-config --modversion gstreamer-1.0` reports 1.28.7 in
+  # fedora:44. Everything else the tree needs (FLTK's X11/fontconfig headers,
+  # rist-cpp's meson/librist, clang + compiler-rt for the sanitiser runtime) is
+  # installed explicitly below. The vcpkg cache key folds in the image name
+  # because these jobs share runner.os "Linux" with the old ubuntu jobs but run
+  # a different ABI.
+
   sanitize:
     needs: [lint]
 
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    container: fedora:44
 
-    env: { CXX: clang++-14 }
+    env: { CXX: clang++ }
 
     steps:
+    # git is required by actions/checkout before any other step can run.
+    - name: Install git for checkout
+      run: dnf install -y git
+
     - uses: actions/checkout@v4
       with: { submodules: recursive }
 
-    - name: Install Ninja
-      run: sudo apt-get update -q
-        && sudo apt-get install ninja-build -q -y
+    - name: Install build dependencies
+      run: >-
+        dnf install -y
+        gcc gcc-c++ clang compiler-rt cmake ninja-build pkgconf-pkg-config make
+        gstreamer1-devel gstreamer1-plugins-base-devel
+        libX11-devel libXcursor-devel libXfixes-devel libXinerama-devel
+        libXft-devel fontconfig-devel libXrender-devel mesa-libGL-devel
+        meson curl zip unzip tar which findutils
 
     - name: Install vcpkg
       uses: friendlyanon/setup-vcpkg@v1
-      with: { committish: "${{ env.VCPKG_COMMIT }}" }
+      with:
+        committish: "${{ env.VCPKG_COMMIT }}"
+        cache-version: fedora44-sanitize
 
     - name: Configure
       run: cmake --preset=ci-sanitize
@@ -117,27 +140,66 @@ jobs:
           halt_on_error=1"
       run: ctest --output-on-failure --no-tests=error -j 2
 
+  # Linux entry of the build matrix, moved off the GStreamer-1.20 ubuntu runner
+  # onto the same GStreamer-1.28-capable container as `sanitize`. macOS and
+  # Windows cannot use a Linux container job, so they stay as runner-based
+  # matrix entries below.
+  test-linux:
+    needs: [lint]
+
+    runs-on: ubuntu-latest
+    container: fedora:44
+
+    steps:
+    - name: Install git for checkout
+      run: dnf install -y git
+
+    - uses: actions/checkout@v4
+      with: { submodules: recursive }
+
+    - name: Install build dependencies
+      run: >-
+        dnf install -y
+        gcc gcc-c++ clang clang-tools-extra cppcheck cmake ninja-build
+        pkgconf-pkg-config make
+        gstreamer1-devel gstreamer1-plugins-base-devel
+        libX11-devel libXcursor-devel libXfixes-devel libXinerama-devel
+        libXft-devel fontconfig-devel libXrender-devel mesa-libGL-devel
+        meson curl zip unzip tar which findutils
+
+    - name: Install vcpkg
+      uses: friendlyanon/setup-vcpkg@v1
+      with:
+        committish: "${{ env.VCPKG_COMMIT }}"
+        cache-version: fedora44-testlinux
+
+    - name: Configure
+      run: cmake --preset=ci-ubuntu
+
+    - name: Build
+      run: cmake --build build --config Release -j 2
+
+    - name: Install
+      run: cmake --install build --config Release --prefix prefix
+
+    - name: Test
+      working-directory: build
+      run: ctest --output-on-failure --no-tests=error -C Release -j 2
+
   test:
     needs: [lint]
 
     strategy:
+      # Report each platform's real result instead of cancelling the others.
+      fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-22.04, windows-2022]
+        os: [macos-14, windows-2022]
 
     runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v4
       with: { submodules: recursive }
-
-    - name: Install static analyzers
-      if: matrix.os == 'ubuntu-22.04'
-      run: >-
-        sudo apt-get install clang-tidy-14 cppcheck ninja-build -y -q
-
-        sudo update-alternatives --install
-        /usr/bin/clang-tidy clang-tidy
-        /usr/bin/clang-tidy-14 140
 
     - name: Install vcpkg
       uses: friendlyanon/setup-vcpkg@v1
