@@ -112,6 +112,14 @@ find_result find_bridge(const std::vector<mdns::service>& found,
 bridge_decision decide(const mdns::service& service,
                        const reconcile_request& request);
 
+// The one-line claim state shown for a discovered bridge, derived from what was
+// advertised PLUS what this encoder holds. Pure, so the manual-address path is
+// testable: there the browse found nothing and the address stands in with no TXT
+// at all, so an absent fingerprint says NOTHING about the claim -- and labelling
+// such a bridge "virgin, claimable" invites the operator to Claim a bridge that
+// is already claimed (it answers already_claimed).
+std::string bridge_state_label(const mdns::service& service, bool holds_token);
+
 class bridge_client
 {
 public:
