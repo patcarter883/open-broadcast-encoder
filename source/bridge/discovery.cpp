@@ -98,7 +98,8 @@ void merge_service(std::vector<mdns::service>& seen,
   seen.push_back(incoming);
 }
 
-std::vector<mdns::service> discover(std::chrono::milliseconds window)
+std::vector<mdns::service> discover(std::chrono::milliseconds window,
+                                    const std::string& service_name)
 {
   std::vector<mdns::service> found;
 
@@ -147,7 +148,7 @@ std::vector<mdns::service> discover(std::chrono::milliseconds window)
 
   // Ask, rather than waiting for an unsolicited announcement that may be
   // minutes away.
-  const auto query = mdns::encode_query();
+  const auto query = mdns::encode_query(service_name);
   sockaddr_in destination {};
   destination.sin_family = AF_INET;
   destination.sin_addr.s_addr = ::inet_addr(mdns::k_multicast_group);
@@ -182,7 +183,7 @@ std::vector<mdns::service> discover(std::chrono::milliseconds window)
     }
 
     buffer.resize(static_cast<std::size_t>(received));
-    for (const auto& service : mdns::parse_response(buffer)) {
+    for (const auto& service : mdns::parse_response(buffer, service_name)) {
       merge_service(found, service);
     }
   }

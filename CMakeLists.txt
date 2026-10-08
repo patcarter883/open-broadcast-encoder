@@ -92,6 +92,7 @@ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/control)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/backplane)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/bridge)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/settings)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/tools)
 
 # ---- Declare executable ----
 

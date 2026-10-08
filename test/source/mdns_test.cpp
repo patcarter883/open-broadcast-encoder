@@ -23,6 +23,13 @@ constexpr const char* k_service_name = "_obr-rist._udp.local";
 constexpr const char* k_host = "OpenWrt.lan";
 constexpr std::size_t k_header = 12;
 
+// The capture-camera service a node advertises (MC5): the SAME parser, a
+// different service type. Instance = the node name.
+constexpr const char* k_cam_instance = "streamcam1";
+constexpr const char* k_cam_fqdn = "streamcam1._obr-cam._udp.local";
+constexpr const char* k_cam_service_name = "_obr-cam._udp.local";
+constexpr const char* k_cam_host = "streamcam1.local";
+
 // Byte-level DNS packet builder: each test states the packet it means.
 class builder
 {
@@ -388,4 +395,113 @@ TEST_CASE("malformed packets are refused rather than read past", "[mdns]")
     p.u16(0);
     REQUIRE(bridge::mdns::parse_response(packet(p, 0, 1)).empty());
   }
+}
+
+// ==========================================================================
+// MC5 -- the capture-camera service type, parsed by the SAME parser
+// ==========================================================================
+
+TEST_CASE("a camera advert parses under the capture service type (MC5)",
+          "[mdns]")
+{
+  builder p;
+  std::size_t instance_at = 0;
+  p.rr(k_cam_service_name,
+       bridge::mdns::k_type_ptr,
+       4500,
+       [&p, &instance_at] { instance_at = p.name(k_cam_fqdn); });
+  p.rr_at(instance_at + k_header,
+          bridge::mdns::k_type_srv,
+          120,
+          [&p] { srv(p, 8080, k_cam_host); });
+  p.rr_at(instance_at + k_header,
+          bridge::mdns::k_type_txt,
+          4500,
+          [&p]
+          {
+            txt(p, "name=streamcam1");
+            txt(p, "codec=jpegxs");
+            txt(p, "resolution=1920x1080");
+            txt(p, "fps=37");
+            txt(p, "sampling=4:2:2");
+            txt(p, "api_port=8080");
+            txt(p, "api_version=1");
+          });
+  p.rr(k_cam_host,
+       bridge::mdns::k_type_a,
+       120,
+       [&p] { a_record(p, 10, 50, 1, 118); });
+
+  const auto packet_bytes = packet(p, 0, 4);
+
+  const auto services =
+      bridge::mdns::parse_response(packet_bytes, bridge::mdns::k_cam_service);
+
+  REQUIRE(services.size() == 1);
+  REQUIRE(services[0].instance == k_cam_instance);
+  REQUIRE(services[0].port == 8080);
+  REQUIRE(services[0].host == k_cam_host);
+  REQUIRE(services[0].address == "10.50.1.118");
+  REQUIRE(services[0].txt_value("codec") == "jpegxs");
+  REQUIRE(services[0].txt_value("resolution") == "1920x1080");
+  REQUIRE(services[0].txt_value("api_port") == "8080");
+
+  // The service type is the authority: the SAME bytes under the default
+  // (bridge) type are not ours. A wrong type is silent on the wire, so the
+  // parser must discriminate rather than share.
+  REQUIRE(bridge::mdns::parse_response(packet_bytes).empty());
+}
+
+TEST_CASE("the capture service type is length-prefixed, not a literal",
+          "[mdns]")
+{
+  // The trap recorded in the plan: a search for the literal string
+  // "_obr-cam._udp.local" finds NOTHING, because DNS labels are length-prefixed
+  // ("\x08_obr-cam\x04_udp\x05local\x00") and the dots are not on the wire.
+  // This pins that a byte-substring scan would silently see nothing -- the
+  // parser reads labels, and any offset logic must be re-based after a label
+  // changes.
+  builder p;
+  p.name(k_cam_fqdn);
+
+  const auto& bytes = p.data();
+  const std::string wire(reinterpret_cast<const char*>(bytes.data()),
+                         bytes.size());
+  const std::string literal = k_cam_service_name;
+
+  REQUIRE(wire.find(literal) == std::string::npos);
+
+  // But the label-prefixed form IS present: the name is
+  // "streamcam1._obr-cam._udp.local", so after the 1+10-byte instance label the
+  // next byte is the length (8) of the "_obr-cam" label, then its bytes.
+  REQUIRE(bytes[0] == 10);  // "streamcam1"
+  REQUIRE(bytes[11] == 8);  // "_obr-cam"
+  REQUIRE(std::string(reinterpret_cast<const char*>(&bytes[12]), 8)
+          == "_obr-cam");
+}
+
+TEST_CASE("a malformed record refuses the whole camera packet (MC5.3)",
+          "[mdns]")
+{
+  // MC5.3: a malformed record refuses the WHOLE packet by design -- so when a
+  // camera advertisement vanishes, suspect the packet before the parser. One
+  // good A record does not rescue a truncated TXT.
+  builder p;
+  p.rr(k_cam_host,
+       bridge::mdns::k_type_a,
+       120,
+       [&p] { a_record(p, 10, 50, 1, 118); });
+  p.rr(k_cam_fqdn,
+       bridge::mdns::k_type_txt,
+       4500,
+       [&p]
+       {
+         txt(p, "name=streamcam1");
+         p.u8(200);  // claims 200 bytes inside a 2-byte record
+         p.u8('x');
+       });
+
+  REQUIRE(
+      bridge::mdns::parse_response(packet(p, 0, 2), bridge::mdns::k_cam_service)
+          .empty());
 }

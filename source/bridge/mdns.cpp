@@ -195,7 +195,8 @@ std::vector<std::uint8_t> encode_query(const std::string& service_name)
   return out;
 }
 
-std::vector<service> parse_response(const std::vector<std::uint8_t>& packet)
+std::vector<service> parse_response(const std::vector<std::uint8_t>& packet,
+                                    const std::string& service_name)
 {
   std::vector<service> found;
   if (packet.size() < k_header_size) {
@@ -207,7 +208,7 @@ std::vector<service> parse_response(const std::vector<std::uint8_t>& packet)
   const auto authority_count = read_u16(packet, 8);
   const auto additional_count = read_u16(packet, 10);
 
-  const std::string wanted = lowercase(k_service);
+  const std::string wanted = lowercase(service_name);
 
   std::map<std::string, service> by_name;  // keyed by the full instance name
   std::map<std::string, std::string> addresses;  // host name -> address text
