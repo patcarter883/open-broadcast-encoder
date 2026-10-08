@@ -25,6 +25,12 @@ target_include_directories(
 
 target_compile_features(ndi_input_lib PUBLIC cxx_std_20)
 
+# Mirrors the executable's OBC_ENABLE_NDI so any future direct-SDK code added
+# here can be fenced with #ifdef OBC_ENABLE_NDI. OFF by default (see the root
+# CMakeLists.txt).
+target_compile_definitions(ndi_input_lib PRIVATE
+  $<$<BOOL:${OBC_ENABLE_NDI}>:OBC_ENABLE_NDI>)
+
 target_link_libraries(ndi_input_lib PUBLIC
 )
 

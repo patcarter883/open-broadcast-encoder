@@ -4,6 +4,37 @@
 
 For a list of dependencies, please refer to [vcpkg.json](vcpkg.json).
 
+### NDI support (optional, off by default)
+
+The proprietary NDI SDK is **not required** to build this project. The NDI
+input source (`source/ndi_input/`) and the NDI encode pipeline
+(`source/encode/encode.cpp`) use GStreamer's `ndisrc` / `ndisrcdemux`
+elements, which load the official NDI runtime dynamically at run time. No
+translation unit includes or calls the SDK, so the default build links nothing
+NDI and Configure prints:
+
+```
+-- NDI support: OFF
+```
+
+To use NDI input at run time you need the GStreamer NDI plugin and the official
+NDI runtime installed — that is a runtime concern, independent of this option.
+
+Opt in only when you are adding code that calls the SDK directly:
+
+```sh
+# Linux/Windows: point NDI_SDK_DIR at the extracted SDK
+cmake -S . -B build -D OBC_ENABLE_NDI=ON -D NDI_SDK_DIR=/path/to/NDI_SDK
+# macOS: uses /Library/NDI SDK for Apple automatically
+cmake -S . -B build -D OBC_ENABLE_NDI=ON
+```
+
+With `OBC_ENABLE_NDI=ON`, `find_package(NDI)` becomes `REQUIRED`, the SDK's
+include/library directories are added, and the `OBC_ENABLE_NDI` compile
+definition is set so `#ifdef OBC_ENABLE_NDI` can fence direct-SDK code. When
+`OFF` (the default) neither the include nor the library is used, and no SDK
+needs to be present.
+
 ## Build
 
 This project doesn't require any special command-line flags to build to keep

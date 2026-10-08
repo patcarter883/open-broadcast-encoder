@@ -19,7 +19,35 @@ include(cmake/variables.cmake)
 
 include(cmake/ExternalBuilds.cmake)
 
-find_package(NDI REQUIRED)
+# ---------------------------------------------------------------------------
+# NDI support (OPT-IN, default OFF).
+#
+# The encoder ingests NDI sources through GStreamer's `ndisrc`/`ndisrcdemux`
+# elements (source/ndi_input/, source/encode/encode.cpp). Those elements load
+# the proprietary NDI runtime *dynamically at run time*; the encoder never
+# includes or calls the NDI SDK from C++. The SDK find/link below used to be
+# `REQUIRED`, which made a proprietary SDK a hard build dependency even though
+# nothing in this tree consumes it -- CI, where no SDK is installed, therefore
+# died at Configure. It is now off by default.
+#
+#   OFF (default) -- no SDK needed and nothing NDI is linked. The NDI *input*
+#                    still works at run time wherever the GStreamer NDI plugin
+#                    and the official NDI runtime are installed.
+#   ON            -- resolve and link the NDI SDK. Point NDI_SDK_DIR at the SDK
+#                    on Linux/Windows (see cmake/modules/FindNDI.cmake); macOS
+#                    uses the standard install location. Only needed if code is
+#                    added that calls the SDK directly.
+# ---------------------------------------------------------------------------
+option(OBC_ENABLE_NDI "Require and link the proprietary NDI SDK" OFF)
+
+if(OBC_ENABLE_NDI)
+  find_package(NDI REQUIRED)
+else()
+  set(NDI_LIBRARIES "")
+  set(NDI_INCLUDE_DIRS "")
+  set(NDI_LIBRARY_DIR "")
+endif()
+message(STATUS "NDI support: ${OBC_ENABLE_NDI}")
 
 find_package(nlohmann_json 3.2 REQUIRED)
 
@@ -88,6 +116,13 @@ if(UNIX AND NOT APPLE AND NOT CMAKE_CROSSCOMPILING)
 endif()
 
 target_compile_features(open-broadcast-encoder_exe PRIVATE cxx_std_20)
+
+# Compile-time signal for code that uses the SDK directly. No translation unit
+# in this tree includes the SDK today (the NDI input is GStreamer-only), so the
+# macro currently guards nothing; it is defined only when the feature is opted
+# in so any future direct-SDK code can be fenced with #ifdef OBC_ENABLE_NDI.
+target_compile_definitions(open-broadcast-encoder_exe PRIVATE
+  $<$<BOOL:${OBC_ENABLE_NDI}>:OBC_ENABLE_NDI>)
 
 target_link_libraries(open-broadcast-encoder_exe PRIVATE
   open-broadcast-encoder_lib
