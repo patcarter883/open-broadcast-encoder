@@ -118,18 +118,40 @@ bool control_client::start(const receiver_control_config& cfg,
 bool control_client::prepare_hosted_body(const std::string& start_body_json,
                                          codec source_codec,
                                          std::string& out_body,
-                                         std::string& err)
+                                         std::string& err,
+                                         std::uint32_t fps_num,
+                                         std::uint32_t fps_den)
 {
   json body = json::parse(start_body_json, nullptr, false);
   if (body.is_discarded() || !body.is_object()) {
     err = "allocation returned an unparseable start_body";
     return false;
   }
-  // The portal's document, with only the two fields it cannot know corrected.
-  // The outputs -- ids, urls, keys and any opt-in transcode target -- are the
-  // portal's decision and go through untouched (DT-22).
+  // The portal's document, with only the fields it cannot know corrected: the
+  // receiver's schema version, the ingest codec, and every transcode gop. The
+  // outputs -- ids, urls, keys, and the opt-in transcode target with its scale
+  // and bitrate -- are the portal's decision and go through untouched (DT-22).
+  //
+  // The gop is not a decision, it is a duration: the portal states it as two
+  // seconds at an assumed 60 fps because the allocate request carries only the
+  // POP (DT-22), and it cannot know the ingest rate. Two seconds at 60 is four
+  // at the 30 fps this deployment runs -- the ceiling the destination's own
+  // guidance says not to exceed -- so it is restated here in frames at the rate
+  // this encoder is actually running. The target, scale and bitrate stand.
   body["schema_version"] = k_receiver_schema_version;
   body["source"]["codec"] = codec_str(source_codec);
+
+  if (fps_num > 0 && fps_den > 0) {
+    // Integer arithmetic only: no rounding library, and exact for the rates a
+    // broadcast source uses (30000/1001 included).
+    const std::uint32_t gop = (fps_num * 2 + fps_den / 2) / fps_den;
+    for (auto& output : body["outputs"]) {
+      if (output.contains("transcode") && output["transcode"].is_object()) {
+        output["transcode"]["gop"] = gop;
+      }
+    }
+  }
+
   out_body = body.dump();
   return true;
 }
@@ -138,7 +160,9 @@ bool control_client::start_hosted(const std::string& control_url,
                                   const std::string& control_token,
                                   const std::string& start_body_json,
                                   codec source_codec,
-                                  std::string& err)
+                                  std::string& err,
+                                  std::uint32_t fps_num,
+                                  std::uint32_t fps_den)
 {
   // Split the allocation's control_url into the origin httplib wants and the
   // path /start hangs off. The URL carries the per-session path (e.g.
@@ -160,7 +184,9 @@ bool control_client::start_hosted(const std::string& control_url,
   }
 
   std::string body;
-  if (!prepare_hosted_body(start_body_json, source_codec, body, err)) {
+  if (!prepare_hosted_body(
+          start_body_json, source_codec, body, err, fps_num, fps_den))
+  {
     return false;
   }
 

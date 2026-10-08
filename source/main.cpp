@@ -772,7 +772,9 @@ static void hosted_sign_out()
 // live in the start body the allocation returned (BACKPLANE.md:264). Runs on
 // the allocation worker, never the FLTK thread.
 static void apply_allocation_to_receiver(const hosted_session& session,
-                                         codec source_codec)
+                                         codec source_codec,
+                                         std::uint32_t fps_num,
+                                         std::uint32_t fps_den)
 {
   if (session.start_body_json.empty()) {
     transport_log("Allocated " + session.session_id
@@ -785,7 +787,9 @@ static void apply_allocation_to_receiver(const hosted_session& session,
                                    session.control_token,
                                    session.start_body_json,
                                    source_codec,
-                                   err))
+                                   err,
+                                   fps_num,
+                                   fps_den))
   {
     transport_log("Receiver configured for session " + session.session_id
                   + ".\n");
@@ -913,8 +917,16 @@ static void hosted_allocate()
           ctx.ui->set_encoder_target(outcome.encoder_target);
         }
         // The session exists and is billable, so the receiver must be told what
-        // to fan out to even when there is no UI to report to.
-        apply_allocation_to_receiver(outcome.session, source_codec);
+        // to fan out to even when there is no UI to report to. Its transcode
+        // gop is a duration, so the encoder states it in frames at the rate it
+        // is actually running -- only this side can know that.
+        std::uint32_t fps_num = 0;
+        std::uint32_t fps_den = 0;
+        if (auto encoder = ctx.lib.encoder_ptr.load()) {
+          encoder->source_fps(fps_num, fps_den);
+        }
+        apply_allocation_to_receiver(
+            outcome.session, source_codec, fps_num, fps_den);
         if (!outcome.reported) {
           transport_log("Bridge report failed: " + outcome.error + "\n");
         }

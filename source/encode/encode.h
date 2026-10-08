@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <format>
 #include <functional>
 #include <future>
@@ -51,6 +52,12 @@ public:
   auto pull_video_buffer() -> buffer_data;
   auto pull_audio_buffer() -> buffer_data;
   void set_encode_bitrate(int new_bitrate);
+  // The rate this encoder is actually running at. One caller needs it: the
+  // receiver's transcode gop is a duration (two seconds), and the portal can
+  // only state it in frames at an assumed 60 fps because the allocate request
+  // carries nothing but the POP. False means nothing has been negotiated yet,
+  // and the caller then leaves the portal's value alone rather than guessing.
+  bool source_fps(std::uint32_t& num, std::uint32_t& den);
   explicit encode(const input_config& input_config,
                   const encode_config& encode_config,
                   const receiver_control_config& receiver_config,

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include "lib/lib.h"
@@ -26,11 +27,13 @@ public:
   // Apply an allocation: POST a body the PORTAL built to the receiver's control
   // plane. BACKPLANE.md:264 is explicit that the encoder sends this "body
   // verbatim to <control_url>/start", so the URL is absolute and may be https
-  // (the node proxies it). Only the two fields the portal cannot know are
-  // overridden -- schema_version, which the receiver refuses when stale, and
-  // source.codec, the codec this encoder will actually send. Every output
-  // therefore passes through untouched, including its opt-in transcode target,
-  // and the portal stays the single configuration location (DT-22).
+  // (the node proxies it). The fields the portal cannot know are corrected
+  // here: schema_version, which the receiver refuses when stale; source.codec,
+  // the codec this encoder will actually send; and each transcode gop, which
+  // the portal states as two seconds at an assumed 60 fps. Everything else
+  // passes through untouched -- including the transcode target, its scale and
+  // its bitrate -- and the portal stays the single configuration location
+  // (DT-22).
   //
   // The receiver accepts ONLY an exact match on its own schema version, so this
   // must track the receiver, not the portal: when the receiver's contract moved
@@ -46,16 +49,27 @@ public:
   // has no injection point, so a fixture is the only way to pin the contract.
   // Keeps json inside control.cpp -- in and out are strings, like every other
   // signature in this header.
+  //
+  // fps_num/fps_den are the rate this encoder is actually running at. The
+  // portal derives every transcode gop from an assumed 60 fps because it cannot
+  // know the ingest's (DT-22: the allocate request carries only the POP), so
+  // the gop is restated here as two seconds at the real rate. Zero means "not
+  // known yet", and the portal's value is then left alone rather than guessed
+  // at.
   static bool prepare_hosted_body(const std::string& start_body_json,
                                   codec source_codec,
                                   std::string& out_body,
-                                  std::string& err);
+                                  std::string& err,
+                                  std::uint32_t fps_num = 0,
+                                  std::uint32_t fps_den = 0);
 
   static bool start_hosted(const std::string& control_url,
                            const std::string& control_token,
                            const std::string& start_body_json,
                            codec source_codec,
-                           std::string& err);
+                           std::string& err,
+                           std::uint32_t fps_num = 0,
+                           std::uint32_t fps_den = 0);
 
   // POST /stop for the given session.
   bool stop(const std::string& session_id, std::string& err);

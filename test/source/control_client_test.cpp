@@ -80,6 +80,55 @@ TEST_CASE(
   }
 }
 
+TEST_CASE("the transcode gop follows the ingest rate, not the portal's guess",
+          "[hosted][control]")
+{
+  // The allocate request carries only the POP (DT-22), so the portal states
+  // every transcode gop as two seconds at an assumed 60 fps: 120 frames. Two
+  // seconds at 60 is four at the 30 fps this deployment runs, which is the
+  // ceiling the destination's own guidance says not to exceed. The encoder
+  // knows the real rate, so it restates the gop and leaves the rest alone.
+  const char* portal = R"({
+    "schema_version": 2,
+    "session_id": "s_9f2c",
+    "source": {"codec": "h264"},
+    "outputs": [
+      {"id": "out1", "type": "rtmp", "url": "rtmp://a.example/live2"},
+      {"id": "out2", "type": "rtmp", "url": "rtmp://b.example/live2",
+       "transcode": {"codec": "h265", "bitrate_kbps": 6000, "gop": 120}}
+    ]
+  })";
+  std::string out;
+  std::string err;
+
+  // 30 fps: two seconds is 60 frames.
+  REQUIRE(control_client::prepare_hosted_body(
+      portal, codec::h265, out, err, 30, 1));
+  {
+    const json body = json::parse(out);
+    REQUIRE(body["outputs"][1]["transcode"]["gop"] == 60);
+    // Only the gop moves: the portal still owns the target and the bitrate.
+    REQUIRE(body["outputs"][1]["transcode"]["codec"] == "h265");
+    REQUIRE(body["outputs"][1]["transcode"]["bitrate_kbps"] == 6000);
+    // A copy-only output must not gain a block.
+    REQUIRE_FALSE(body["outputs"][0].contains("transcode"));
+  }
+
+  // 30000/1001 (29.97): also 60 frames, exactly, with integer arithmetic.
+  REQUIRE(control_client::prepare_hosted_body(
+      portal, codec::h265, out, err, 30000, 1001));
+  REQUIRE(json::parse(out)["outputs"][1]["transcode"]["gop"] == 60);
+
+  // 25 fps: 50 frames.
+  REQUIRE(control_client::prepare_hosted_body(
+      portal, codec::h265, out, err, 25, 1));
+  REQUIRE(json::parse(out)["outputs"][1]["transcode"]["gop"] == 50);
+
+  // Rate not known yet: the portal's value stands rather than being guessed at.
+  REQUIRE(control_client::prepare_hosted_body(portal, codec::h265, out, err));
+  REQUIRE(json::parse(out)["outputs"][1]["transcode"]["gop"] == 120);
+}
+
 TEST_CASE("an unusable allocation body is refused rather than sent",
           "[hosted][control]")
 {
