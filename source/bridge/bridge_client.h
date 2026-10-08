@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 //
-// The bridge orchestrator: find the bridge the portal means, work out what to do
-// with it, do it, and report back (DT-19, DT-20, DT-21).
+// The bridge orchestrator: find the bridge the portal means, work out what to
+// do with it, do it, and report back (DT-19, DT-20, DT-21).
 //
-// The portal records desired state; the ENCODER applies it on the LAN. The bridge
-// never contacts the backplane and holds no fleet credential.
+// The portal records desired state; the ENCODER applies it on the LAN. The
+// bridge never contacts the backplane and holds no fleet credential.
 //
-// The two decisions that matter -- which bridge, and whether it may be claimed --
-// are PURE functions, because they are the security-relevant ones.
+// The two decisions that matter -- which bridge, and whether it may be claimed
+// -- are PURE functions, because they are the security-relevant ones.
 
 #pragma once
 
@@ -26,8 +26,8 @@
 namespace bridge
 {
 
-// TXT keys an advertisement may carry. Only a fingerprint is ever published -- never
-// the token (DT-21, H2).
+// TXT keys an advertisement may carry. Only a fingerprint is ever published --
+// never the token (DT-21, H2).
 inline constexpr const char* k_txt_fingerprint = "fingerprint";
 inline constexpr const char* k_txt_api = "api";
 inline constexpr const char* k_txt_claimed = "claimed";
@@ -37,14 +37,15 @@ inline constexpr const char* k_txt_api_port = "api_port";
 // What the portal asks for.
 struct reconcile_request
 {
-  std::string bridge_uid;   // matches the advertised mDNS instance
+  std::string bridge_uid;  // matches the advertised mDNS instance
   std::string fingerprint;  // recorded at fulfilment; empty when not known
   std::string known_token;  // the pair token the portal holds, if any
-  nlohmann::json desired;   // listen_url + outputs, the portal's desired state
-  bool allow_claim = true;  // false where claiming a virgin bridge is not wanted
-  // Who is claiming, for the bridge to record. A claim is UNAUTHENTICATED -- the
-  // token comes FROM the bridge -- so this is a self-asserted hint about which
-  // controller took the bridge, never a basis for trust.
+  nlohmann::json desired;  // listen_url + outputs, the portal's desired state
+  bool allow_claim =
+      true;  // false where claiming a virgin bridge is not wanted
+  // Who is claiming, for the bridge to record. A claim is UNAUTHENTICATED --
+  // the token comes FROM the bridge -- so this is a self-asserted hint about
+  // which controller took the bridge, never a basis for trust.
   std::string encoder_uid;
 };
 
@@ -61,7 +62,7 @@ struct bridge_report
 
 enum class bridge_action
 {
-  none,   // nothing to do, or refused
+  none,  // nothing to do, or refused
   claim,  // mint a token: only ever valid on a virgin bridge
   apply,  // reconcile using the token we already hold
 };
@@ -82,15 +83,16 @@ struct reconcile_outcome
   std::string new_token;  // set only when THIS call claimed the bridge
   bridge_report report;
   // The advertisement this outcome came from. The report body needs it -- the
-  // address and the API version live in the TXT record -- and rebuilding that from
-  // the report alone would lose them, while re-browsing would be a second browse.
+  // address and the API version live in the TXT record -- and rebuilding that
+  // from the report alone would lose them, while re-browsing would be a second
+  // browse.
   mdns::service service;
   std::string error_code;
   std::string error;
 };
 
-// The ubus endpoint for a discovered bridge. rpcd is reached over uhttpd, so this is
-// the WEB port -- not the RIST listen port in the SRV record. Pure.
+// The ubus endpoint for a discovered bridge. rpcd is reached over uhttpd, so
+// this is the WEB port -- not the RIST listen port in the SRV record. Pure.
 std::string ubus_base_url(const mdns::service& service);
 
 struct find_result
@@ -107,8 +109,9 @@ struct find_result
 find_result find_bridge(const std::vector<mdns::service>& found,
                         const reconcile_request& request);
 
-// Decide what to do from the bridge's OWN published state. Pure. This is where the
-// DT-21 states are enforced: virgin, claimed-by-us, and reset-since-fulfilment.
+// Decide what to do from the bridge's OWN published state. Pure. This is where
+// the DT-21 states are enforced: virgin, claimed-by-us, and
+// reset-since-fulfilment.
 bridge_decision decide(const mdns::service& service,
                        const reconcile_request& request);
 

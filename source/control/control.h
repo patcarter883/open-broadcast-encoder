@@ -33,19 +33,19 @@ public:
   // and the portal stays the single configuration location (DT-22).
   //
   // The receiver accepts ONLY an exact match on its own schema version, so this
-  // must track the receiver, not the portal: when the receiver's contract moved to
-  // 4 (av1 target + output scale), an encoder still sending 3 had every /start
-  // refused. Defined once here -- a stale literal at each call site is how that
-  // happens.
+  // must track the receiver, not the portal: when the receiver's contract moved
+  // to 4 (av1 target + output scale), an encoder still sending 3 had every
+  // /start refused. Defined once here -- a stale literal at each call site is
+  // how that happens.
   static constexpr int k_receiver_schema_version = 4;
   //
   // Static because the hosted path has no host/port pair to construct with --
   // only the URL the allocation returned.
   // The body-construction half of start_hosted, split out so the override is
-  // testable without an HTTP server: control_client talks httplib directly and has
-  // no injection point, so a fixture is the only way to pin the contract. Keeps
-  // json inside control.cpp -- in and out are strings, like every other signature
-  // in this header.
+  // testable without an HTTP server: control_client talks httplib directly and
+  // has no injection point, so a fixture is the only way to pin the contract.
+  // Keeps json inside control.cpp -- in and out are strings, like every other
+  // signature in this header.
   static bool prepare_hosted_body(const std::string& start_body_json,
                                   codec source_codec,
                                   std::string& out_body,

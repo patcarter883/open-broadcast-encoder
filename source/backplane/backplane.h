@@ -23,19 +23,20 @@ struct hosted_session
   std::string session_id;
   std::string rist_url;
   std::string control_url;
-  std::string control_token;   // shown once; secret
-  std::string psk;             // shown once; secret
+  std::string control_token;  // shown once; secret
+  std::string psk;  // shown once; secret
   int psk_aes = 256;
-  std::string start_body_json; // receiver schema-2 /start body, verbatim
+  std::string start_body_json;  // receiver schema-2 /start body, verbatim
 
-  // DT-20.1: the bridge the portal chose for this encoder, if any. Identity ONLY --
-  // the pair token is released separately (POST /v1/bridges/:id/credential), so an
-  // allocation never carries a media-plane credential.
+  // DT-20.1: the bridge the portal chose for this encoder, if any. Identity
+  // ONLY -- the pair token is released separately (POST
+  // /v1/bridges/:id/credential), so an allocation never carries a media-plane
+  // credential.
   //
-  // `bridge_present` is load-bearing: it distinguishes "the portal chose no bridge"
-  // (present, null) from "this backplane predates the field" (absent). Collapsing
-  // those would let a version skew silently route a bridged session straight to the
-  // node, past the bridge the operator configured.
+  // `bridge_present` is load-bearing: it distinguishes "the portal chose no
+  // bridge" (present, null) from "this backplane predates the field" (absent).
+  // Collapsing those would let a version skew silently route a bridged session
+  // straight to the node, past the bridge the operator configured.
   bool bridge_present = false;
   long bridge_id = 0;
   std::string bridge_uid;
@@ -52,7 +53,7 @@ struct alloc_result
 {
   bool ok = false;
   hosted_session session;
-  std::string error;   // human-readable on failure
+  std::string error;  // human-readable on failure
   int http_status = 0;
 };
 
@@ -65,17 +66,19 @@ class backplane_client
 public:
   // transport: (method, path, bearer_token, json_body) -> (http_status, body).
   // A status of 0 means the request never reached the server.
-  using transport_fn = std::function<std::pair<int, std::string>(
-      const std::string& method,
-      const std::string& path,
-      const std::string& token,
-      const std::string& body)>;
+  using transport_fn =
+      std::function<std::pair<int, std::string>(const std::string& method,
+                                                const std::string& path,
+                                                const std::string& token,
+                                                const std::string& body)>;
 
   // persist: called with the freshly-allocated hosted_session BEFORE it is
   // used (M2.7). The encoder wires this to write the settings file.
   using persist_fn = std::function<void(const hosted_session&)>;
 
-  backplane_client(std::string base_url, std::string device_token, transport_fn transport = {});
+  backplane_client(std::string base_url,
+                   std::string device_token,
+                   transport_fn transport = {});
 
   void set_persist(persist_fn persist) { m_persist = std::move(persist); }
 
@@ -95,10 +98,10 @@ public:
   alloc_result abandon_and_reallocate(const std::string& lost_session_id,
                                       const std::string& pop);
 
-  // One saved destination as the portal sees it (§4). `transcode` is the portal's
-  // opt-in target for that output -- empty means copy. DISPLAY ONLY: the decision
-  // is the portal's (DT-22), and showing it here must not become a second place it
-  // can be configured.
+  // One saved destination as the portal sees it (§4). `transcode` is the
+  // portal's opt-in target for that output -- empty means copy. DISPLAY ONLY:
+  // the decision is the portal's (DT-22), and showing it here must not become a
+  // second place it can be configured.
   struct destination_view
   {
     std::string label;
@@ -114,12 +117,12 @@ public:
   };
 
   // Read the account's saved destinations so the operator can see what the host
-  // will do ("YT (rtmp) -> transcode H.265") before starting. Visibility only, so
-  // a failure is non-fatal: the allocation remains the authority.
+  // will do ("YT (rtmp) -> transcode H.265") before starting. Visibility only,
+  // so a failure is non-fatal: the allocation remains the authority.
   destinations_result list_destinations();
 
 private:
-  std::string m_base;          // e.g. https://api.backplane.example.au
+  std::string m_base;  // e.g. https://api.backplane.example.au
   std::string m_device_token;
   transport_fn m_transport;
   persist_fn m_persist;

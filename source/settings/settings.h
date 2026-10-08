@@ -9,10 +9,10 @@
 #include "backplane/backplane.h"
 #include "lib/lib.h"
 
-// Persists the user-editable Encode / Output / Receiver / Input configuration to
-// a JSON file so the operator does not have to re-enter every setting on each
-// launch. JSON details (nlohmann) are confined to settings.cpp, mirroring how
-// control.cpp keeps httplib/nlohmann out of the rest of the encoder.
+// Persists the user-editable Encode / Output / Receiver / Input configuration
+// to a JSON file so the operator does not have to re-enter every setting on
+// each launch. JSON details (nlohmann) are confined to settings.cpp, mirroring
+// how control.cpp keeps httplib/nlohmann out of the rest of the encoder.
 namespace settings
 {
 // Absolute path to the settings file (creating parent directories is the
@@ -37,7 +37,7 @@ bool load(library& lib);
 // On relaunch the encoder loads it and can resume, or offer
 // abandon-and-reallocate. Path: <config-dir>/hosted-session.json.
 std::filesystem::path hosted_session_path();
-bool save_hosted_session(const hosted_session& session);   // 0600, atomic-ish
+bool save_hosted_session(const hosted_session& session);  // 0600, atomic-ish
 std::optional<hosted_session> load_hosted_session();
 void clear_hosted_session();  // on clean /stop or successful abandon
 }  // namespace settings

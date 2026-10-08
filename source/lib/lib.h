@@ -172,10 +172,10 @@ struct receiver_control_config
   std::string session_id;
   // Transcode is NOT decided here. The portal owns the fan-out and each
   // destination's opt-in transcode target (DT-22), and the encoder sends its
-  // `/start` body through verbatim -- see apply_allocation_to_receiver(). A local
-  // copy-vs-reencode setting used to live here and was never sent to the receiver:
-  // it collected a decision nothing acted on, so it is gone rather than kept
-  // alongside the portal's, which would be a second source of truth.
+  // `/start` body through verbatim -- see apply_allocation_to_receiver(). A
+  // local copy-vs-reencode setting used to live here and was never sent to the
+  // receiver: it collected a decision nothing acted on, so it is gone rather
+  // than kept alongside the portal's, which would be a second source of truth.
   std::vector<receiver_destination> destinations;
 };
 
@@ -197,10 +197,10 @@ struct bridge_control_config
   // The pair token. A SECRET: registered with the secrets registry so it cannot
   // reach a log pane, and shown in the UI only as "set"/"not set".
   std::string token;
-  std::string listen_url{"rist://0.0.0.0:5000"};  // what the BRIDGE listens on
-  std::string forward_to;      // the external ingest node it forwards to
-  std::string interface_name{"wan"};  // the bridge's uplink to bond over
-  std::string last_error;      // shown in the UI; not persisted
+  std::string listen_url {"rist://0.0.0.0:5000"};  // what the BRIDGE listens on
+  std::string forward_to;  // the external ingest node it forwards to
+  std::string interface_name {"wan"};  // the bridge's uplink to bond over
+  std::string last_error;  // shown in the UI; not persisted
 };
 
 // ---------------------------------------------------------------------------
@@ -215,10 +215,11 @@ struct bridge_control_config
 struct hosted_config
 {
   std::string backplane_url;  // e.g. https://api.backplane.example.au
-  std::string device_token;   // SECRET; from the RFC 8628 device flow
-  long device_id = 0;         // the backplane's id for this encoder
-  // The backplane's row for the bridge this encoder is driving. Learned from the
-  // report, and needed to fetch a pair token the portal holds (DT-21 path A).
+  std::string device_token;  // SECRET; from the RFC 8628 device flow
+  long device_id = 0;  // the backplane's id for this encoder
+  // The backplane's row for the bridge this encoder is driving. Learned from
+  // the report, and needed to fetch a pair token the portal holds (DT-21 path
+  // A).
   long bridge_id = 0;
 };
 

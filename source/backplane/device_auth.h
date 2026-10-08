@@ -33,22 +33,19 @@ namespace backplane
 
 struct device_code
 {
-  std::string device_code;       // secret; polls with this
-  std::string user_code;         // shown to the operator, e.g. BCDF-GHJK
+  std::string device_code;  // secret; polls with this
+  std::string user_code;  // shown to the operator, e.g. BCDF-GHJK
   std::string verification_uri;  // where they approve it
   int expires_in = 600;
   int interval = 5;  // seconds between polls; may be RAISED by slow_down
 
-  bool valid() const
-  {
-    return !device_code.empty() && !user_code.empty();
-  }
+  bool valid() const { return !device_code.empty() && !user_code.empty(); }
 };
 
 enum class auth_state
 {
-  approved,   // a token was issued
-  pending,    // keep polling: the operator has not approved yet
+  approved,  // a token was issued
+  pending,  // keep polling: the operator has not approved yet
   slow_down,  // keep polling, but slower (the interval has been raised)
   denied,
   expired,

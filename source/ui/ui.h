@@ -94,8 +94,8 @@ public:
   Fl_Button* btn_bridge_apply;
   // Hosted control plane (BACKPLANE §2). Until the encoder is signed in it is
   // self-host-only: no device token means the portal half has no runtime path.
-  // The device token is never displayed -- hosted_token_output says only whether
-  // one is held.
+  // The device token is never displayed -- hosted_token_output says only
+  // whether one is held.
   Fl_Flex* flx_hosted;
   Fl_Input* input_backplane_url;
   Fl_Output* hosted_state_output;
@@ -103,8 +103,8 @@ public:
   Fl_Button* btn_hosted_signin;
   Fl_Button* btn_hosted_signout;
   // One Allocate action (DT-20.1): allocate the hosted session, then apply the
-  // bridge the portal chose and report it. One button because the bridge's upstream
-  // IS the node the allocator picks.
+  // bridge the portal chose and report it. One button because the bridge's
+  // upstream IS the node the allocator picks.
   Fl_Button* btn_hosted_allocate;
   Fl_Grid* grid_stats;
   Fl_Output* bandwidth_output;
@@ -184,14 +184,15 @@ public:
       const std::vector<std::pair<std::string, std::string>>& sources,
       const std::string& message,
       bool is_error);
-  // Where the encoder should SEND, decided by an allocation (DT-20.1): the bridge's
-  // listen URL when the portal routed through one, else the node's rist_url. Takes
-  // the FLTK lock and updates the model and the widget together, like the bridge
-  // setters -- a worker must never write the config directly.
+  // Where the encoder should SEND, decided by an allocation (DT-20.1): the
+  // bridge's listen URL when the portal routed through one, else the node's
+  // rist_url. Takes the FLTK lock and updates the model and the widget
+  // together, like the bridge setters -- a worker must never write the config
+  // directly.
   void set_encoder_target(const std::string& url);
-  // The ids the token was minted against, and the backplane's row for the bridge
-  // this encoder is driving. Written together because they are learned at
-  // different times and a partial update would zero the other.
+  // The ids the token was minted against, and the backplane's row for the
+  // bridge this encoder is driving. Written together because they are learned
+  // at different times and a partial update would zero the other.
   void set_hosted_ids(long device_id, long bridge_id);
   void transport_log_append(const std::string& msg) const;
   void encode_log_append(const std::string& msg) const;
@@ -199,10 +200,10 @@ public:
   int run_ui();
   void add_ndi_choices(const std::vector<std::string>& choice_names);
   void clear_ndi_choices();
-  // Capture (MC4) picker callbacks, mirroring the NDI picker. The chooser writes
-  // the selected camera's ADDRESS to the model's capture_address (on the FLTK
-  // thread, from the menu item's user_data); the browse worker goes through
-  // set_capture_sources instead.
+  // Capture (MC4) picker callbacks, mirroring the NDI picker. The chooser
+  // writes the selected camera's ADDRESS to the model's capture_address (on the
+  // FLTK thread, from the menu item's user_data); the browse worker goes
+  // through set_capture_sources instead.
   void choose_capture_input(input_config* input_config);
   void refresh_capture(FuncPtr refresh_capture_funcptr);
   // Stable storage backing the capture picker's labels and the addresses held
@@ -257,8 +258,8 @@ private:
   // thread-safe setters update the model as well as the widgets.
   hosted_config* hosted_config_ptr = nullptr;
   // The model behind the RIST output address, held for the same reason: an
-  // allocation can move the encoder's target, and that write must not happen on a
-  // worker thread.
+  // allocation can move the encoder's target, and that write must not happen on
+  // a worker thread.
   output_config* output_config_ptr = nullptr;
   void start(FuncPtr start_funcptr);
   void stop(FuncPtr stop_funcptr);
