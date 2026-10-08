@@ -138,10 +138,11 @@ std::string bridge_state_label(const mdns::service& service, bool holds_token)
   const std::string fingerprint = service.txt_value(k_txt_fingerprint);
 
   // What we HOLD is decided first, then what was advertised. Order matters: a
-  // manual address carries no TXT at all (the browse found nothing and the typed
-  // address stood in), so an absent fingerprint is not evidence of a virgin
-  // bridge -- it is no evidence at all, and saying "virgin" there is a lie that
-  // sends the operator to Claim a box which will answer already_claimed.
+  // manual address carries no TXT at all (the browse found nothing and the
+  // typed address stood in), so an absent fingerprint is not evidence of a
+  // virgin bridge -- it is no evidence at all, and saying "virgin" there is a
+  // lie that sends the operator to Claim a box which will answer
+  // already_claimed.
   std::string state = service.instance + " at " + service.address;
   if (holds_token) {
     state += " - claimed (this encoder holds the pair token)";

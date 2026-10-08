@@ -438,7 +438,8 @@ static void bridge_find()
         // Only a fingerprint is ever advertised, never the token (DT-21). The
         // label comes from the pure helper so the manual-address case -- where
         // nothing is advertised at all -- cannot claim a bridge is virgin.
-        const std::string state = bridge::bridge_state_label(service, !cfg.token.empty());
+        const std::string state =
+            bridge::bridge_state_label(service, !cfg.token.empty());
         transport_log("Bridge found: " + state + "\n");
         if (ctx.ui != nullptr) {
           ctx.ui->set_bridge_discovered(
