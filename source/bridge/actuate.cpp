@@ -99,6 +99,11 @@ actuate_outcome actuator::run(const actuate_request& req,
   rr.encoder_uid = req.encoder_uid;
   rr.allow_claim = req.allow_claim;
   rr.desired = bridge_desired_config(req, alloc.session);
+  // The session's key for the WAN leg. It comes from the allocation, and the
+  // bridge cannot obtain it any other way: it holds no backplane credential,
+  // and its config endpoint refuses secret-bearing fields by design.
+  rr.link_secret = alloc.session.psk;
+  rr.link_secret_aes = alloc.session.psk_aes;
 
   const reconcile_outcome rec = m_reconcile(rr, window);
   out.action = rec.action;

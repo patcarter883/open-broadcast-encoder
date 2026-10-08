@@ -159,6 +159,14 @@ ubus_result ubus_client::reconcile(const nlohmann::json& desired)
   return call("reconcile", desired);
 }
 
+ubus_result ubus_client::set_link_secret(const std::string& psk, int aes)
+{
+  nlohmann::json args;
+  args["link_secret"] = psk;
+  args["link_secret_aes"] = aes;
+  return call("set_link_secret", args);
+}
+
 ubus_result ubus_client::release()
 {
   return call("release", nlohmann::json::object());
