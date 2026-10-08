@@ -1,0 +1,356 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Pat Carter
+#
+# release.yml — FIXPLAN M4.4 (encoder distribution).
+#
+# Builds a Linux x86_64 AppImage of open-broadcast-encoder and publishes it as
+# a GitHub Release asset alongside a SHA-256 checksum file.
+#
+# Trigger:  pushed tag matching v*   (e.g. v0.1.0)   -> build + publish Release
+#           workflow_dispatch                        -> build only (dry run, no Release)
+#
+# IMPORTANT — this workflow has NOT been run end-to-end yet. Several steps are
+# best-effort first drafts that will need CI iteration. Read the block comments
+# marked "GAP:" below and the PR description before cutting the first real tag.
+#
+# The two load-bearing risks:
+#   1. GStreamer >= 1.28 — the CMake floor (CMakeLists.txt) is 1.28, but no
+#      current Ubuntu apt repo ships it (ubuntu-24.04 = 1.24). This workflow
+#      builds GStreamer 1.28 from source via meson (slow, cached). See GAP #1.
+#   2. NDI SDK — must never be vendored (see CLAUDE.md invariant + README). The
+#      build needs the SDK headers/lib; this workflow fetches it from the
+#      NDI_SDK_URL repository secret and EXCLUDES libndi from the AppImage so the
+#      end user installs the NDI runtime themselves. See GAP #2.
+
+name: Release (AppImage)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # required for softprops/action-gh-release to create the Release
+
+env:
+  # GStreamer version built from source. Bump in lockstep with the CMake floor
+  # in CMakeLists.txt (currently >= 1.28) and the production/receiver floor.
+  GSTREAMER_VERSION: "1.28.0"
+  # Where the from-source GStreamer lands; on PATH / PKG_CONFIG_PATH below.
+  GST_PREFIX: "/opt/gstreamer"
+
+jobs:
+  appimage:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          # FLTK, rist-cpp and sdp-tools-cpp are git submodules built from source
+          # (see cmake/ExternalBuilds.cmake). recursive is required.
+          submodules: recursive
+          fetch-depth: 0
+
+      # -------------------------------------------------------------------
+      # System build dependencies.
+      #
+      # NOTE ON "mirror ci.yml": the existing .github/workflows/ci.yml is the
+      # unmodified cmake-init template — it builds via vcpkg and installs NO
+      # GStreamer/NDI/FLTK system packages (only clang-tidy-14, cppcheck, lcov
+      # for analysis jobs). So there is no apt build-dep list in ci.yml to copy.
+      # The system deps below are derived instead from the authoritative sources:
+      #   - .planning/codebase/STACK.md "How To Run" (Ubuntu dep list)
+      #   - cmake/ExternalBuilds.cmake (FLTK's INTERFACE_LINK_LIBRARIES: X11,
+      #     Xcursor, Xfixes, Xinerama, Xft, fontconfig, Xrender + OpenGL LEGACY)
+      #   - package-linux.sh (plain `cmake -D CMAKE_BUILD_TYPE=Release` build,
+      #     i.e. the Release path does NOT need vcpkg; nlohmann-json comes from
+      #     the system package instead).
+      # -------------------------------------------------------------------
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            build-essential \
+            clang \
+            cmake \
+            ninja-build \
+            pkg-config \
+            git \
+            ca-certificates \
+            wget \
+            file \
+            nlohmann-json3-dev \
+            libx11-dev \
+            libxext-dev \
+            libxcursor-dev \
+            libxfixes-dev \
+            libxinerama-dev \
+            libxft-dev \
+            libxrender-dev \
+            libfontconfig1-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            libfuse2 \
+            fuse
+
+      # -------------------------------------------------------------------
+      # GStreamer 1.28 build dependencies (meson toolchain + plugin deps).
+      # These are the build-time deps for the from-source GStreamer below,
+      # NOT for the encoder itself.
+      # -------------------------------------------------------------------
+      - name: Install GStreamer-from-source build dependencies
+        run: |
+          sudo apt-get install -y -q --no-install-recommends \
+            meson \
+            flex \
+            bison \
+            libglib2.0-dev \
+            libffi-dev \
+            zlib1g-dev \
+            liborc-0.4-dev \
+            gobject-introspection \
+            libgirepository1.0-dev
+
+      # -------------------------------------------------------------------
+      # GAP #1 — GStreamer >= 1.28.
+      #
+      # No Ubuntu apt repo currently ships GStreamer 1.28 (ubuntu-24.04 = 1.24,
+      # ubuntu-25.x = 1.26). The CMake floor is a hard invariant (do NOT lower
+      # it — the receiver/production floor is 1.28), so we build it from source.
+      #
+      # This is the slowest and highest-risk step. It is cached on the version
+      # key; a cold build is ~20-40 min. The meson option set below is a first
+      # guess — expect to trim/extend subprojects (plugins-good/bad/libav) once
+      # the first CI run tells us which runtime elements the encoder pipeline
+      # actually resolves (encode.h selects amfh264enc/h264_qsv/nvenc/x264 etc.).
+      # -------------------------------------------------------------------
+      - name: Cache GStreamer ${{ env.GSTREAMER_VERSION }}
+        id: cache-gstreamer
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GST_PREFIX }}
+          key: gstreamer-${{ env.GSTREAMER_VERSION }}-ubuntu24.04-v1
+
+      - name: Build GStreamer ${{ env.GSTREAMER_VERSION }} from source
+        if: steps.cache-gstreamer.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          git clone --depth 1 --branch "${GSTREAMER_VERSION}" \
+            https://gitlab.freedesktop.org/gstreamer/gstreamer.git /tmp/gst-src
+          cd /tmp/gst-src
+          # gpl=enabled pulls in x264/libav-backed elements; good/bad give the
+          # RTP/RTMP/SRT/TS muxers and hardware encoder wrappers the pipeline uses.
+          meson setup builddir \
+            --prefix="${GST_PREFIX}" \
+            --buildtype=release \
+            -Dgpl=enabled \
+            -Dgstreamer:gst_debug=true \
+            -Dgst-plugins-base:app=enabled \
+            -Dgood=enabled \
+            -Dbad=enabled \
+            -Dugly=disabled \
+            -Dlibav=enabled \
+            -Dexamples=disabled \
+            -Dtests=disabled \
+            -Ddoc=disabled \
+            -Dpython=disabled \
+            -Dintrospection=disabled
+          meson compile -C builddir
+          sudo meson install -C builddir
+
+      - name: Export GStreamer environment
+        run: |
+          echo "${GST_PREFIX}/bin" >> "$GITHUB_PATH"
+          {
+            echo "PKG_CONFIG_PATH=${GST_PREFIX}/lib/x86_64-linux-gnu/pkgconfig:${GST_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+            echo "LD_LIBRARY_PATH=${GST_PREFIX}/lib/x86_64-linux-gnu:${GST_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
+            echo "GST_PLUGIN_PATH=${GST_PREFIX}/lib/x86_64-linux-gnu/gstreamer-1.0:${GST_PREFIX}/lib/gstreamer-1.0"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify GStreamer version (must be >= 1.28)
+        run: |
+          set -euxo pipefail
+          pkg-config --modversion gstreamer-1.0
+          gst-inspect-1.0 --version || true
+
+      # -------------------------------------------------------------------
+      # GAP #2 — NDI SDK.
+      #
+      # find_package(NDI REQUIRED) needs the SDK headers + libndi at build time,
+      # but the SDK must NEVER be committed to the repo (CLAUDE.md invariant;
+      # README "NDI runtime is not redistributed"). We fetch the official NDI
+      # Linux SDK self-extractor from a URL kept in the NDI_SDK_URL repo secret,
+      # extract it, and point NDI_SDK_DIR at it. libndi is then EXCLUDED from the
+      # AppImage (see the linuxdeploy step) so the end user installs the runtime.
+      #
+      # If NDI_SDK_URL is unset the build cannot proceed — this is intentional
+      # and documented; set the secret before the first real release.
+      # -------------------------------------------------------------------
+      - name: Fetch and install NDI SDK
+        env:
+          NDI_SDK_URL: ${{ secrets.NDI_SDK_URL }}
+        run: |
+          set -euxo pipefail
+          if [ -z "${NDI_SDK_URL}" ]; then
+            echo "::error::NDI_SDK_URL secret is not set. The build needs the NDI SDK" \
+                 "headers/lib (find_package(NDI REQUIRED)). Set the repository secret" \
+                 "NDI_SDK_URL to the official NDI Linux SDK installer URL. The SDK is" \
+                 "never vendored in the repo (CLAUDE.md invariant)."
+            exit 1
+          fi
+          mkdir -p /tmp/ndi-dl
+          wget -q -O /tmp/ndi-dl/ndi-sdk.tar.gz "${NDI_SDK_URL}"
+          tar -xzf /tmp/ndi-dl/ndi-sdk.tar.gz -C /tmp/ndi-dl
+          # The Linux SDK ships as a shell self-extractor (*.sh) OR as a plain
+          # tree with include/ and lib/. Handle the installer form if present.
+          installer="$(find /tmp/ndi-dl -maxdepth 2 -name 'Install_NDI_SDK*.sh' | head -n1 || true)"
+          if [ -n "${installer}" ]; then
+            yes | PAGER=cat sh "${installer}" || true
+          fi
+          # Locate the directory that actually contains Processing.NDI.Lib.h.
+          ndi_hdr="$(find /tmp/ndi-dl "$HOME" -maxdepth 6 -name 'Processing.NDI.Lib.h' 2>/dev/null | head -n1 || true)"
+          if [ -z "${ndi_hdr}" ]; then
+            echo "::error::Could not locate Processing.NDI.Lib.h after extracting the NDI SDK."
+            exit 1
+          fi
+          ndi_root="$(dirname "$(dirname "${ndi_hdr}")")"
+          echo "NDI_SDK_DIR=${ndi_root}" >> "$GITHUB_ENV"
+          echo "Resolved NDI_SDK_DIR=${ndi_root}"
+
+      # -------------------------------------------------------------------
+      # Configure + build the encoder (Release).
+      #
+      # Mirrors package-linux.sh's invocation: plain CMAKE_BUILD_TYPE=Release,
+      # no vcpkg toolchain (nlohmann-json comes from nlohmann-json3-dev). FLTK
+      # and rist-cpp are built as ExternalProjects during this build.
+      # Output binary name: `open-broadcast-encoder` (OUTPUT_NAME in the top
+      # CMakeLists.txt).
+      # -------------------------------------------------------------------
+      - name: Configure
+        run: |
+          set -euxo pipefail
+          cmake -S . -B build -G Ninja \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D CMAKE_C_COMPILER=clang \
+            -D CMAKE_CXX_COMPILER=clang++ \
+            -D NDI_SDK_DIR="${NDI_SDK_DIR}"
+
+      - name: Build
+        run: cmake --build build -j "$(nproc)"
+
+      - name: Stage install into AppDir
+        run: |
+          set -euxo pipefail
+          # install(TARGETS ... RUNTIME) with no DESTINATION lands in <prefix>/bin.
+          cmake --install build --prefix AppDir/usr
+          test -x AppDir/usr/bin/open-broadcast-encoder
+
+      # -------------------------------------------------------------------
+      # GAP #3 — desktop entry + icon.
+      #
+      # linuxdeploy REQUIRES a .desktop file and an icon; the repo currently
+      # ships neither. We synthesise a minimal .desktop and a placeholder icon
+      # here so packaging can proceed. A real 256x256 (or scalable) icon and a
+      # curated .desktop should be added to the repo and referenced instead.
+      # -------------------------------------------------------------------
+      - name: Create desktop entry and placeholder icon
+        run: |
+          set -euxo pipefail
+          mkdir -p AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
+          cat > AppDir/usr/share/applications/open-broadcast-encoder.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Open Broadcast Encoder
+          Comment=Streaming Broadcast Video Encoder
+          Exec=open-broadcast-encoder
+          Icon=open-broadcast-encoder
+          Categories=AudioVideo;Video;
+          Terminal=false
+          EOF
+          # Placeholder 1x1 PNG (base64). Replace with a real icon in-repo.
+          python3 - <<'PY'
+          import base64, pathlib
+          png = base64.b64decode(
+              b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+          p = pathlib.Path("AppDir/usr/share/icons/hicolor/256x256/apps/open-broadcast-encoder.png")
+          p.write_bytes(png)
+          PY
+
+      # -------------------------------------------------------------------
+      # AppImage packaging with linuxdeploy.
+      #
+      # GAP #4 — GStreamer plugin bundling is the tricky part. linuxdeploy's
+      # core only follows ELF NEEDED links; GStreamer loads its plugins via
+      # dlopen at runtime, so they are NOT picked up automatically. We use
+      # linuxdeploy-plugin-gstreamer (bundles the plugin .so's + a wrapper that
+      # sets GST_PLUGIN_PATH/GST_PLUGIN_SYSTEM_PATH) and linuxdeploy-plugin-gtk
+      # is NOT used (this is an FLTK/X11 app, not GTK). If the gstreamer plugin
+      # cannot resolve the from-source 1.28 plugins, expect to point it at
+      # ${GST_PREFIX} via GST_PLUGIN_PATH (exported above) — verify on first run.
+      #
+      # NDI: libndi.so* is deliberately EXCLUDED so it is not redistributed;
+      # the app loads it from the host NDI runtime (README contract).
+      # -------------------------------------------------------------------
+      - name: Download linuxdeploy tooling
+        run: |
+          set -euxo pipefail
+          cd /tmp
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-gstreamer/releases/download/continuous/linuxdeploy-plugin-gstreamer.sh
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gstreamer.sh
+
+      - name: Build AppImage
+        env:
+          # linuxdeploy-plugin-gstreamer honours these to find the plugins to bundle.
+          GSTREAMER_INCLUDE_BAD_PLUGINS: "1"
+        run: |
+          set -euxo pipefail
+          export VERSION="${GITHUB_REF_NAME#v}"
+          [ "${VERSION}" = "${GITHUB_REF_NAME}" ] && export VERSION="0.0.0-dev+${GITHUB_SHA::8}"
+          # Do not bundle the NDI runtime (never redistributed).
+          export LINUXDEPLOY_EXCLUDE="libndi.so;libndi.so.6"
+          /tmp/linuxdeploy-x86_64.AppImage \
+            --appdir AppDir \
+            --plugin gstreamer \
+            --desktop-file AppDir/usr/share/applications/open-broadcast-encoder.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/open-broadcast-encoder.png \
+            --exclude-library "libndi.so*" \
+            --output appimage
+          # linuxdeploy names it Open_Broadcast_Encoder-<ver>-x86_64.AppImage or
+          # similar; normalise to a stable asset name.
+          built="$(ls -1 ./*.AppImage | head -n1)"
+          mv "${built}" "open-broadcast-encoder-${VERSION}-x86_64.AppImage"
+          echo "APPIMAGE_NAME=open-broadcast-encoder-${VERSION}-x86_64.AppImage" >> "$GITHUB_ENV"
+
+      - name: Compute SHA-256 checksum
+        run: |
+          set -euxo pipefail
+          sha256sum "${APPIMAGE_NAME}" > "${APPIMAGE_NAME}.sha256"
+          cat "${APPIMAGE_NAME}.sha256"
+
+      - name: Upload build artifacts (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: |
+            ${{ env.APPIMAGE_NAME }}
+            ${{ env.APPIMAGE_NAME }}.sha256
+          if-no-files-found: error
+
+      # -------------------------------------------------------------------
+      # Publish the Release — only on a pushed tag. workflow_dispatch runs
+      # stop after the artifact upload above (dry run).
+      # -------------------------------------------------------------------
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            ${{ env.APPIMAGE_NAME }}
+            ${{ env.APPIMAGE_NAME }}.sha256
