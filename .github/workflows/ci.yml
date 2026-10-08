@@ -195,6 +195,10 @@ jobs:
       matrix:
         os: [macos-14, windows-2022]
 
+    # The encoder is a Linux/FLTK app: the non-Linux legs are informational.
+    # They keep running and reporting their own verdict, but cannot fail the run.
+    continue-on-error: ${{ matrix.os != 'ubuntu-22.04' }}
+
     runs-on: ${{ matrix.os }}
 
     steps:
