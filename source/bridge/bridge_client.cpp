@@ -133,6 +133,27 @@ bridge_decision decide(const mdns::service& service,
   return decision;
 }
 
+std::string bridge_state_label(const mdns::service& service, bool holds_token)
+{
+  const std::string fingerprint = service.txt_value(k_txt_fingerprint);
+
+  // What we HOLD is decided first, then what was advertised. Order matters: a
+  // manual address carries no TXT at all (the browse found nothing and the
+  // typed address stood in), so an absent fingerprint is not evidence of a
+  // virgin bridge -- it is no evidence at all, and saying "virgin" there is a
+  // lie that sends the operator to Claim a box which will answer
+  // already_claimed.
+  std::string state = service.instance + " at " + service.address;
+  if (holds_token) {
+    state += " - claimed (this encoder holds the pair token)";
+  } else if (fingerprint.empty()) {
+    state += " - no advertisement; the bridge will state its claim";
+  } else {
+    state += " - claimed elsewhere";
+  }
+  return state;
+}
+
 bridge_client::bridge_client(discover_fn discover, ubus_factory_fn make_ubus)
     : m_discover(std::move(discover))
     , m_make_ubus(std::move(make_ubus))

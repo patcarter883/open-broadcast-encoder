@@ -624,3 +624,42 @@ TEST_CASE("no bridge on the LAN is reported, not thrown", "[bridge_client]")
   REQUIRE(outcome.error_code == "bridge_not_found");
   REQUIRE(fake.methods.empty());
 }
+
+TEST_CASE("a bridge with no advertisement is never labelled virgin",
+          "[bridge_client]")
+{
+  // The manual-address path: the operator typed an address, so the browse found
+  // nothing and the address stands in with no TXT at all. An absent fingerprint
+  // there is NOT evidence of a virgin bridge -- it is no evidence at all -- and
+  // saying "virgin, claimable" sent the operator to Claim a bridge which
+  // answers already_claimed. What we HOLD has to be decided first.
+  const auto manual = advertised("rist2rist-aa:bb:cc:dd:ee:ff");
+
+  const auto held = bridge::bridge_state_label(manual, /*holds_token=*/true);
+  REQUIRE(held.find("virgin") == std::string::npos);
+  REQUIRE(held.find("claimed") != std::string::npos);
+
+  // With no token held either, the label must still not assert virginity: only
+  // the bridge itself can say, and it is asked before anything is applied.
+  const auto unknown =
+      bridge::bridge_state_label(manual, /*holds_token=*/false);
+  REQUIRE(unknown.find("virgin") == std::string::npos);
+  REQUIRE(unknown.find("no advertisement") != std::string::npos);
+}
+
+TEST_CASE("an advertised fingerprint with no token held reads as another's",
+          "[bridge_client]")
+{
+  const auto published = advertised("rist2rist-aa:bb:cc:dd:ee:ff",
+                                    {{"fingerprint", "0123456789abcdef"}});
+
+  const auto label =
+      bridge::bridge_state_label(published, /*holds_token=*/false);
+  REQUIRE(label.find("elsewhere") != std::string::npos);
+  REQUIRE(label.find("virgin") == std::string::npos);
+
+  // ...and OUR token over an advertised fingerprint reads as ours, which is the
+  // claimed-by-us state DT-21 calls out.
+  const auto mine = bridge::bridge_state_label(published, /*holds_token=*/true);
+  REQUIRE(mine.find("this encoder holds") != std::string::npos);
+}

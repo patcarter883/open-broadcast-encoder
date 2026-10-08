@@ -439,17 +439,11 @@ static void bridge_find()
         }
 
         const auto& service = match.service;
-        // Only a fingerprint is ever advertised, never the token (DT-21).
-        const std::string fingerprint =
-            service.txt_value(bridge::k_txt_fingerprint);
-        std::string state = service.instance + " at " + service.address;
-        if (fingerprint.empty()) {
-          state += " - virgin, claimable";
-        } else if (cfg.token.empty()) {
-          state += " - claimed elsewhere";
-        } else {
-          state += " - claimed";
-        }
+        // Only a fingerprint is ever advertised, never the token (DT-21). The
+        // label comes from the pure helper so the manual-address case -- where
+        // nothing is advertised at all -- cannot claim a bridge is virgin.
+        const std::string state =
+            bridge::bridge_state_label(service, !cfg.token.empty());
         transport_log("Bridge found: " + state + "\n");
         if (ctx.ui != nullptr) {
           ctx.ui->set_bridge_discovered(
