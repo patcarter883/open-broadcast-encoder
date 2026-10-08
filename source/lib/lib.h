@@ -24,6 +24,12 @@ enum class input_mode : std::uint8_t
   sdp,
   ndi,
   raw_local,  // uncompressed video+audio from the OBS raw output plugin
+  // MC4: a JPEG XS camera on the LAN, ingested over the SAME path the mpegts
+  // mode uses (tsparse/tsdemux -> decodebin3 -> svtjpegxsdec). Placed BEFORE
+  // `none` so the existing menu user_data indices (which mirror this enum)
+  // and every switch case keep their meaning -- the same rule raw_local's
+  // addition followed.
+  jpegxs_capture,
   none
 };
 
@@ -93,6 +99,13 @@ struct input_config
 {
   std::string selected_input;
   input_mode selected_input_mode = input_mode::none;
+  // MC4 jpegxs_capture only. `selected_input` stays what it is for mpegts and
+  // raw_local -- the LISTEN PORT -- and the camera chosen from the LAN browse
+  // (k_cam_service) lives here, because a unicast reader needs both the port it
+  // binds and the camera address it routes toward (and filters on). Both empty
+  // is the manual fallback (DT-19): bind the wildcard and accept any sender.
+  std::string capture_address;
+  std::string capture_name;  // the advertised name, for the UI/logs only
 };
 
 struct encode_config

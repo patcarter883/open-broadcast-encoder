@@ -95,6 +95,8 @@ const char* input_mode_str(input_mode m) noexcept
       return "ndi";
     case input_mode::raw_local:
       return "raw_local";
+    case input_mode::jpegxs_capture:
+      return "jpegxs_capture";
     case input_mode::none:
       return "none";
   }
@@ -113,6 +115,8 @@ bool parse_input_mode(const std::string& s, input_mode& out) noexcept
     out = input_mode::ndi;
   } else if (s == "raw_local") {
     out = input_mode::raw_local;
+  } else if (s == "jpegxs_capture") {
+    out = input_mode::jpegxs_capture;
   } else if (s == "none") {
     out = input_mode::none;
   } else {
@@ -247,6 +251,11 @@ bool save(const library& lib)
   root["input"] = {
       {"selected_input", in.selected_input},
       {"selected_input_mode", input_mode_str(in.selected_input_mode)},
+      // MC4 jpegxs_capture: the LAN camera chosen in the picker. Persisted so a
+      // restart keeps the operator's selection; the browse repopulates the
+      // list.
+      {"capture_address", in.capture_address},
+      {"capture_name", in.capture_name},
   };
 
   root["encode"] = {
@@ -348,6 +357,8 @@ bool load(library& lib)
     {
       parse_input_mode(m->get<std::string>(), in.selected_input_mode);
     }
+    get_to(j, "capture_address", in.capture_address);
+    get_to(j, "capture_name", in.capture_name);
     // The UI has no "None" item (the protocol choice only offers the four real
     // modes), so a hand-edited input_mode::none would leave the widget and the
     // model disagreeing after apply_settings(). Normalise it to the app

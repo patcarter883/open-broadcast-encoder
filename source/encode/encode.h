@@ -20,6 +20,7 @@
 #include "lib/lib.h"
 
 class raw_local_input;
+class capture_input;
 
 // Lifecycle of the encode pipeline. Without an explicit state a parse failure
 // or a pipeline error leaves the app looking identical to a healthy stream:
@@ -91,6 +92,11 @@ private:
   GstElement* raw_video_src = nullptr;
   GstElement* raw_audio_src = nullptr;
   std::unique_ptr<raw_local_input> raw_reader;
+  // jpegxs_capture only (MC4): the `capturets` appsrc the LAN reader pushes
+  // MPEG-TS datagrams into, and the reader itself. Stopped before the appsrc is
+  // unreffed (see clear_pipeline_state), exactly like the raw_local reader.
+  GstElement* capture_ts_src = nullptr;
+  std::unique_ptr<capture_input> capture_reader;
   GstBus* bus = nullptr;
   void clear_pipeline_state();
   auto pull_from_sink(GstElement* encode::* sink_field) -> buffer_data;
@@ -111,6 +117,7 @@ private:
   void parse_pipeline();
   void play_pipeline();
   void start_raw_reader();
+  void start_capture_reader();
   auto raw_format_verdict(std::uint32_t obs_format) -> std::string;
   void handle_gst_message_error(GstMessage* message);
   void handle_gst_message_eos(GstMessage* message);

@@ -11,6 +11,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -327,6 +328,9 @@ namespace
 // that a missing bridge is not a hang.
 constexpr auto k_bridge_window = std::chrono::milliseconds(1500);
 
+// The same window for a camera advertisement (MC4).
+constexpr auto k_cam_window = std::chrono::milliseconds(1500);
+
 // The operator may type a bare host; the bridge's own destination list wants a
 // URL.
 auto as_rist_url(const std::string& address) -> std::string
@@ -450,6 +454,64 @@ static void bridge_find()
         if (ctx.ui != nullptr) {
           ctx.ui->set_bridge_discovered(
               service.instance, service.address, state, false);
+        }
+      }));
+}
+
+// ---------------------------------------------------------------------------
+// Capture sources (MC4): browse the LAN for JPEG XS cameras and fill the
+// picker so a discovered camera can be used as an INPUT.
+//
+// mDNS is a LISTING, never a control channel (DT-23.3): this only reads. The
+// authenticated registry path (adopt, MC5) records cameras in the backplane;
+// it is not needed to consume one, so the encoder uses whatever is on the LAN.
+//
+// bridge::discover() blocks by design, so this runs on the same tracked
+// background thread as the bridge actions and the results go through
+// user_interface::set_capture_sources, which takes the FLTK lock -- a worker
+// never touches the config or a widget directly.
+// ---------------------------------------------------------------------------
+static void refresh_capture_sources()
+{
+  if (ctx.ui != nullptr) {
+    ctx.ui->set_capture_sources({}, "Searching for cameras...", false);
+  }
+  track_control_thread(std::thread(
+      []
+      {
+        const auto found =
+            bridge::discover(k_cam_window, bridge::mdns::k_cam_service);
+        std::vector<std::pair<std::string, std::string>> sources;
+        sources.reserve(found.size());
+        for (const auto& svc : found) {
+          // Select by NAME: the advertised `name`, else the instance. The
+          // resolution/fps ride along so the operator can tell two cameras
+          // apart at a glance.
+          std::string label = svc.txt_value("name");
+          if (label.empty()) {
+            label = svc.instance;
+          }
+          const std::string resolution = svc.txt_value("resolution");
+          const std::string fps = svc.txt_value("fps");
+          if (!resolution.empty()) {
+            label += " (" + resolution;
+            label += fps.empty() ? ")" : std::format(" @ {} fps)", fps);
+          }
+          // The A record address is what the reader routes toward and filters
+          // on; the SRV target is the honest fallback when it did not resolve.
+          sources.emplace_back(label,
+                               svc.address.empty() ? svc.host : svc.address);
+        }
+        const std::string message =
+            sources.empty()
+                ? std::string {"No cameras found - is the node advertising "
+                               "_obr-cam._udp?"}
+                : std::format("Found {} camera{}.",
+                              sources.size(),
+                              sources.size() == 1 ? "" : "s");
+        transport_log("Capture: " + message + "\n");
+        if (ctx.ui != nullptr) {
+          ctx.ui->set_capture_sources(sources, message, false);
         }
       }));
 }
@@ -1115,7 +1177,8 @@ auto main(int argc, char** argv) -> int
       &bridge_apply,
       &hosted_allocate,
       &hosted_sign_in,
-      &hosted_sign_out);
+      &hosted_sign_out,
+      &refresh_capture_sources);
 
   // Restore persisted settings (if any) over the UI defaults set above, then
   // mirror them into the widgets so the operator sees their saved values.

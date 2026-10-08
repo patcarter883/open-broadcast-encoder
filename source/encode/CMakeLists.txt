@@ -17,6 +17,10 @@ target_sources(encode_lib ${warning_guard}
   PUBLIC
     encode.h
     encode.cpp
+    capture_source.h
+    capture_source.cpp
+    capture_input.h
+    capture_input.cpp
     raw_format.h
     raw_format.cpp
     raw_local.h

@@ -120,6 +120,33 @@ target_link_libraries(raw_format_test PRIVATE Catch2::Catch2WithMain)
 
 catch_discover_tests(raw_format_test)
 
+# capture_source.cpp carries no GStreamer types either: it is the unicast
+# addressing half of the JPEG XS capture ingest (MC4), and compiling it directly
+# keeps its lane free of the pipeline.
+add_executable(capture_source_test
+    source/capture_source_test.cpp
+    ${CMAKE_SOURCE_DIR}/source/encode/capture_source.cpp
+)
+target_include_directories(capture_source_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(capture_source_test PRIVATE cxx_std_20)
+target_link_libraries(capture_source_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(capture_source_test)
+
+# The settings contract for the capture input mode: the mode name and the chosen
+# camera must survive a save/load round-trip (MC4).
+add_executable(capture_settings_test source/capture_settings_test.cpp)
+target_link_libraries(
+    capture_settings_test PRIVATE
+    settings_lib
+    open-broadcast-encoder_lib
+    nlohmann_json::nlohmann_json
+    Catch2::Catch2WithMain
+)
+target_compile_features(capture_settings_test PRIVATE cxx_std_20)
+
+catch_discover_tests(capture_settings_test)
+
 # The one Allocate action: allocate -> apply the bridge on the LAN -> report. Links
 # both libs because the whole point is the seam between them.
 add_executable(actuate_test source/actuate_test.cpp)

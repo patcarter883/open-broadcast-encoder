@@ -201,6 +201,18 @@ Fl_Menu_Item user_interface::menu_choice_input_protocol[] = {
      .labelfont_ = 0,
      .labelsize_ = 14,
      .labelcolor_ = 0},
+    {.text = "JPEG XS Camera (LAN)",
+     .shortcut_ = 0,
+     .callback_ = 0,
+     // MC4: index 5 mirrors input_mode::jpegxs_capture. Appended AFTER
+     // raw_local and before the `none` terminator, so the existing indices 0..4
+     // keep their meaning (the enum's rule).
+     .user_data_ = (void*)(5),
+     .flags = 0,
+     .labeltype_ = (uchar)FL_NORMAL_LABEL,
+     .labelfont_ = 0,
+     .labelsize_ = 14,
+     .labelcolor_ = 0},
     {.text = 0,
      .shortcut_ = 0,
      .callback_ = 0,
@@ -377,6 +389,32 @@ user_interface::user_interface()
               ndi_options_group->end();
             }  // Fl_Flex* ndi_options_group
             {
+              // JPEG XS capture (MC4): a picker of LAN cameras plus a refresh
+              // button, laid out like the NDI group.
+              capture_options_group = new Fl_Flex(100, 252, 260, 128);
+              capture_options_group->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+              capture_options_group->hide();
+              {
+                choice_capture_input =
+                    new Fl_Choice(100, 252, 260, 25, "Camera");
+                choice_capture_input->down_box(FL_BORDER_BOX);
+                choice_capture_input->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+              }  // Fl_Choice* choice_capture_input
+              {
+                btn_refresh_capture =
+                    new Fl_Button(100, 289, 260, 25, "Find Cameras");
+              }  // Fl_Button* btn_refresh_capture
+              {
+                capture_state_output = new Fl_Output(100, 326, 260, 25);
+                capture_state_output->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+                capture_state_output->value("Not searched yet - press Find.");
+              }  // Fl_Output* capture_state_output
+              capture_options_group->gap(12);
+              capture_options_group->fixed(capture_options_group->child(0), 25);
+              capture_options_group->fixed(capture_options_group->child(1), 25);
+              capture_options_group->end();
+            }  // Fl_Flex* capture_options_group
+            {
               btn_preview_input =
                   new Fl_Button(31, 101, 421, 25, "Preview Input");
             }  // Fl_Button* btn_preview_input
@@ -384,6 +422,7 @@ user_interface::user_interface()
             flx_input->gap(25);
             flx_input->fixed(flx_input->child(0), 25);
             flx_input->fixed(ndi_options_group, 62);
+            flx_input->fixed(capture_options_group, 62);
             flx_input->fixed(btn_preview_input, 25);
             flx_input->end();
           }  // Fl_Flex* flx_input
@@ -872,7 +911,8 @@ int user_interface::run_ui()
 }
 
 void user_interface::choose_input_protocol(input_config* input_config,
-                                           FuncPtr refresh_ndi_funcptr)
+                                           FuncPtr refresh_ndi_funcptr,
+                                           FuncPtr refresh_capture_funcptr)
 {
   switch (
       reinterpret_cast<uintptr_t>(choice_input_protocol->mvalue()->user_data()))
@@ -943,10 +983,32 @@ void user_interface::choose_input_protocol(input_config* input_config,
       break;
     }
 
+    case 5: {
+      input_config->selected_input_mode = input_mode::jpegxs_capture;
+      Fl::lock();
+      // Shares the MPEG-TS option group's listen-port field: for a unicast
+      // camera link that field is the STREAM PORT this side receives on, and
+      // the camera node's default is 5000.
+      if (input_listen_port->value()[0] == '\0') {
+        input_listen_port->value("5000");
+      }
+      capture_options_group->show();
+      mpegts_options_group->show();
+      sdp_options_group->hide();
+      ndi_options_group->hide();
+      layout();
+      Fl::unlock();
+      Fl::awake();
+      // Browsing blocks; run it on a tracked background thread.
+      refresh_capture_funcptr();
+      break;
+    }
+
     default: {
       input_config->selected_input_mode = input_mode::none;
       Fl::lock();
       ndi_options_group->hide();
+      capture_options_group->hide();
       sdp_options_group->hide();
       layout();
       Fl::unlock();
@@ -983,6 +1045,72 @@ void user_interface::choose_ndi_input(input_config* input_config)
 {
   auto input_name = static_cast<char*>(choice_ndi_input->mvalue()->user_data());
   input_config->selected_input = input_name;
+}
+
+// ---- Capture (MC4) picker --------------------------------------------------
+// The browse runs on a tracked background thread (it blocks by design), so the
+// worker populates the picker through set_capture_sources, which takes the FLTK
+// lock. Selecting an item is a normal FLTK callback on the UI thread and writes
+// the model directly, like choose_ndi_input.
+
+void user_interface::choose_capture_input(input_config* input_config)
+{
+  if (choice_capture_input->mvalue() == nullptr) {
+    return;
+  }
+  // The item's user_data is the camera's ADDRESS (stable storage); the label is
+  // the name the operator sees. The reader needs the address; the name is kept
+  // only for the log line.
+  const auto* address =
+      static_cast<const char*>(choice_capture_input->mvalue()->user_data());
+  if (address != nullptr) {
+    input_config->capture_address = address;
+  }
+  const char* label = choice_capture_input->mvalue()->label();
+  if (label != nullptr) {
+    input_config->capture_name = label;
+  }
+}
+
+void user_interface::refresh_capture(FuncPtr refresh_capture_funcptr)
+{
+  if (refresh_capture_funcptr != nullptr) {
+    refresh_capture_funcptr();
+  }
+}
+
+void user_interface::set_capture_sources(
+    const std::vector<std::pair<std::string, std::string>>& sources,
+    const std::string& message,
+    bool is_error)
+{
+  lock();
+  // Reserve BEFORE pushing so the char* handed to the menu items (the label
+  // text and the user_data address) stay valid as the vectors grow.
+  capture_label_storage.clear();
+  capture_address_storage.clear();
+  capture_label_storage.reserve(sources.size());
+  capture_address_storage.reserve(sources.size());
+  choice_capture_input->clear();
+  for (const auto& [label, address] : sources) {
+    capture_label_storage.push_back(label);
+    capture_address_storage.push_back(address);
+  }
+  for (std::size_t i = 0; i < capture_label_storage.size(); ++i) {
+    choice_capture_input->add(capture_label_storage[i].c_str(),
+                              0,
+                              nullptr,
+                              capture_address_storage[i].data(),
+                              0);
+  }
+  if (choice_capture_input->size() > 0) {
+    choice_capture_input->value(0);
+  }
+  capture_state_output->value(message.c_str());
+  capture_state_output->textcolor(is_error ? FL_RED : FL_BLACK);
+  capture_state_output->redraw();
+  unlock();
+  Fl::awake();
 }
 
 void user_interface::input_listen_port_cb(input_config* input_config)
@@ -1214,6 +1342,7 @@ void user_interface::apply_settings(const input_config& input_c,
   mpegts_options_group->hide();
   sdp_options_group->hide();
   ndi_options_group->hide();
+  capture_options_group->hide();
   switch (input_c.selected_input_mode) {
     case input_mode::mpegts:
       input_listen_port->value(input_c.selected_input.c_str());
@@ -1232,6 +1361,32 @@ void user_interface::apply_settings(const input_config& input_c,
       // The saved device name may not be present yet; the NDI monitor
       // repopulates choice_ndi_input. The model already holds selected_input.
       ndi_options_group->show();
+      break;
+    case input_mode::jpegxs_capture:
+      input_listen_port->value(input_c.selected_input.empty()
+                                   ? "5000"
+                                   : input_c.selected_input.c_str());
+      mpegts_options_group->show();
+      capture_options_group->show();
+      // Show the SAVED camera as the only item until a browse repopulates the
+      // list. The address is what the reader binds toward; the label is the
+      // saved name (or the address when no name was kept).
+      if (!input_c.capture_address.empty()) {
+        capture_label_storage.clear();
+        capture_address_storage.clear();
+        capture_label_storage.push_back(input_c.capture_name.empty()
+                                            ? input_c.capture_address
+                                            : input_c.capture_name);
+        capture_address_storage.push_back(input_c.capture_address);
+        choice_capture_input->clear();
+        choice_capture_input->add(capture_label_storage.back().c_str(),
+                                  0,
+                                  nullptr,
+                                  capture_address_storage.back().data(),
+                                  0);
+        choice_capture_input->value(0);
+        capture_state_output->value("Saved selection - press Find to refresh.");
+      }
       break;
     case input_mode::testsrc:
     case input_mode::none:
@@ -1447,21 +1602,24 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                                        FuncPtr bridge_apply_funcptr,
                                        FuncPtr hosted_allocate_funcptr,
                                        FuncPtr hosted_signin_funcptr,
-                                       FuncPtr hosted_signout_funcptr)
+                                       FuncPtr hosted_signout_funcptr,
+                                       FuncPtr refresh_capture_funcptr)
 {
   main_window->callback([](Fl_Widget* w, void*) { w->hide(); });
 
   transport_log_display->buffer(transport_log_buffer);
   encode_log_display->buffer(encode_log_buffer);
 
-  FL_METHOD_CALLBACK_2(choice_input_protocol,
+  FL_METHOD_CALLBACK_3(choice_input_protocol,
                        user_interface,
                        this,
                        choose_input_protocol,
                        input_config*,
                        input_c,
                        FuncPtr,
-                       ndi_refresh_funcptr);
+                       ndi_refresh_funcptr,
+                       FuncPtr,
+                       refresh_capture_funcptr);
 
   // The protocol dropdown has no value until the user actively selects an
   // item, leaving mvalue() == nullptr and selected_input_mode == none. In that
@@ -1477,6 +1635,20 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        choose_ndi_input,
                        input_config*,
                        input_c);
+
+  FL_METHOD_CALLBACK_1(choice_capture_input,
+                       user_interface,
+                       this,
+                       choose_capture_input,
+                       input_config*,
+                       input_c);
+
+  FL_METHOD_CALLBACK_1(btn_refresh_capture,
+                       user_interface,
+                       this,
+                       refresh_capture,
+                       FuncPtr,
+                       refresh_capture_funcptr);
 
   FL_METHOD_CALLBACK_1(input_listen_port,
                        user_interface,

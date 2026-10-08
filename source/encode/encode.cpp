@@ -17,6 +17,8 @@
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
 
+#include "encode/capture_input.h"
+#include "encode/capture_source.h"
 #include "encode/raw_format.h"
 #include "encode/raw_local.h"
 
@@ -61,6 +63,12 @@ void encode::clear_pipeline_state()
     this->raw_reader->stop();
     this->raw_reader.reset();
   }
+  // Same rule for the capture reader: it pushes into the appsrc below, so it
+  // stops before the pipeline (and that appsrc) is torn down.
+  if (this->capture_reader) {
+    this->capture_reader->stop();
+    this->capture_reader.reset();
+  }
 
   std::lock_guard<std::mutex> guard(this->pipeline_mutex);
   if (this->pipeline_cleaned_up.load(std::memory_order_acquire)) {
@@ -100,6 +108,10 @@ void encode::clear_pipeline_state()
   if (this->raw_audio_src != nullptr) {
     gst_object_unref(this->raw_audio_src);
     this->raw_audio_src = nullptr;
+  }
+  if (this->capture_ts_src != nullptr) {
+    gst_object_unref(this->capture_ts_src);
+    this->capture_ts_src = nullptr;
   }
   if (this->bus != nullptr) {
     gst_object_unref(this->bus);
@@ -178,6 +190,24 @@ void encode::pipeline_build_source()
           "max-bytes=16777216 "
           "appsrc name=rawaudio is-live=true format=time do-timestamp=false "
           "max-bytes=1048576 ";
+      break;
+    case input_mode::jpegxs_capture:
+      // MC4: the JPEG XS camera link over the LAN. The node muxes JPEG XS into
+      // MPEG-TS and sends it UNICAST to an ingest point, so this side LISTENS
+      // on the stream port and capture_input (below, at Start) binds the
+      // interface that routes to the selected camera and pushes each datagram
+      // into `capturets`. From tsparse onward this is deliberately the SAME
+      // fragment the mpegts mode builds, so tsdemux -> decodebin3 ->
+      // svtjpegxsdec (the ONE JPEG XS decode path) is reused, not reimplemented
+      // (MC4.2).
+      //
+      // `do-timestamp=true` because the datagrams arrive without timestamps and
+      // this appsrc is format=time; tsparse set-timestamps=true then derives
+      // the real ones from the multiplex's PCR.
+      this->pipeline_str =
+          "appsrc name=capturets is-live=true format=time do-timestamp=true "
+          "caps=video/mpegts,systemstream=true max-bytes=16777216 "
+          "! tsparse set-timestamps=true ! tsdemux latency=10 name=demux ";
       break;
     case input_mode::none:
       break;
@@ -420,9 +450,12 @@ void encode::pipeline_build_video_payloader()
 // Connect the pad-added handler for the MPEG-TS demux. Scoped to that path by
 // the named branch queues: only pipeline_build_{video,audio}_demux's default
 // case creates them, so ndi/sdp/testsrc keep their existing parse-time links.
+// Only the VIDEO queue is required: a video-only input (the JPEG XS camera
+// link) omits the audio branch entirely, so audio_queue is legitimately nullptr
+// there.
 void encode::link_demux_pads()
 {
-  if (this->video_queue == nullptr || this->audio_queue == nullptr) {
+  if (this->video_queue == nullptr) {
     return;
   }
   GstElement* demux =
@@ -466,7 +499,15 @@ void encode::link_demux_pad(GstPad* pad)
   }
 
   GstElement* queue = nullptr;
-  if (g_str_has_prefix(media_type, "video/")) {
+  // tsdemux surfaces JPEG XS as `image/x-jxsc`, not `video/*` (a JPEG XS
+  // elementary stream is a still-image codec to the multiplex). Route it to the
+  // VIDEO branch so decodebin3 -> svtjpegxsdec runs -- the same branch, and so
+  // the same ONE decode path, that a `video/` elementary stream uses. Without
+  // this the pad is never linked, tsdemux's push returns NOT_LINKED and the
+  // pipeline dies with "streaming stopped, reason not-linked".
+  if (g_str_has_prefix(media_type, "video/")
+      || g_str_has_prefix(media_type, "image/x-jxsc"))
+  {
     queue = this->video_queue;
   } else if (g_str_has_prefix(media_type, "audio/")) {
     queue = this->audio_queue;
@@ -493,9 +534,17 @@ void encode::build_pipeline()
 {
   this->pipeline_build_source();
   this->pipeline_build_sink();
-  this->pipeline_build_audio_demux();
-  this->pipeline_build_audio_encoder();
-  this->pipeline_build_audio_payloader();
+  // The JPEG XS camera link carries video only. mpegtsmux is a collectpads
+  // aggregator: a request pad that is LINKED but never receives data stalls the
+  // muxer, so a silent audio branch would stall the entire output (the input
+  // has no audio to give it). Omit the audio branch for a video-only input --
+  // the same way the input itself omits audio -- so tsmux has only the pad that
+  // is actually fed.
+  if (input_c.selected_input_mode != input_mode::jpegxs_capture) {
+    this->pipeline_build_audio_demux();
+    this->pipeline_build_audio_encoder();
+    this->pipeline_build_audio_payloader();
+  }
   this->pipeline_build_video_demux();
   this->pipeline_build_video_encoder();
   this->pipeline_build_video_payloader();
@@ -535,6 +584,9 @@ void encode::parse_pipeline()
       gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), "rawvideo");
   this->raw_audio_src =
       gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), "rawaudio");
+  // Null unless the mode is jpegxs_capture.
+  this->capture_ts_src =
+      gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), "capturets");
   this->link_demux_pads();
 
   this->bus = gst_element_get_bus(this->datasrc_pipeline);
@@ -600,6 +652,9 @@ void encode::run_encode_thread()
   gst_element_set_state(this->datasrc_pipeline, GST_STATE_PLAYING);
   if (this->input_c.selected_input_mode == input_mode::raw_local) {
     this->start_raw_reader();
+  }
+  if (this->input_c.selected_input_mode == input_mode::jpegxs_capture) {
+    this->start_capture_reader();
   }
   threads.emplace_back([this] { play_pipeline(); });
 }
@@ -674,6 +729,42 @@ void encode::start_raw_reader()
       [this](std::uint32_t obs_format)
       { return this->raw_format_verdict(obs_format); });
   this->raw_reader->start();
+}
+
+// MC4: the LAN reader for a JPEG XS capture source. The port is the stream
+// port the camera is sending TO (the listener field, defaulting to the node's
+// 5000); the address is the camera chosen in the LAN picker, used to bind the
+// interface that routes to it and to drop datagrams from any other sender. Both
+// may be absent -- the manual fallback (DT-19): wildcard bind, accept any
+// sender. The reader is a member so clear_pipeline_state() stops it before the
+// appsrc it pushes into is unreffed.
+void encode::start_capture_reader()
+{
+  if (this->capture_ts_src == nullptr) {
+    log("*** jpegxs_capture: pipeline has no capturets appsrc; not starting "
+        "the reader ***\n");
+    return;
+  }
+
+  const std::uint16_t port =
+      capture::parse_stream_port(this->input_c.selected_input);
+  if (this->input_c.selected_input.empty()) {
+    log(std::format("jpegxs_capture: no stream port given; using {}\n", port));
+  }
+
+  this->log(std::format(
+      "jpegxs_capture: capture source '{}' ({})\n",
+      this->input_c.capture_name.empty() ? std::string {"<manual>"}
+                                         : this->input_c.capture_name,
+      this->input_c.capture_address.empty() ? std::string {"any address"}
+                                            : this->input_c.capture_address));
+
+  this->capture_reader = std::make_unique<capture_input>(
+      this->capture_ts_src,
+      this->input_c.capture_address,
+      port,
+      [this](const std::string& msg) { this->log(msg); });
+  this->capture_reader->start();
 }
 
 void encode::stop_encode_thread()
