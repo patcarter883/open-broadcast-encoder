@@ -54,6 +54,10 @@ ExternalProject_Add(
 
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+    # The imported target below expects <INSTALL_DIR>/lib/libfltk.a. Fedora's
+    # GNUInstallDirs defaults to lib64, which broke the link there; pin the
+    # layout so every distro installs into lib/.
+    -DCMAKE_INSTALL_LIBDIR:STRING=lib
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DCMAKE_C_COMPILER:FILEPATH=${CMAKE_C_COMPILER}
     -DCMAKE_CXX_COMPILER:FILEPATH=${CMAKE_CXX_COMPILER}
@@ -115,6 +119,9 @@ ExternalProject_Add(
 
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+    # Same lib/ layout assumption as FLTK above (imported target points at
+    # <INSTALL_DIR>/lib/librist.a); pin it against lib64-based distros.
+    -DCMAKE_INSTALL_LIBDIR:STRING=lib
     -DCMAKE_BUILD_TYPE:STRING=Release
     -DCMAKE_SYSTEM_NAME:STRING=${CMAKE_SYSTEM_NAME}
     -DCMAKE_C_COMPILER:FILEPATH=${CMAKE_C_COMPILER}
