@@ -110,7 +110,7 @@ jobs:
       run: >-
         dnf install -y
         gcc gcc-c++ clang compiler-rt cmake ninja-build pkgconf-pkg-config make
-        gstreamer1-devel gstreamer1-plugins-base-devel
+        gstreamer1-devel gstreamer1-plugins-base-devel openssl-devel
         libX11-devel libXcursor-devel libXfixes-devel libXinerama-devel
         libXft-devel fontconfig-devel libXrender-devel mesa-libGL-devel
         meson curl zip unzip tar which findutils
@@ -162,7 +162,7 @@ jobs:
         dnf install -y
         gcc gcc-c++ clang clang-tools-extra cppcheck cmake ninja-build
         pkgconf-pkg-config make
-        gstreamer1-devel gstreamer1-plugins-base-devel
+        gstreamer1-devel gstreamer1-plugins-base-devel openssl-devel
         libX11-devel libXcursor-devel libXfixes-devel libXinerama-devel
         libXft-devel fontconfig-devel libXrender-devel mesa-libGL-devel
         meson curl zip unzip tar which findutils
