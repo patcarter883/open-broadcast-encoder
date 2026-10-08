@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 
-#include "stats/bitrate_scale.h"
-
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+
+#include "stats/bitrate_scale.h"
 
 #include "lib/lib.h"
 
@@ -53,13 +53,13 @@ auto scale_locked(double quality,
   stats->window_quality_count += 1;
   const int64_t now = steady_ms();
   if (stats->last_decision_ms != 0
-      && now - stats->last_decision_ms < k_decision_interval_ms) {
+      && now - stats->last_decision_ms < k_decision_interval_ms)
+  {
     return false;  // still inside the window: keep accumulating
   }
   const double sampled = stats->window_quality_count > 0
-                             ? stats->window_quality_sum
-                                   / stats->window_quality_count
-                             : quality;
+      ? stats->window_quality_sum / stats->window_quality_count
+      : quality;
   stats->window_quality_sum = 0.0;  // start the next window empty
   stats->window_quality_count = 0;
   stats->last_decision_ms = now;
@@ -98,8 +98,8 @@ auto scale_locked(double quality,
 
   // Fast down, slow up: a decrease is applied on the decision that sees it, an
   // increase waits out the hold-off since the last decrease.
-  if (bitrateDelta > 0
-      && now - stats->last_decrease_ms < k_increase_holdoff_ms) {
+  if (bitrateDelta > 0 && now - stats->last_decrease_ms < k_increase_holdoff_ms)
+  {
     bitrateDelta = 0;
   }
 
@@ -109,8 +109,8 @@ auto scale_locked(double quality,
     // Damp by 2 so one bad window cannot halve the bitrate, and clamp to
     // [k_min_bitrate_kbps, ceiling].
     int candidate = stats->current_bitrate + bitrateDelta / 2;
-    int newBitrate = std::max(
-        std::min(candidate, static_cast<int>(maxBitrate)), k_min_bitrate_kbps);
+    int newBitrate = std::max(std::min(candidate, static_cast<int>(maxBitrate)),
+                              k_min_bitrate_kbps);
     if (newBitrate < stats->current_bitrate) {
       stats->last_decrease_ms = now;  // re-arm the hold-off on every drop
     }

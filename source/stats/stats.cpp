@@ -9,7 +9,6 @@
 #include "stats.h"
 
 #include "stats/bitrate_scale.h"
-
 #include "ui/ui.h"
 
 auto stats::scale_encoder_bitrate_locked(double quality,
