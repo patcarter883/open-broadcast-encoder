@@ -73,6 +73,13 @@ public:
   ubus_result claim(const std::string& device_uid);
   ubus_result get_config();
   ubus_result reconcile(const nlohmann::json& desired);
+
+  // Install the session's RIST passphrase on the bridge for its OUTPUT legs.
+  // Its own method rather than a config field: the bridge's config whitelist
+  // refuses secret-bearing fields by design, so a secret can never appear in a
+  // config report. Write-only -- nothing reads the value back.
+  ubus_result set_link_secret(const std::string& psk, int aes);
+
   ubus_result release();
   ubus_result reload();
 

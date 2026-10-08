@@ -220,6 +220,23 @@ reconcile_outcome bridge_client::reconcile(const reconcile_request& request,
     client->set_token(token);
   }
 
+  // The session's passphrase is reconciled like the rest of the state: always
+  // sent, with an empty value meaning "this session is not encrypted". Sending
+  // it unconditionally is the point -- skipping the call when a session carries
+  // no key would leave the PREVIOUS session's key on the bridge, and the next
+  // cleartext leg would then be configured to encrypt with a dead passphrase.
+  //
+  // It goes in BEFORE the config that restarts the bridge: the bridge assembles
+  // its RIST URLs when it (re)starts, and the apply below is what restarts it.
+  // A failure is fatal rather than tolerated -- a bridge that carries media in
+  // the clear while reporting success is the worst outcome available.
+  const auto secret =
+      client->set_link_secret(request.link_secret, request.link_secret_aes);
+  if (!secret.ok) {
+    fail(outcome, secret.error_code, secret.error);
+    return outcome;
+  }
+
   // Only apply when there is something to apply. reconcile replaces outputs
   // WHOLESALE, so an empty desired state would wipe a working bridge's outputs.
   const bool should_apply =

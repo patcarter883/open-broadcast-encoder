@@ -47,6 +47,12 @@ struct reconcile_request
   // the token comes FROM the bridge -- so this is a self-asserted hint about
   // which controller took the bridge, never a basis for trust.
   std::string encoder_uid;
+  // The session's RIST passphrase for the bridge's OUTPUT legs, and its AES
+  // strength. Empty means the session is not encrypted on that hop. Installed
+  // before the config is applied, because applying it is what restarts the
+  // bridge and therefore reloads its URLs.
+  std::string link_secret;
+  int link_secret_aes = 256;
 };
 
 // Health and state as reported back to the backplane.

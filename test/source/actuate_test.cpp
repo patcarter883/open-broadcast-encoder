@@ -357,6 +357,44 @@ TEST_CASE("a virgin bridge still claims when the portal holds no token",
   CHECK(f.seen_request.allow_claim);
 }
 
+TEST_CASE("the session's key rides with the reconcile request",
+          "[bridge][actuate]")
+{
+  // The bridge cannot obtain the passphrase any other way: it holds no
+  // backplane credential, and its config endpoint refuses secret-bearing fields
+  // by design. So every bridged actuation must carry it, or the WAN leg goes
+  // out in the clear while everything reports success.
+  fakes f;
+  f.session = bridged_session();
+  actuate_request req = bridged_request();
+
+  const actuate_outcome out =
+      f.make().run(req, std::chrono::milliseconds {2000});
+
+  REQUIRE(out.ok);
+  CHECK(f.seen_request.link_secret == "deadbeef");
+  CHECK(f.seen_request.link_secret_aes == 256);
+}
+
+TEST_CASE("an unencrypted session CLEARS the key rather than omitting it",
+          "[bridge][actuate]")
+{
+  // The dangerous case is not the encrypted session, it is the one after it. If
+  // a keyless session skipped the call, the bridge would keep the previous
+  // session's passphrase in its 0600 file and encrypt the next WAN leg with a
+  // dead key -- a failure that looks like a network fault from every angle.
+  fakes f;
+  f.session = bridged_session();
+  f.session.psk.clear();
+  actuate_request req = bridged_request();
+
+  const actuate_outcome out =
+      f.make().run(req, std::chrono::milliseconds {2000});
+
+  REQUIRE(out.ok);
+  CHECK(f.seen_request.link_secret.empty());
+}
+
 TEST_CASE("bridge_desired_config maps the session to the bridge's upstream",
           "[bridge][actuate]")
 {
