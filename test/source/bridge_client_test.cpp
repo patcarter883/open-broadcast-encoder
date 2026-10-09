@@ -56,6 +56,32 @@ struct fake_bridge
   std::string claim_token_value = "tok-NEW";
 
   json config {"ok", true};
+  bool calibrate_succeeds = true;
+  // The bridge's own report, shaped exactly as the plugin emits it: a leg whose
+  // shaper is null, a leg that measured, and the shaped confirmation.
+  json calibrate_report {
+      {"ok", true},
+      {"scale", 100},
+      {"aggregate_kbps", 750},
+      {"aggregate_state", "ok"},
+      {"shaper", "restored"},
+      {"legs",
+       json::array({json {{"interface", "wwan0"},
+                          {"state", "ok"},
+                          {"weight", 100},
+                          {"measured_kbps", 750},
+                          {"shaper_kbps", 675},
+                          {"repeats_kbps", json::array({750, 750, 750})},
+                          {"quality", 81},
+                          {"shaped_measured_kbps", 505},
+                          {"shaped_failed_at_kbps", 675},
+                          {"shaped_verdict", "confirmed"}},
+                    json {{"interface", "wwan1"},
+                          {"state", "ok"},
+                          {"weight", 0},
+                          {"measured_kbps", 0},
+                          {"shaper_kbps", nullptr},
+                          {"repeats_kbps", json::array({0, 0, 0})}}})}};
 
   static auto reply(const json& payload) -> std::string
   {
@@ -95,6 +121,16 @@ struct fake_bridge
                               {"message", "the bridge is not managed"}})};
         }
         return {200, reply(json {{"ok", true}})};
+      }
+      if (method == "calibrate") {
+        if (!calibrate_succeeds) {
+          return {
+              200,
+              reply(json {{"ok", false},
+                          {"error", "calibration_refused"},
+                          {"message", "a session is running on the bridge"}})};
+        }
+        return {200, reply(calibrate_report)};
       }
       if (method == "get_config") {
         if (!config_read_succeeds) {
@@ -662,4 +698,126 @@ TEST_CASE("an advertised fingerprint with no token held reads as another's",
   // claimed-by-us state DT-21 calls out.
   const auto mine = bridge::bridge_state_label(published, /*holds_token=*/true);
   REQUIRE(mine.find("this encoder holds") != std::string::npos);
+}
+
+// ------------------------------------------------------------------
+// calibration
+
+TEST_CASE("a calibration report is read leg by leg", "[bridge_client]")
+{
+  auto fake = fake_bridge {};
+  auto client =
+      bridge::bridge_client(discovery({advertised(k_virgin)}), factory(fake));
+
+  const auto outcome =
+      client.calibrate(bridge::reconcile_request {.known_token = "tok"},
+                       std::chrono::milliseconds(1));
+
+  REQUIRE(outcome.ok);
+  REQUIRE(outcome.aggregate_kbps == 750);
+  REQUIRE(outcome.legs.size() == 2);
+  REQUIRE(outcome.legs.at(0).interface_ == "wwan0");
+  REQUIRE(outcome.legs.at(0).measured_kbps == 750);
+  REQUIRE(outcome.legs.at(0).has_shaper);
+  REQUIRE(outcome.legs.at(0).shaper_kbps == 675);
+  REQUIRE(outcome.legs.at(0).repeats_kbps == std::vector<int> {750, 750, 750});
+  REQUIRE(outcome.legs.at(0).shaped_verdict == "confirmed");
+  REQUIRE(outcome.legs.at(0).shaped_failed_at_kbps == 675);
+  // A leg with NO shaper must not read as a shaper of zero: the plugin sends
+  // null, and "0" would look like a value the operator could trust.
+  REQUIRE_FALSE(outcome.legs.at(1).has_shaper);
+}
+
+TEST_CASE("calibration is asked for by name, with the pair token",
+          "[bridge_client]")
+{
+  auto fake = fake_bridge {};
+  auto client =
+      bridge::bridge_client(discovery({advertised(k_virgin)}), factory(fake));
+
+  (void)client.calibrate(bridge::reconcile_request {.known_token = "tok-ABC"},
+                         std::chrono::milliseconds(1));
+
+  REQUIRE(count_of(fake.methods, "calibrate") == 1);
+  REQUIRE(fake.tokens_seen.back() == "tok-ABC");
+  // Assert what the ORCHESTRATOR sent, not merely that the ubus layer can carry
+  // it: the method and token are the whole request.
+  REQUIRE(fake.bodies.back()["params"][2] == "calibrate");
+}
+
+TEST_CASE(
+    "without a token, calibration says what to do instead of relaying a "
+    "refusal",
+    "[bridge_client]")
+{
+  auto fake = fake_bridge {};
+  auto client =
+      bridge::bridge_client(discovery({advertised(k_virgin)}), factory(fake));
+
+  const auto outcome = client.calibrate(bridge::reconcile_request {},
+                                        std::chrono::milliseconds(1));
+
+  REQUIRE_FALSE(outcome.ok);
+  REQUIRE(outcome.error.find("claim the bridge first") != std::string::npos);
+  // Nothing was sent: no token, no call.
+  REQUIRE(count_of(fake.methods, "calibrate") == 0);
+}
+
+TEST_CASE(
+    "a mid-stream refusal is the bridge answering, not a transport failure",
+    "[bridge_client]")
+{
+  auto fake = fake_bridge {};
+  fake.calibrate_succeeds = false;
+  auto client =
+      bridge::bridge_client(discovery({advertised(k_virgin)}), factory(fake));
+
+  const auto outcome =
+      client.calibrate(bridge::reconcile_request {.known_token = "tok"},
+                       std::chrono::milliseconds(1));
+
+  REQUIRE_FALSE(outcome.ok);
+  REQUIRE(outcome.error == "a session is running on the bridge");
+}
+
+TEST_CASE("parse_calibration keeps a transport failure distinct from a refusal",
+          "[bridge_client]")
+{
+  // Three answers that need three different operator actions, so they must not
+  // collapse into one message.
+  bridge::ubus_result dead;
+  dead.http_status = 0;
+  REQUIRE(bridge::parse_calibration(dead).error == "the bridge did not answer");
+
+  bridge::ubus_result denied;
+  denied.http_status = 200;
+  denied.ubus_status = 6;
+  REQUIRE(bridge::parse_calibration(denied).error
+          == "the bridge's ubus refused the call");
+
+  bridge::ubus_result refused;
+  refused.http_status = 200;
+  refused.ok = false;
+  refused.error = "calibration_refused";
+  const auto out = bridge::parse_calibration(refused);
+  REQUIRE_FALSE(out.ok);
+  REQUIRE(out.error == "calibration_refused");
+}
+
+TEST_CASE("the operator line carries the numbers the decision needs",
+          "[bridge_client]")
+{
+  auto fake = fake_bridge {};
+  const auto outcome = bridge::parse_calibration(bridge::ubus_result {
+      .ok = true, .http_status = 200, .data = fake.calibrate_report});
+
+  const std::string text = bridge::format_calibration(outcome);
+  REQUIRE(text.find("750 kbit/s") != std::string::npos);
+  REQUIRE(text.find("[750, 750, 750]") != std::string::npos);
+  REQUIRE(text.find("shaper 675") != std::string::npos);
+  // The shaper sits between held and broke -- that pair IS the confirmation.
+  REQUIRE(text.find("505->675") != std::string::npos);
+  REQUIRE(text.find("confirmed") != std::string::npos);
+  // A leg that never measured is named as such rather than shown as a zero.
+  REQUIRE(text.find("wwan1") != std::string::npos);
 }

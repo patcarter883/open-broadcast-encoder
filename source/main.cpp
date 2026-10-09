@@ -173,6 +173,12 @@ static void publish_encode_state(encode_state state)
   }
   ctx.ui->set_encode_state(encode_state_text(state),
                            state == encode_state::failed);
+  // DT-28: calibration is a PRE-START action, so the button is off while a
+  // stream is starting or up. The bridge refuses a mid-stream probe itself --
+  // the plugin's pre-start guard -- and this is the operator-facing half of the
+  // same rule, so the answer arrives before the press rather than after it.
+  ctx.ui->set_bridge_calibrate_enabled(state == encode_state::idle
+                                       || state == encode_state::failed);
 }
 
 static void run_loop()
@@ -228,7 +234,8 @@ static void run_loop()
         break;
       }
       if (encoder->state.load(std::memory_order_relaxed)
-          == encode_state::starting) {
+          == encode_state::starting)
+      {
         encoder->state.store(encode_state::streaming,
                              std::memory_order_relaxed);
         publish_encode_state(encode_state::streaming);
@@ -557,6 +564,33 @@ static void bridge_claim()
 }
 
 // Apply the desired state with the token we hold.
+// Ask the bridge to calibrate: measure every WAN leg, set the shaper and the
+// bond weights from those measurements, and confirm the result (DT-28). An
+// on-demand operator action taken at a venue BEFORE a stream -- the bridge
+// refuses while one is up. BLOCKING (it runs the bandwidth test once per leg
+// per repeat, so about a minute), so it goes on a tracked background thread
+// like every other control action, and the UI never waits on it.
+static void bridge_calibrate()
+{
+  const bridge_control_config cfg = ctx.lib.bridge_ctl;
+  if (ctx.ui != nullptr) {
+    ctx.ui->set_bridge_calibration("Calibrating - measuring each WAN leg...",
+                                   false);
+  }
+  track_control_thread(std::thread(
+      [cfg]
+      {
+        auto client = make_bridge_client(cfg);
+        const auto outcome = client.calibrate(
+            bridge_request(cfg, /*allow_claim=*/false), k_bridge_window);
+        const std::string text = bridge::format_calibration(outcome);
+        transport_log("Bridge calibration: " + text + "\n");
+        if (ctx.ui != nullptr) {
+          ctx.ui->set_bridge_calibration(text, !outcome.ok);
+        }
+      }));
+}
+
 static void bridge_apply()
 {
   const bridge_control_config cfg = ctx.lib.bridge_ctl;
@@ -1177,6 +1211,7 @@ auto main(int argc, char** argv) -> int
       &bridge_find,
       &bridge_claim,
       &bridge_apply,
+      &bridge_calibrate,
       &hosted_allocate,
       &hosted_sign_in,
       &hosted_sign_out,

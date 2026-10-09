@@ -129,6 +129,59 @@ bridge_decision decide(const mdns::service& service,
 // bridge that is already claimed (it answers already_claimed).
 std::string bridge_state_label(const mdns::service& service, bool holds_token);
 
+// ---- Calibration (DT-28) ----------------------------------------------------
+//
+// The bridge measures its own WAN legs and then sets the shaper, the bond
+// weights and the RIST budget from those measurements, and finally confirms the
+// result. It is an ON-DEMAND operator action, taken at a venue before the
+// stream starts
+// -- never mid-stream, and the bridge enforces that itself by refusing while a
+// session is running. So a refusal here is an ANSWER, not a transport failure,
+// and it must read as one: "there is a stream up" is a different message from
+// "the bridge did not answer".
+
+struct calibrate_leg
+{
+  std::string interface_;
+  std::string state;
+  bool has_weight = false;
+  int weight = 0;
+  bool has_measured = false;
+  int measured_kbps = 0;
+  // Every repeat's rate, so disagreement between them is visible rather than
+  // hidden inside the median that was taken from them.
+  std::vector<int> repeats_kbps;
+  bool has_shaper = false;
+  int shaper_kbps = 0;
+  bool has_shaped = false;
+  int shaped_measured_kbps = 0;
+  bool has_shaped_failed_at = false;
+  int shaped_failed_at_kbps = 0;
+  std::string shaped_verdict;
+  bool has_quality = false;
+  int quality = 0;
+};
+
+struct calibrate_outcome
+{
+  bool ok = false;
+  std::string error;
+  int aggregate_kbps = 0;
+  std::string aggregate_state;
+  std::string shaper;
+  std::vector<calibrate_leg> legs;
+};
+
+// Turn the bridge's report into the outcome. PURE, so every shape the bridge
+// can answer with -- including a refusal and a malformed reply -- is testable
+// with no router and no network.
+calibrate_outcome parse_calibration(const ubus_result& result);
+
+// One line per leg, for the operator. PURE. The numbers are the point: a leg
+// that measured a rate but got no shaper, or a shaper that was set and then NOT
+// confirmed, is exactly what has to be visible before starting a stream.
+std::string format_calibration(const calibrate_outcome& outcome);
+
 class bridge_client
 {
 public:
@@ -141,6 +194,13 @@ public:
 
   // Browse, decide, apply, read back. BLOCKING: run it off the UI thread.
   reconcile_outcome reconcile(const reconcile_request& request,
+                              std::chrono::milliseconds window);
+
+  // Measure, shape, weight and confirm, on the bridge. BLOCKING -- it runs the
+  // bandwidth test once per leg per repeat, so it takes about a minute -- and
+  // it must be run off the UI thread. Needs a token: the bridge authenticates
+  // the pair, and calibrate is not one of the methods a virgin bridge answers.
+  calibrate_outcome calibrate(const reconcile_request& request,
                               std::chrono::milliseconds window);
 
 private:

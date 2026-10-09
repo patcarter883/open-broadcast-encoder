@@ -92,6 +92,10 @@ public:
   Fl_Button* btn_bridge_find;
   Fl_Button* btn_bridge_claim;
   Fl_Button* btn_bridge_apply;
+  // DT-28: calibration is an on-demand operator action, disabled while
+  // streaming.
+  Fl_Button* btn_bridge_calibrate;
+  Fl_Output* bridge_calibrate_output;
   // Hosted control plane (BACKPLANE §2). Until the encoder is signed in it is
   // self-host-only: no device token means the portal half has no runtime path.
   // The device token is never displayed -- hosted_token_output says only
@@ -143,6 +147,7 @@ public:
                          FuncPtr bridge_find_funcptr,
                          FuncPtr bridge_claim_funcptr,
                          FuncPtr bridge_apply_funcptr,
+                         FuncPtr bridge_calibrate_funcptr,
                          FuncPtr hosted_allocate_funcptr,
                          FuncPtr hosted_signin_funcptr,
                          FuncPtr hosted_signout_funcptr,
@@ -170,6 +175,9 @@ public:
                              bool is_error);
   void set_bridge_token(const std::string& token);
   void set_bridge_message(const std::string& text, bool is_error);
+  // The calibration report, and the DT-28 enable rule. Both take the FLTK lock.
+  void set_bridge_calibration(const std::string& text, bool is_error);
+  void set_bridge_calibrate_enabled(bool on);
   // Hosted sign-in state. Same rules: takes the FLTK lock, so it is safe from a
   // background thread, and the token is never rendered -- only set/not-set.
   void set_hosted_state(const std::string& text, bool is_error);
@@ -245,6 +253,7 @@ private:
   void bridge_find(FuncPtr find_funcptr);
   void bridge_claim(FuncPtr claim_funcptr);
   void bridge_apply(FuncPtr apply_funcptr);
+  void bridge_calibrate(FuncPtr calibrate_funcptr);
   // The model the bridge widgets edit. Held as a pointer (set once in
   // init_ui_callbacks) so the thread-safe setters can update the model as well
   // as the widgets -- a worker thread must never write the config directly.

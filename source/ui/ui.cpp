@@ -715,7 +715,7 @@ user_interface::user_interface()
         flx_receiver->end();
       }  // Fl_Flex* flx_receiver
       {
-        flx_bridge = new Fl_Flex(25, 442, 1323, 130, "Bridge (LAN)");
+        flx_bridge = new Fl_Flex(25, 442, 1323, 167, "Bridge (LAN)");
         flx_bridge->box(FL_BORDER_BOX);
         {
           Fl_Flex* row = new Fl_Flex(25, 464, 1323, 25);
@@ -734,6 +734,13 @@ user_interface::user_interface()
           {
             btn_bridge_apply = new Fl_Button(0, 0, 90, 25, "Apply");
           }  // Fl_Button* btn_bridge_apply
+          {
+            // DT-28: measure the WAN legs and set the shaper and bond weights.
+            // Disabled while a stream is up -- the bridge refuses a mid-stream
+            // probe itself, and this is the operator-facing half of that rule.
+            btn_bridge_calibrate =
+                new Fl_Button(0, 0, 110, 25, "Calibrate links");
+          }  // Fl_Button* btn_bridge_calibrate
           row->gap(10);
           row->end();
         }  // Fl_Flex* row
@@ -773,6 +780,15 @@ user_interface::user_interface()
           bridge_state_output->align(Fl_Align(FL_ALIGN_TOP_LEFT));
           bridge_state_output->value("Not found yet - press Find.");
         }  // Fl_Output* bridge_state_output
+        {
+          // The calibration report gets its own full-width row: it is several
+          // lines of per-leg numbers, and a flex row would clip exactly the
+          // figures the operator pressed the button to see.
+          bridge_calibrate_output =
+              new Fl_Output(25, 539, 1323, 25, "Link calibration");
+          bridge_calibrate_output->align(Fl_Align(FL_ALIGN_TOP_LEFT));
+          bridge_calibrate_output->value("not run");
+        }  // Fl_Output* bridge_calibrate_output
         flx_bridge->margin(8, 22, 8, 8);
         flx_bridge->gap(12);
         flx_bridge->end();
@@ -831,7 +847,7 @@ user_interface::user_interface()
       }  // Fl_Flex* flx_bottom
       pack->margin(25, 25, 25, 25);
       pack->fixed(flx_receiver, 150);
-      pack->fixed(flx_bridge, 130);
+      pack->fixed(flx_bridge, 167);
       pack->fixed(flx_hosted, 92);
       pack->fixed(flx_bottom, 200);
       pack->end();
@@ -1270,6 +1286,42 @@ void user_interface::bridge_apply(FuncPtr apply_funcptr)
   apply_funcptr();
 }
 
+void user_interface::bridge_calibrate(FuncPtr calibrate_funcptr)
+{
+  calibrate_funcptr();
+}
+
+void user_interface::set_bridge_calibration(const std::string& text,
+                                            bool is_error)
+{
+  lock();
+  if (bridge_calibrate_output != nullptr) {
+    bridge_calibrate_output->value(text.c_str());
+    bridge_calibrate_output->textcolor(is_error ? FL_RED : FL_BLACK);
+    bridge_calibrate_output->redraw();
+  }
+  unlock();
+  Fl::awake();
+}
+
+void user_interface::set_bridge_calibrate_enabled(bool on)
+{
+  lock();
+  if (btn_bridge_calibrate != nullptr) {
+    // DT-28: the button exists to be pressed BEFORE a stream. The bridge
+    // refuses a mid-stream calibration itself, so this only makes the refusal
+    // arrive before the press rather than after it.
+    if (on) {
+      btn_bridge_calibrate->activate();
+    } else {
+      btn_bridge_calibrate->deactivate();
+    }
+    btn_bridge_calibrate->redraw();
+  }
+  unlock();
+  Fl::awake();
+}
+
 // ---- Hosted (portal) control callbacks -------------------------------------
 
 void user_interface::hosted_url_cb(hosted_config* hosted_config)
@@ -1600,6 +1652,7 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                                        FuncPtr bridge_find_funcptr,
                                        FuncPtr bridge_claim_funcptr,
                                        FuncPtr bridge_apply_funcptr,
+                                       FuncPtr bridge_calibrate_funcptr,
                                        FuncPtr hosted_allocate_funcptr,
                                        FuncPtr hosted_signin_funcptr,
                                        FuncPtr hosted_signout_funcptr,
@@ -1824,6 +1877,12 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        FuncPtr,
                        bridge_claim_funcptr);
 
+  FL_METHOD_CALLBACK_1(btn_bridge_calibrate,
+                       user_interface,
+                       this,
+                       bridge_calibrate,
+                       FuncPtr,
+                       bridge_calibrate_funcptr);
   FL_METHOD_CALLBACK_1(btn_bridge_apply,
                        user_interface,
                        this,

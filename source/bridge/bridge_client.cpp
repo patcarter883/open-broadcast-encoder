@@ -262,4 +262,180 @@ reconcile_outcome bridge_client::reconcile(const reconcile_request& request,
   return outcome;
 }
 
+namespace
+{
+
+// Read an integer field, reporting whether it was actually there. "Absent" and
+// "zero" are different answers: a leg with no shaper is not a leg with a shaper
+// of 0, and the plugin sends null for the former.
+bool read_int(const nlohmann::json& j, const char* key, int& value)
+{
+  if (!j.is_object()) {
+    return false;
+  }
+  const auto it = j.find(key);
+  if (it == j.end() || it->is_null() || !it->is_number()) {
+    return false;
+  }
+  value = static_cast<int>(it->get<double>());
+  return true;
+}
+
+}  // namespace
+
+calibrate_outcome parse_calibration(const ubus_result& result)
+{
+  calibrate_outcome out;
+
+  // Three different failures that must not collapse into one message, because
+  // the operator's next action differs for each: a transport failure is "check
+  // the bridge's address", an ACL refusal is "the bridge would not talk to us",
+  // and the plugin's own refusal is the bridge answering -- most often because
+  // a stream is running, which is the one this feature exists to respect.
+  if (result.http_status == 0) {
+    out.error = "the bridge did not answer";
+    return out;
+  }
+  if (result.ubus_status != 0) {
+    out.error = "the bridge's ubus refused the call";
+    return out;
+  }
+  if (!result.ok) {
+    out.error =
+        result.error.empty() ? std::string("the bridge refused") : result.error;
+    return out;
+  }
+  if (!result.data.is_object()) {
+    out.error = "the bridge's report was not an object";
+    return out;
+  }
+
+  const nlohmann::json& d = result.data;
+  out.ok = true;
+  (void)read_int(d, "aggregate_kbps", out.aggregate_kbps);
+  out.aggregate_state = d.value("aggregate_state", std::string {});
+  out.shaper = d.value("shaper", std::string {});
+
+  const auto legs = d.value("legs", nlohmann::json::array());
+  if (!legs.is_array()) {
+    return out;
+  }
+  for (const auto& l : legs) {
+    if (!l.is_object()) {
+      continue;
+    }
+    calibrate_leg leg;
+    leg.interface_ = l.value("interface", std::string {});
+    leg.state = l.value("state", std::string {});
+    leg.has_weight = read_int(l, "weight", leg.weight);
+    leg.has_measured = read_int(l, "measured_kbps", leg.measured_kbps);
+    leg.has_shaper = read_int(l, "shaper_kbps", leg.shaper_kbps);
+    leg.has_shaped =
+        read_int(l, "shaped_measured_kbps", leg.shaped_measured_kbps);
+    leg.has_shaped_failed_at =
+        read_int(l, "shaped_failed_at_kbps", leg.shaped_failed_at_kbps);
+    leg.shaped_verdict = l.value("shaped_verdict", std::string {});
+    leg.has_quality = read_int(l, "quality", leg.quality);
+    for (const auto& r : l.value("repeats_kbps", nlohmann::json::array())) {
+      if (r.is_number()) {
+        leg.repeats_kbps.push_back(static_cast<int>(r.get<double>()));
+      }
+    }
+    out.legs.push_back(std::move(leg));
+  }
+  return out;
+}
+
+std::string format_calibration(const calibrate_outcome& out)
+{
+  if (!out.ok) {
+    return out.error.empty() ? std::string("calibration refused") : out.error;
+  }
+
+  std::string text =
+      "aggregate " + std::to_string(out.aggregate_kbps) + " kbit/s";
+  if (!out.aggregate_state.empty()) {
+    text += " (" + out.aggregate_state + ")";
+  }
+  if (!out.shaper.empty()) {
+    text += ", shaper " + out.shaper;
+  }
+
+  for (const auto& l : out.legs) {
+    text += "\n" + l.interface_ + ": ";
+    if (!l.has_measured) {
+      // Distinguish a refused leg from a dead one: the bridge says which, and
+      // "refused" is a normal answer (a session is up, or the day's budget is
+      // spent) rather than a fault.
+      text += l.state.empty() ? std::string("no rate measured")
+                              : l.state + " - no rate measured";
+      continue;
+    }
+    text += std::to_string(l.measured_kbps) + " kbit/s";
+    if (!l.repeats_kbps.empty()) {
+      text += " from [";
+      for (size_t i = 0; i < l.repeats_kbps.size(); ++i) {
+        text += (i == 0 ? "" : ", ") + std::to_string(l.repeats_kbps[i]);
+      }
+      text += "]";
+    }
+    if (l.has_weight) {
+      text += ", weight " + std::to_string(l.weight);
+    }
+    if (!l.has_shaper) {
+      // Say it in words. A shaper that was never set is the thing the operator
+      // most needs to notice, and "shaper 0" would read as a value.
+      text += ", NO SHAPER SET";
+    } else {
+      text += ", shaper " + std::to_string(l.shaper_kbps);
+    }
+    if (l.has_shaped) {
+      // Held-then-broke, when both are known: the shaper sits between the two
+      // numbers, which is the whole confirmation.
+      text += "; shaped run ";
+      if (l.has_shaped_failed_at) {
+        text += std::to_string(l.shaped_measured_kbps) + "->"
+            + std::to_string(l.shaped_failed_at_kbps);
+      } else {
+        text += std::to_string(l.shaped_measured_kbps);
+      }
+      if (!l.shaped_verdict.empty()) {
+        text += " " + l.shaped_verdict;
+      }
+    }
+  }
+  return text;
+}
+
+calibrate_outcome bridge_client::calibrate(const reconcile_request& request,
+                                           std::chrono::milliseconds window)
+{
+  calibrate_outcome out;
+
+  if (!m_discover) {
+    out.error = "no discovery is configured";
+    return out;
+  }
+  const auto found = m_discover(window);
+  const auto match = find_bridge(found, request);
+  if (!match.found) {
+    out.error = match.error;
+    return out;
+  }
+  if (request.known_token.empty()) {
+    // The bridge authenticates the pair and `calibrate` is not a method a
+    // virgin bridge answers, so name the action rather than relaying a refusal
+    // the operator cannot act on.
+    out.error = "claim the bridge first - calibration needs a pair token";
+    return out;
+  }
+
+  auto client = m_make_ubus(ubus_base_url(match.service), request.known_token);
+  if (!client) {
+    out.error = "no ubus transport";
+    return out;
+  }
+  return parse_calibration(client->call("calibrate", nlohmann::json::object()));
+}
+
 }  // namespace bridge
