@@ -715,7 +715,7 @@ user_interface::user_interface()
         flx_receiver->end();
       }  // Fl_Flex* flx_receiver
       {
-        flx_bridge = new Fl_Flex(25, 442, 1323, 167, "Bridge (LAN)");
+        flx_bridge = new Fl_Flex(25, 442, 1323, 216, "Bridge (LAN)");
         flx_bridge->box(FL_BORDER_BOX);
         {
           Fl_Flex* row = new Fl_Flex(25, 464, 1323, 25);
@@ -783,9 +783,12 @@ user_interface::user_interface()
         {
           // The calibration report gets its own full-width row: it is several
           // lines of per-leg numbers, and a flex row would clip exactly the
-          // figures the operator pressed the button to see.
+          // figures the operator pressed the button to see. Multi-line for the
+          // same reason -- an Fl_Output is one line tall and paints a newline
+          // as
+          // '^|', which is exactly what the report's first live run showed.
           bridge_calibrate_output =
-              new Fl_Output(25, 539, 1323, 25, "Link calibration");
+              new Fl_Multiline_Output(25, 539, 1323, 75, "Link calibration");
           bridge_calibrate_output->align(Fl_Align(FL_ALIGN_TOP_LEFT));
           bridge_calibrate_output->value("not run");
         }  // Fl_Output* bridge_calibrate_output

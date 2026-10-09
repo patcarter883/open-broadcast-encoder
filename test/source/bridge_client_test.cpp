@@ -832,3 +832,29 @@ TEST_CASE("the operator line carries the numbers the decision needs",
   // A leg that never measured is named as such rather than shown as a zero.
   REQUIRE(text.find("wwan1") != std::string::npos);
 }
+
+TEST_CASE("the aggregate shaper field says what it is, not 'shaper none'",
+          "[bridge_client]")
+{
+  // This field is about the shaper that was ALREADY on the bridge -- not the
+  // one this run derived, which is per leg below it. Rendered raw, "shaper
+  // none" read as though the derived shaper had failed to land, when it means
+  // there was nothing there to put back.
+  const auto render = [](const std::string& shaper)
+  {
+    json report = fake_bridge {}.calibrate_report;
+    report["shaper"] = shaper;
+    return bridge::format_calibration(bridge::parse_calibration(
+        bridge::ubus_result {.ok = true, .http_status = 200, .data = report}));
+  };
+
+  // CHECK, not REQUIRE: these are four independent states, and stopping at the
+  // first would leave the rest unproven in exactly the run where they matter.
+  CHECK(render("none").find("nothing was shaped before") != std::string::npos);
+  CHECK(render("restored").find("the previous shaper was restored")
+        != std::string::npos);
+  CHECK(render("restore_failed").find("PREVIOUS SHAPER NOT RESTORED")
+        != std::string::npos);
+  // An unknown state is shown as given rather than swallowed.
+  CHECK(render("half_applied").find("half_applied") != std::string::npos);
+}

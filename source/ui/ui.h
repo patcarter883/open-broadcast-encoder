@@ -19,6 +19,7 @@
 #include <FL/Fl_Grid.H>
 #include <FL/Fl_Input.H>
 #include <FL/Fl_Multiline_Input.H>
+#include <FL/Fl_Multiline_Output.H>
 #include <FL/Fl_Output.H>
 #include <FL/Fl_Text_Display.H>
 #include <stdint.h>
@@ -95,7 +96,10 @@ public:
   // DT-28: calibration is an on-demand operator action, disabled while
   // streaming.
   Fl_Button* btn_bridge_calibrate;
-  Fl_Output* bridge_calibrate_output;
+  // The calibration report is one line per leg, so it is a multi-line
+  // readout: as a single-line Fl_Output its newlines rendered as '^|' and
+  // the report was unreadable.
+  Fl_Multiline_Output* bridge_calibrate_output;
   // Hosted control plane (BACKPLANE §2). Until the encoder is signed in it is
   // self-host-only: no device token means the portal half has no runtime path.
   // The device token is never displayed -- hosted_token_output says only

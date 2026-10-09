@@ -358,7 +358,23 @@ std::string format_calibration(const calibrate_outcome& out)
     text += " (" + out.aggregate_state + ")";
   }
   if (!out.shaper.empty()) {
-    text += ", shaper " + out.shaper;
+    // What happened to the shaper that was ALREADY on the bridge -- not the one
+    // this run derived, which is per leg below. Shown raw, "shaper none" read
+    // as though the derived shaper had failed to land, when it means there was
+    // nothing there to put back.
+    if (out.shaper == "none") {
+      text += ", nothing was shaped before";
+    } else if (out.shaper == "restored") {
+      text += ", the previous shaper was restored";
+    } else if (out.shaper == "applied") {
+      // This run installed the shaper it derived from the measurement.
+      text += ", a shaper was applied from the measurement";
+    } else if (out.shaper == "restore_failed") {
+      // The one state the operator must not miss: the WAN was left unshaped.
+      text += ", PREVIOUS SHAPER NOT RESTORED";
+    } else {
+      text += ", existing shaper " + out.shaper;  // unknown state, as given
+    }
   }
 
   for (const auto& l : out.legs) {
