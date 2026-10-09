@@ -324,20 +324,27 @@ Fl_Menu_Item user_interface::menu_choice_encoder[] = {
 user_interface::user_interface()
 {
   {
-    main_window = new Fl_Double_Window(1373, 896, "Open Broadcast Encoder");
+    // The stack the panels describe: flx_top 417 + receiver 150 + bridge 216 +
+    // hosted 92 + bottom 200, plus the 25px top inset. At 847 the flex had 417
+    // vs 238 for flx_top, so the Input/Encode panels were squeezed into an
+    // overlap long before the calibration row existed.
+    main_window = new Fl_Double_Window(1373, 1100, "Open Broadcast Encoder");
     main_window->user_data((void*)(this));
+    // A floor as well as a size: the panels' rows are fixed-height, so shrinking
+    // the window past the stack makes them overlap rather than reflow.
+    main_window->size_range(1373, 1100);
     {
       // 49px taller than the old 847: the calibration report is a three-line
       // readout and its panel needs the room. The window and the pack grow WITH
       // it -- inside a fixed 847 the flex takes the space from the panels above
       // instead, which is what happened first: the input and output rows began
       // overlapping each other.
-      pack = new Fl_Flex(0, 0, 1373, 896);
+      pack = new Fl_Flex(0, 0, 1373, 1100);
       {
         flx_top = new Fl_Flex(25, 25, 1323, 417);
         flx_top->type(1);
         {
-          Fl_Flex* o = new Fl_Flex(25, 25, 433, 355);
+          Fl_Flex* o = new Fl_Flex(25, 25, 433, 395);
           {
             flx_input = new Fl_Flex(25, 25, 433, 165, "Input");
             flx_input->box(FL_BORDER_BOX);
@@ -432,7 +439,11 @@ user_interface::user_interface()
             flx_input->end();
           }  // Fl_Flex* flx_input
           {
-            Fl_Flex* o = new Fl_Flex(25, 215, 433, 165, "Encode");
+            // 205, not 165: four 25px rows and three 25px gaps -- the gap
+            // above each row is where its label is drawn -- plus the 25px title
+            // margin and a 5px bottom. At 165 the last row (Scaling Source) was
+            // clipped off the bottom of the panel.
+            Fl_Flex* o = new Fl_Flex(25, 215, 433, 205, "Encode");
             o->box(FL_BORDER_BOX);
             {
               // "Send as": this is the codec the ENCODER puts on the wire. What
@@ -470,6 +481,11 @@ user_interface::user_interface()
             o->end();
           }  // Fl_Flex* o
           o->gap(25);
+          // Pinned. Left to the flex these two split the column in proportion to
+          // their nominal heights, which gave the Encode panel 196 against the
+          // 205 it needs -- close, and still clipping its last row.
+          o->fixed(flx_input, 165);
+          o->fixed(o->child(1), 205);  // the Encode panel
           o->end();
         }  // Fl_Flex* o
         {
@@ -648,6 +664,22 @@ user_interface::user_interface()
             cell = grid_stats->widget(grid_stats->child(11), 0, 1, 1, 1, 48);
             if (cell)
               cell->minimum_size(20, 20);
+            // Every label gets its cell explicitly. Left to itself the grid
+            // auto-places an unassigned child, and these four were never
+            // assigned -- so on any resize they were laid out somewhere else and
+            // drifted away from the column they name.
+            cell = grid_stats->widget(grid_stats->child(12), 1, 0, 1, 1, 48);
+            if (cell)
+              cell->minimum_size(20, 20);
+            cell = grid_stats->widget(grid_stats->child(13), 2, 0, 1, 1, 48);
+            if (cell)
+              cell->minimum_size(20, 20);
+            cell = grid_stats->widget(grid_stats->child(14), 3, 0, 1, 1, 48);
+            if (cell)
+              cell->minimum_size(20, 20);
+            cell = grid_stats->widget(grid_stats->child(15), 4, 0, 1, 1, 48);
+            if (cell)
+              cell->minimum_size(20, 20);
             cell = grid_stats->widget(grid_stats->child(16), 5, 0, 1, 1, 48);
             if (cell)
               cell->minimum_size(20, 20);
@@ -794,6 +826,10 @@ user_interface::user_interface()
           // '^|', which is exactly what the report's first live run showed.
           bridge_calibrate_output =
               new Fl_Multiline_Output(25, 539, 1323, 75, "Link calibration");
+          // Pinned, not left to the flex. Asked for three lines it was handed one,
+          // and the per-leg line -- the whole reason to press the button -- fell
+          // off the bottom.
+          flx_bridge->fixed(bridge_calibrate_output, 75);
           bridge_calibrate_output->align(Fl_Align(FL_ALIGN_TOP_LEFT));
           bridge_calibrate_output->value("not run");
         }  // Fl_Output* bridge_calibrate_output
@@ -855,7 +891,11 @@ user_interface::user_interface()
       }  // Fl_Flex* flx_bottom
       pack->margin(25, 25, 25, 25);
       pack->fixed(flx_receiver, 150);
-      pack->fixed(flx_bridge, 167);
+      // 216, not the old 167: the panel now carries the Calibrate links button
+      // (25) and the three-line calibration report (75), plus its gaps and the
+      // 22px label margin. Pinned at 167 the flex gave it less than its content
+      // needs and the rows inside collided.
+      pack->fixed(flx_bridge, 216);
       pack->fixed(flx_hosted, 92);
       pack->fixed(flx_bottom, 200);
       pack->end();
