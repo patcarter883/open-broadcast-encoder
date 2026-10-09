@@ -79,6 +79,19 @@ ubus_result parse_response(int http_status, const std::string& body)
     return result;
   }
 
+  // A JSON-RPC error object is not an unexpected shape: it is the bridge SAYING
+  // something, and its message is the most useful line in the whole reply.
+  // Called "unexpected", it was discarded -- and this is exactly where the
+  // control endpoint's "unknown method" was lost, leaving a panel that reported
+  // a nameless failure while the bridge had named it precisely.
+  if (reply.contains("error") && reply["error"].is_object()) {
+    const auto& e = reply["error"];
+    result.error_code = "jsonrpc_" + std::to_string(e.value("code", 0));
+    result.error =
+        e.value("message", std::string("the bridge refused the call"));
+    return result;
+  }
+
   if (!reply.contains("result") || !reply["result"].is_array()
       || reply["result"].size() < 2 || !reply["result"][1].is_object())
   {

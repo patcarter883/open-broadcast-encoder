@@ -57,6 +57,8 @@ struct fake_bridge
 
   json config {"ok", true};
   bool calibrate_succeeds = true;
+  // A JSON-RPC-level error, i.e. no `result` member at all.
+  bool calibrate_jsonrpc_error = false;
   // The bridge's own report, shaped exactly as the plugin emits it: a leg whose
   // shaper is null, a leg that measured, and the shaped confirmation.
   json calibrate_report {
@@ -123,6 +125,15 @@ struct fake_bridge
         return {200, reply(json {{"ok", true}})};
       }
       if (method == "calibrate") {
+        if (calibrate_jsonrpc_error) {
+          return {
+              200,
+              json {{"jsonrpc", "2.0"},
+                    {"id", 1},
+                    {"error",
+                     json {{"code", -32601}, {"message", "unknown method"}}}}
+                  .dump()};
+        }
         if (!calibrate_succeeds) {
           return {
               200,

@@ -210,6 +210,23 @@ TEST_CASE("every transport failure names itself", "[ubus]")
     auto result = bridge::parse_response(200, json {{"hello", "world"}}.dump());
     REQUIRE(result.error_code == "unexpected_reply");
   }
+  SECTION("a JSON-RPC error, which is the bridge naming its own refusal")
+  {
+    // The bridge said something and it was thrown away: an error object carries
+    // no `result`, so it took the "unexpected shape" path and the message --
+    // the only line that explains the failure -- was dropped. This is exactly
+    // where the control endpoint's "unknown method" was lost, and why a panel
+    // reported a nameless error while the bridge had named it precisely.
+    auto result = bridge::parse_response(
+        200,
+        json {{"jsonrpc", "2.0"},
+              {"id", 1},
+              {"error", json {{"code", -32601}, {"message", "unknown method"}}}}
+            .dump());
+    REQUIRE_FALSE(result.ok);
+    REQUIRE(result.error_code == "jsonrpc_-32601");
+    REQUIRE(result.error == "unknown method");
+  }
   SECTION("JSON-RPC with a non-object payload")
   {
     auto result = bridge::parse_response(
