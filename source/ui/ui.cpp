@@ -324,10 +324,15 @@ Fl_Menu_Item user_interface::menu_choice_encoder[] = {
 user_interface::user_interface()
 {
   {
-    main_window = new Fl_Double_Window(1373, 847, "Open Broadcast Encoder");
+    main_window = new Fl_Double_Window(1373, 896, "Open Broadcast Encoder");
     main_window->user_data((void*)(this));
     {
-      pack = new Fl_Flex(0, 0, 1373, 847);
+      // 49px taller than the old 847: the calibration report is a three-line
+      // readout and its panel needs the room. The window and the pack grow WITH
+      // it -- inside a fixed 847 the flex takes the space from the panels above
+      // instead, which is what happened first: the input and output rows began
+      // overlapping each other.
+      pack = new Fl_Flex(0, 0, 1373, 896);
       {
         flx_top = new Fl_Flex(25, 25, 1323, 417);
         flx_top->type(1);
