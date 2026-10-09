@@ -46,10 +46,32 @@ set(MINGW_CASE_FIX_DIR "${EXTERNAL_BUILD_DIR}/mingw-case-fix/include")
 
 set(FLTK_PREFIX "${EXTERNAL_BUILD_DIR}/fltk")
 
+# fluid is the FLUID code generator that turns source/ui/ui.fld into the UI's
+# constructor. The UI is built FROM the design file, so the generator has to
+# exist as part of the toolchain, and building it here is what makes a fresh
+# clone able to build the UI with no extra setup.
+#
+# It is a HOST tool: cross-compiling (the MinGW lane) must not build a Windows
+# fluid it then cannot run, so it is off there and the cross lane takes a host
+# fluid via -DFLUID_EXECUTABLE=... (see source/ui/CMakeLists.txt).
+set(FLTK_BUILD_FLUID_FLAG OFF)
+if(NOT CMAKE_CROSSCOMPILING)
+  set(FLTK_BUILD_FLUID_FLAG ON)
+endif()
+
 ExternalProject_Add(
   external_fltk
   SOURCE_DIR "${PROJECT_SOURCE_DIR}/external/fltk"
   PREFIX     "${FLTK_PREFIX}"
+
+  # fluid is built from the vendored FLTK, and its grid reader has a real bug
+  # that mis-parses the design file's grid cell locations -- which would drop
+  # them the next time the .fld is saved in fluid. The fix is applied here, by a
+  # CMake script, so the submodule stays pristine. See the script for details.
+  PATCH_COMMAND
+    "${CMAKE_COMMAND}"
+      -DFLTK_SOURCE_DIR=${PROJECT_SOURCE_DIR}/external/fltk
+      -P "${PROJECT_SOURCE_DIR}/external/patches/fltk-fix-grid-reader.cmake"
   INSTALL_DIR "${FLTK_PREFIX}/install"
 
   CMAKE_ARGS
@@ -67,7 +89,7 @@ ExternalProject_Add(
     -DCMAKE_TOOLCHAIN_FILE:FILEPATH=${VCPKG_CHAINLOAD_TOOLCHAIN_FILE}
     -DOPTION_BUILD_EXAMPLES:BOOL=OFF
     -DOPTION_BUILD_TESTS:BOOL=OFF
-    -DFLTK_BUILD_FLUID:BOOL=OFF
+    -DFLTK_BUILD_FLUID:BOOL=${FLTK_BUILD_FLUID_FLAG}
     -DFLTK_BUILD_FLTK_OPTIONS:BOOL=OFF
     -DFLTK_BUILD_TEST:BOOL=OFF
     -DBUILD_TESTING:BOOL=OFF
@@ -77,6 +99,7 @@ ExternalProject_Add(
     $<$<BOOL:${CMAKE_CROSSCOMPILING}>:-DCMAKE_CXX_BYTE_ORDER:STRING=LITTLE_ENDIAN>
   BUILD_BYPRODUCTS
     "${FLTK_PREFIX}/install/lib/libfltk.a"
+    "$<$<BOOL:${FLTK_BUILD_FLUID_FLAG}>:${FLTK_PREFIX}/install/bin/fluid>"
   BUILD_ALWAYS 0
 )
 

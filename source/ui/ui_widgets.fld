@@ -1,7 +1,7 @@
 # data file for the Fltk User Interface Designer (fluid)
 version 1.0404
 header_name {.h}
-code_name {.cxx}
+code_name {.cpp}
 decl {\#include <stdint.h>} {public global
 }
 
@@ -14,27 +14,30 @@ decl {\#include "lib/lib.h"} {public global
 decl {using FuncPtr = void (*)();} {public global
 }
 
-class user_interface {open
+class ui_widgets {open
 } {
-  Function {user_interface()} {open
+  Function {ui_widgets()} {open
   } {
     Fl_Window main_window {
       label {Open Broadcast Encoder} open
-      xywh {0 0 1373 667} type Double resizable visible
+      xywh {0 0 1600 1010} type Double resizable visible
     } {
       Fl_Flex pack {open
-        xywh {0 0 1373 667} margin {25 25 25 25} resizable
-        fixed_size_tuples {1  1 200 }
+        xywh {0 0 1600 1010} margin {25 25 25 25} resizable
+        fixed_size_tuples {1  1 175 }
       } {
-        Fl_Flex flx_top {open
-          xywh {25 25 1323 417} type HORIZONTAL margin {0 0 0 12} gap 12
+        Fl_Flex flx_columns {open
+          xywh {25 25 1550 760} type HORIZONTAL gap 25
         } {
+          Fl_Flex flx_col_left {open
+            xywh {25 25 762 758} gap 25 fixed_size_tuples {3  0 395  1 205  2 108 }
+          } {
           Fl_Flex {} {open
-            xywh {25 25 433 355} gap 25
+            xywh {25 25 433 395} gap 25 fixed_size_tuples {2  0 165  1 205 }
           } {
             Fl_Flex flx_input {
               label Input open
-              xywh {25 25 433 165} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {2  0 25  4 25 }
+              xywh {25 25 433 165} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {4  0 25  3 62  4 62  5 25 }
             } {
               Fl_Choice choice_input_protocol {
                 label Protocol open
@@ -78,7 +81,7 @@ class user_interface {open
                 }
               }
               Fl_Flex ndi_options_group {open
-                xywh {100 252 260 128} align 5 hide gap 12 fixed_size_tuples {1  0 25 }
+                xywh {100 252 260 128} align 5 hide gap 12 fixed_size_tuples {2  0 25  1 25 }
               } {
                 Fl_Choice choice_ndi_input {
                   label {NDI Input} open
@@ -89,6 +92,22 @@ class user_interface {open
                   xywh {100 289 260 25}
                 }
               }
+              Fl_Flex capture_options_group {open
+                xywh {100 252 260 128} align 5 hide gap 12 fixed_size_tuples {2  0 25  1 25 }
+              } {
+                Fl_Choice choice_capture_input {
+                  label Camera open
+                  xywh {100 252 260 25} down_box BORDER_BOX align 5
+                } {}
+                Fl_Button btn_refresh_capture {
+                  label {Find Cameras}
+                  xywh {100 289 260 25}
+                }
+                Fl_Output capture_state_output {
+                  xywh {100 326 260 25} align 5
+                  code0 {capture_state_output->value("Not searched yet - press Find.");}
+                }
+              }
               Fl_Button btn_preview_input {
                 label {Preview Input}
                 xywh {31 101 421 25}
@@ -96,7 +115,7 @@ class user_interface {open
             }
             Fl_Flex {} {
               label Encode open
-              xywh {25 215 433 165} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {4  0 25  1 25  2 25  3 25 }
+              xywh {25 215 433 205} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {4  0 25  1 25  2 25  3 25 }
             } {
               Fl_Choice choice_codec {
                 label {Send as (over RIST)} open
@@ -166,7 +185,7 @@ class user_interface {open
           }
           Fl_Flex {} {
             label Output open
-            xywh {470 25 433 309} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {2  0 25  1 25 }
+            xywh {25 25 762 205} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {4  0 25  1 25  2 25  3 25 }
           } {
             Fl_Input input_rist_address {
               label {RIST Address}
@@ -199,14 +218,54 @@ class user_interface {open
             Fl_Output encode_state_output {
               label {Encode State}
               xywh {476 76 421 25} align 5
+              code0 {encode_state_output->value("Idle");}
             }
           }
+        Fl_Flex flx_hosted {open
+          label {Hosted (portal)}
+          xywh {25 25 762 108} box BORDER_BOX margin {8 25 8 8} gap 25
+        } {
+          Fl_Flex {} {open
+            xywh {25 464 1323 25} type HORIZONTAL gap 10
+          } {
+            Fl_Input input_backplane_url {
+              label {Backplane URL}
+              xywh {25 464 420 25} align 5
+            }
+            Fl_Button btn_hosted_signin {
+              label {Sign in}
+              xywh {455 464 90 25}
+            }
+            Fl_Button btn_hosted_signout {
+              label {Sign out}
+              xywh {555 464 90 25}
+            }
+            Fl_Button btn_hosted_allocate {
+              label Allocate
+              xywh {655 464 100 25}
+            }
+            Fl_Output hosted_token_output {
+              label {Device token}
+              xywh {765 464 140 25} align 5
+              code0 {hosted_token_output->value("not signed in");}
+            }
+          }
+          Fl_Output hosted_state_output {
+            label {Hosted state}
+            xywh {25 489 1323 25} align 5
+            code0 {hosted_state_output->value("Not signed in - the portal half stays inactive until you sign in.");}
+          }
+        }
+          }
+          Fl_Flex flx_col_right {open
+            xywh {787 25 762 749} gap 25 fixed_size_tuples {3  0 235  1 173  2 283 }
+          } {
           Fl_Flex {} {
             label Stats open
-            xywh {915 25 433 309} box BORDER_BOX margin {5 0 5 0} gap 5 fixed_size_tuples {2  0 256  1 25 }
+            xywh {25 25 762 235} box BORDER_BOX margin {5 0 5 0} gap 5 fixed_size_tuples {2  0 200  1 25 }
           } {
             Fl_Grid grid_stats {open
-              xywh {921 26 421 256}
+              xywh {30 25 752 200}
               dimensions {8 3}
               rowheights { 25 25 25 25 25 25 25 0 }
               colwidths { 50 50 0 }
@@ -299,18 +358,30 @@ class user_interface {open
               Fl_Box {} {
                 label Bandwidth
                 xywh {915 57 145 32} align 24
+                parent_properties {
+                  location {1 0}
+                }
               }
               Fl_Box {} {
                 label {Link Quality}
                 xywh {915 89 145 32} align 24
+                parent_properties {
+                  location {2 0}
+                }
               }
               Fl_Box {} {
                 label Retransmitted
                 xywh {915 121 145 32} align 24
+                parent_properties {
+                  location {3 0}
+                }
               }
               Fl_Box {} {
                 label RTT
                 xywh {915 153 145 32} align 24
+                parent_properties {
+                  location {4 0}
+                }
               }
               Fl_Box {} {
                 label Packets
@@ -328,7 +399,7 @@ class user_interface {open
               }
             }
             Fl_Flex flx_wan_stats {open
-              xywh {915 286 433 25} type HORIZONTAL gap 80
+              xywh {30 230 752 25} type HORIZONTAL margin {95 0 0 0} gap 80 fixed_size_tuples {1  0 200 }
             } {
               Fl_Output wan_quality_output {
                 label {WAN Quality}
@@ -340,10 +411,9 @@ class user_interface {open
               }
             }
           }
-        }
         Fl_Flex flx_receiver {open
           label {Receiver / Restream}
-          xywh {25 442 1323 150} box BORDER_BOX margin {8 22 8 8} gap 22 fixed_size_tuples {1  0 25 }
+          xywh {25 25 762 173} box BORDER_BOX margin {8 25 8 8} gap 25 fixed_size_tuples {1  0 25 }
         } {
           Fl_Flex {} {open
             xywh {25 464 1323 25} type HORIZONTAL gap 10
@@ -355,20 +425,21 @@ class user_interface {open
             Fl_Input input_control_address {
               label {Receiver host:port}
               xywh {145 464 180 25} align 5
+              code0 {input_control_address->value("127.0.0.1:8080");}
             }
             Fl_Input input_control_token {
               label Token
               xywh {335 464 160 25} align 5
             }
           }
-          Fl_Multiline_Input input_destinations {
+          Fl_Input input_destinations {
             label {Destinations (one per line:  rtmp|rtmps|srt|rist  <url>  [key])}
-            xywh {25 487 1323 90} align 5
+            xywh {25 487 1323 90} type Multiline align 5
           }
         }
         Fl_Flex flx_bridge {open
           label {Bridge (LAN)}
-          xywh {25 442 1323 130} box BORDER_BOX margin {8 22 8 8} gap 12
+          xywh {25 25 762 283} box BORDER_BOX margin {8 25 8 8} gap 25 fixed_size_tuples {1  3 75 }
         } {
           Fl_Flex {} {open
             xywh {25 464 1323 25} type HORIZONTAL gap 10
@@ -389,6 +460,10 @@ class user_interface {open
               label Apply
               xywh {435 464 90 25}
             }
+            Fl_Button btn_bridge_calibrate {
+              label {Calibrate links}
+              xywh {535 464 110 25}
+            }
           }
           Fl_Flex {} {open
             xywh {25 489 1323 25} type HORIZONTAL gap 10
@@ -396,6 +471,7 @@ class user_interface {open
             Fl_Input input_bridge_listen {
               label {Bridge listens on}
               xywh {25 489 230 25} align 5
+              code0 {input_bridge_listen->value("rist://0.0.0.0:5000");}
             }
             Fl_Input input_bridge_forward {
               label {Bridge forwards to}
@@ -404,52 +480,29 @@ class user_interface {open
             Fl_Input input_bridge_interface {
               label Interface
               xywh {505 489 90 25} align 5
+              code0 {input_bridge_interface->value("wan");}
             }
             Fl_Output bridge_token_output {
               label {Pair token}
               xywh {605 489 140 25} align 5
+              code0 {bridge_token_output->value("not claimed");}
             }
           }
           Fl_Output bridge_state_output {
             label {Bridge state}
             xywh {25 514 1323 25} align 5
+            code0 {bridge_state_output->value("Not found yet - press Find.");}
+          }
+          Fl_Output bridge_calibrate_output {
+            label {Link calibration}
+            xywh {25 539 1323 75} type Multiline align 5
+            code0 {bridge_calibrate_output->value("not run");}
           }
         }
-        Fl_Flex flx_hosted {open
-          label {Hosted (portal)}
-          xywh {25 442 1323 92} box BORDER_BOX margin {8 22 8 8} gap 12
-        } {
-          Fl_Flex {} {open
-            xywh {25 464 1323 25} type HORIZONTAL gap 10
-          } {
-            Fl_Input input_backplane_url {
-              label {Backplane URL}
-              xywh {25 464 420 25} align 5
-            }
-            Fl_Button btn_hosted_signin {
-              label {Sign in}
-              xywh {455 464 90 25}
-            }
-            Fl_Button btn_hosted_signout {
-              label {Sign out}
-              xywh {555 464 90 25}
-            }
-            Fl_Button btn_hosted_allocate {
-              label Allocate
-              tooltip {Allocate a session, and if the portal routed this encoder through a bridge, apply that bridge on the LAN and report it -- one action, because the bridge's upstream IS the node the allocator picks.} xywh {655 464 100 25}
-            }
-            Fl_Output hosted_token_output {
-              label {Device token}
-              xywh {765 464 140 25} align 5
-            }
-          }
-          Fl_Output hosted_state_output {
-            label {Hosted state}
-            xywh {25 489 1323 25} align 5
           }
         }
         Fl_Flex flx_bottom {open
-          xywh {25 442 1323 200} type HORIZONTAL
+        xywh {25 25 1550 175} type HORIZONTAL
         } {
           Fl_Text_Display transport_log_display {
             xywh {25 442 662 200}
@@ -460,119 +513,5 @@ class user_interface {open
         }
       }
     }
-  }
-  Function {show(int argc, char **argv) const} {} {
-    code {main_window->show(argc, argv);} {}
-  }
-  Function {layout()} {} {
-    code {pack->layout();
-flx_top->layout();
-flx_bottom->layout();} {}
-  }
-  decl {void init_ui_callbacks(input_config* input_c,
-                       encode_config* encode_c,
-                       output_config* output_c,
-                       receiver_control_config* receiver_c,
-                       bridge_control_config* bridge_c,
-                       hosted_config* hosted_c,
-                       FuncPtr start_funcptr,
-                       FuncPtr stop_funcptr,
-                       FuncPtr ndi_refresh_funcptr,
-                       FuncPtr input_rist_address_funcptr,
-                       FuncPtr preview_src_funcptr,
-                       FuncPtr scaling_source_changed_funcptr,
-                       FuncPtr save_settings_funcptr,
-                       FuncPtr bridge_find_funcptr,
-                       FuncPtr bridge_claim_funcptr,
-                       FuncPtr bridge_apply_funcptr,
-                       FuncPtr hosted_allocate_funcptr,
-                       FuncPtr hosted_signin_funcptr,
-                       FuncPtr hosted_signout_funcptr);} {public local
-  }
-  decl {void bridge_address_cb(bridge_control_config* bridge_config);} {private local
-  }
-  decl {void bridge_listen_cb(bridge_control_config* bridge_config);} {private local
-  }
-  decl {void bridge_forward_cb(bridge_control_config* bridge_config);} {private local
-  }
-  decl {void bridge_interface_cb(bridge_control_config* bridge_config);} {private local
-  }
-  decl {void bridge_find(FuncPtr find_funcptr);} {private local
-  }
-  decl {void bridge_claim(FuncPtr claim_funcptr);} {private local
-  }
-  decl {void bridge_apply(FuncPtr apply_funcptr);} {private local
-  }
-  decl {void hosted_url_cb(hosted_config* hosted_config);} {private local
-  }
-  decl {void hosted_allocate(FuncPtr allocate_funcptr);} {private local
-  }
-  decl {void hosted_sign_in(FuncPtr signin_funcptr);} {private local
-  }
-  decl {void hosted_sign_out(FuncPtr signout_funcptr);} {private local
-  }
-  decl {void set_bridge_discovered(const std::string& uid, const std::string& address, const std::string& text, bool is_error);} {public local
-  }
-  decl {void set_bridge_token(const std::string& token);} {public local
-  }
-  decl {void set_bridge_message(const std::string& text, bool is_error);} {public local
-  }
-  decl {void set_hosted_state(const std::string& text, bool is_error);} {public local
-  }
-  decl {void set_hosted_token(const std::string& token);} {public local
-  }
-  decl {void set_encoder_target(const std::string& url);} {public local
-  }
-  decl {void set_hosted_ids(long device_id, long bridge_id);} {public local
-  }
-  decl {bridge_control_config* bridge_config_ptr;} {private local
-  }
-  decl {hosted_config* hosted_config_ptr;} {private local
-  }
-  decl {output_config* output_config_ptr;} {private local
-  }
-  decl {void transport_log_append(const std::string& msg) const;} {public local
-  }
-  decl {void encode_log_append(const std::string& msg) const;} {public local
-  }
-  decl {void init_ui();} {public local
-  }
-  decl {int run_ui();} {public local
-  }
-  decl {void add_ndi_choices(const std::vector<std::string>& choice_names);} {public local
-  }
-  decl {void clear_ndi_choices();} {public local
-  }
-  decl {void lock();} {public local
-  }
-  decl {void unlock();} {public local
-  }
-  decl {Fl_Text_Buffer transport_log_buffer;} {private local
-  }
-  decl {Fl_Text_Buffer encode_log_buffer;} {private local
-  }
-  decl {std::vector<std::string> ndi_choice_storage;} {private local
-  }
-  decl {void choose_ndi_input(input_config* input_config);} {private local
-  }
-  decl {void choose_input_protocol(input_config* input_config, FuncPtr refresh_ndi_funcptr);} {private local
-  }
-  decl {void input_listen_port_cb(input_config* input_config);} {private local
-  }
-  decl {void input_rist_address_cb(output_config* output_config, FuncPtr input_rist_address_funcptr);} {private local
-  }
-  decl {void select_codec(encode_config* encode_config);} {private local
-  }
-  decl {void select_encoder(encode_config* encode_config);} {private local
-  }
-  decl {void select_bitrate_source(encode_config* encode_config, FuncPtr scaling_source_changed_funcptr);} {private local
-  }
-  decl {void start(FuncPtr start_funcptr);} {private local
-  }
-  decl {void stop(FuncPtr stop_funcptr);} {private local
-  }
-  decl {void refresh_ndi_devices(FuncPtr refresh_ndi_funcptr);} {private local
-  }
-  decl {void btn_preview_input_cb(FuncPtr preview_src_funcptr);} {private local
   }
 }

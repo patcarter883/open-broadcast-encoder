@@ -10,130 +10,31 @@
 #include <vector>
 
 #include <FL/Fl.H>
-#include <FL/Fl_Box.H>
-#include <FL/Fl_Button.H>
-#include <FL/Fl_Check_Button.H>
-#include <FL/Fl_Choice.H>
-#include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Flex.H>
-#include <FL/Fl_Grid.H>
-#include <FL/Fl_Input.H>
-#include <FL/Fl_Multiline_Input.H>
-#include <FL/Fl_Multiline_Output.H>
-#include <FL/Fl_Output.H>
-#include <FL/Fl_Text_Display.H>
+#include <FL/Fl_Text_Buffer.H>
 #include <stdint.h>
 
-#include "FL/fl_callback_macros.H"
 #include "lib/lib.h"
+// The widget tree comes from the design file: ui.fld is turned into
+// ui_widgets.{h,cpp} by fluid at build time, and declares every panel, row,
+// label, output and button as a public member of `ui_widgets`, plus the static
+// Fl_Menu_Item arrays and the menu pointers. This header adds the behaviour.
+//
+// Editing the layout means editing ui.fld in fluid -- ui_widgets.h and
+// ui_widgets.cpp are regenerated on every build and are not in version control.
+#include "ui/ui_widgets.h"
 
-using FuncPtr = void (*)();
-
-class user_interface
+// user_interface is the generated widget tree plus everything the design file
+// cannot express: the callbacks, the thread-safe setters, the log buffers and
+// the model pointers. The generated constructor runs first (base class), so by
+// the time this class's constructor body runs every widget already exists.
+class user_interface : public ui_widgets
 {
 public:
   user_interface();
-  Fl_Double_Window* main_window;
-  Fl_Flex* pack;
-  Fl_Flex* flx_top;
-  Fl_Flex* flx_input;
-  Fl_Choice* choice_input_protocol;
-  static Fl_Menu_Item menu_choice_input_protocol[];
-  static Fl_Menu_Item* select_test_input;
-  static Fl_Menu_Item* select_sdp_input;
-  static Fl_Menu_Item* select_ndi_input;
-  static Fl_Menu_Item* select_mpegts_input;
-  Fl_Flex* sdp_options_group;
-  Fl_Button* btn_open_sdp;
-  Fl_Flex* ndi_options_group;
-  Fl_Choice* choice_ndi_input;
-  Fl_Button* btn_refresh_ndi_devices;
-  // JPEG XS capture (MC4): the LAN cameras found over mDNS (_obr-cam._udp),
-  // shown as a picker the operator selects by name. The listen port is the same
-  // field the MPEG-TS/raw_local modes use (the stream port to receive on).
-  Fl_Flex* capture_options_group;
-  Fl_Choice* choice_capture_input;
-  Fl_Button* btn_refresh_capture;
-  Fl_Output* capture_state_output;
-  Fl_Flex* mpegts_options_group;
-  Fl_Input* input_listen_port;
-  Fl_Button* btn_preview_input;
-  Fl_Choice* choice_codec;
-  static Fl_Menu_Item menu_choice_codec[];
-  Fl_Choice* choice_encoder;
-  static Fl_Menu_Item menu_choice_encoder[];
-  Fl_Input* input_encode_bitrate;
-  Fl_Input* input_mpegts_alignment;
-  Fl_Input* input_rist_address;
-  // Lifecycle of the encode pipeline (Idle / Starting / Streaming / FAILED).
-  // Written from the send thread via set_encode_state, which takes the FLTK
-  // lock; a pipeline or RIST-send failure is otherwise indistinguishable from a
-  // healthy stream.
-  Fl_Output* encode_state_output;
-  Fl_Button* btn_start_encode;
-  Fl_Button* btn_stop_encode;
-  Fl_Button* btn_save_settings;
-  Fl_Button* btn_exit;
-  // Receiver / restream control section
-  Fl_Flex* flx_receiver;
-  Fl_Check_Button* check_receiver_enabled;
-  Fl_Input* input_control_address;
-  Fl_Input* input_control_token;
-  Fl_Multiline_Input* input_destinations;
-  // Bridge (LAN) control section (DT-19, DT-21). The encoder finds the bridge,
-  // claims it once, then applies the portal's desired state. The pair token is
-  // never displayed -- bridge_token_output reports only whether one is held.
-  Fl_Flex* flx_bridge;
-  Fl_Input* input_bridge_address;
-  Fl_Input* input_bridge_listen;
-  Fl_Input* input_bridge_forward;
-  Fl_Input* input_bridge_interface;
-  Fl_Output* bridge_state_output;
-  Fl_Output* bridge_token_output;
-  Fl_Button* btn_bridge_find;
-  Fl_Button* btn_bridge_claim;
-  Fl_Button* btn_bridge_apply;
-  // DT-28: calibration is an on-demand operator action, disabled while
-  // streaming.
-  Fl_Button* btn_bridge_calibrate;
-  // The calibration report is one line per leg, so it is a multi-line
-  // readout: as a single-line Fl_Output its newlines rendered as '^|' and
-  // the report was unreadable.
-  Fl_Multiline_Output* bridge_calibrate_output;
-  // Hosted control plane (BACKPLANE §2). Until the encoder is signed in it is
-  // self-host-only: no device token means the portal half has no runtime path.
-  // The device token is never displayed -- hosted_token_output says only
-  // whether one is held.
-  Fl_Flex* flx_hosted;
-  Fl_Input* input_backplane_url;
-  Fl_Output* hosted_state_output;
-  Fl_Output* hosted_token_output;
-  Fl_Button* btn_hosted_signin;
-  Fl_Button* btn_hosted_signout;
-  // One Allocate action (DT-20.1): allocate the hosted session, then apply the
-  // bridge the portal chose and report it. One button because the bridge's
-  // upstream IS the node the allocator picks.
-  Fl_Button* btn_hosted_allocate;
-  Fl_Grid* grid_stats;
-  Fl_Output* bandwidth_output;
-  Fl_Output* link_quality_output;
-  Fl_Output* retransmitted_packets_output;
-  Fl_Output* rtt_output;
-  Fl_Output* total_packets_output;
-  Fl_Output* encode_bitrate_output;
-  Fl_Output* cumulative_bandwidth_output;
-  Fl_Output* cumulative_retransmitted_packets_output;
-  Fl_Output* cumulative_total_packets_output;
-  Fl_Output* cumulative_encode_bitrate_output;
-  Fl_Flex* flx_wan_stats;
-  Fl_Output* wan_quality_output;
-  Fl_Output* wan_rtt_output;
-  Fl_Choice* choice_bitrate_source;
-  static Fl_Menu_Item menu_choice_bitrate_source[];
-  Fl_Flex* flx_bottom;
-  Fl_Text_Display* transport_log_display;
-  Fl_Text_Display* encode_log_display;
-  void show(int argc, char** argv) const;
+  // Shows the window and then walks the flex tree once, so the layout the
+  // design file describes is what is actually on screen.
+  void show(int argc, char** argv);
   void layout();
   void init_ui_callbacks(input_config* input_c,
                          encode_config* encode_c,

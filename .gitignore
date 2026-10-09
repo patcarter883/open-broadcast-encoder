@@ -13,3 +13,7 @@ build-ninja/
 build_test/
 build-dev/
 build-external/
+
+# The UI is generated from source/ui/ui.fld by fluid at build time.
+source/ui/ui_widgets.h
+source/ui/ui_widgets.cpp
