@@ -878,43 +878,46 @@ auto encode::pull_audio_buffer() -> buffer_data
   return pull_from_sink(&encode::audio_sink);
 }
 
-bool encode::source_fps(std::uint32_t& num, std::uint32_t& den)
+std::uint32_t encode::source_fps_snapped()
 {
-  std::lock_guard<std::mutex> guard(this->pipeline_mutex);
-  // Read the rate from the encoder's own sink caps: negotiated for every input
+  // Measure from the video encoder's own sink caps: negotiated for every input
   // type alike (raw/OBS, capture, SDP, MPEG-TS, NDI, test), and without
-  // reaching into a reader's private state. False before the pipeline has
-  // negotiated -- the caller then leaves the portal's value alone rather than
-  // guessing.
+  // reaching into a reader's private state. Snapped to a standard rate, then
+  // cached -- zero means nothing has been measured, and the caller leaves the
+  // portal's value alone rather than guessing at one.
+  std::lock_guard<std::mutex> guard(this->pipeline_mutex);
   if (this->video_encoder == nullptr) {
-    return false;
+    return this->cached_snapped_fps.load(std::memory_order_relaxed);
   }
   GstPad* pad = gst_element_get_static_pad(this->video_encoder, "sink");
-  if (pad != nullptr) {
-    GstCaps* caps = gst_pad_get_current_caps(pad);
-    if (caps != nullptr) {
-      bool found = false;
-      if (gst_caps_get_size(caps) > 0) {
-        const GstStructure* structure = gst_caps_get_structure(caps, 0);
-        gint cap_num = 0;
-        gint cap_den = 1;
-        if (structure != nullptr
-            && gst_structure_get_fraction(
-                structure, "framerate", &cap_num, &cap_den)
-            && cap_num > 0 && cap_den > 0)
-        {
-          num = static_cast<std::uint32_t>(cap_num);
-          den = static_cast<std::uint32_t>(cap_den);
-          found = true;
-        }
-      }
-      gst_caps_unref(caps);
-      gst_object_unref(pad);
-      return found;
-    }
-    gst_object_unref(pad);
+  if (pad == nullptr) {
+    return this->cached_snapped_fps.load(std::memory_order_relaxed);
   }
-  return false;
+  GstCaps* caps = gst_pad_get_current_caps(pad);
+  gst_object_unref(pad);
+  if (caps == nullptr) {
+    return this->cached_snapped_fps.load(std::memory_order_relaxed);
+  }
+  std::uint32_t snapped = 0;
+  if (gst_caps_get_size(caps) > 0) {
+    const GstStructure* structure = gst_caps_get_structure(caps, 0);
+    gint cap_num = 0;
+    gint cap_den = 1;
+    if (structure != nullptr
+        && gst_structure_get_fraction(
+            structure, "framerate", &cap_num, &cap_den)
+        && cap_num > 0 && cap_den > 0)
+    {
+      snapped = fps_snap::standard_rate(static_cast<std::uint32_t>(cap_num),
+                                        static_cast<std::uint32_t>(cap_den));
+    }
+  }
+  gst_caps_unref(caps);
+  if (snapped > 0) {
+    this->cached_snapped_fps.store(snapped, std::memory_order_relaxed);
+    return snapped;
+  }
+  return this->cached_snapped_fps.load(std::memory_order_relaxed);
 }
 
 void encode::set_encode_bitrate(int new_bitrate)

@@ -50,26 +50,24 @@ public:
   // Keeps json inside control.cpp -- in and out are strings, like every other
   // signature in this header.
   //
-  // fps_num/fps_den are the rate this encoder is actually running at. The
-  // portal derives every transcode gop from an assumed 60 fps because it cannot
-  // know the ingest's (DT-22: the allocate request carries only the POP), so
-  // the gop is restated here as two seconds at the real rate. Zero means "not
-  // known yet", and the portal's value is then left alone rather than guessed
-  // at.
+  // ingest_fps is the rate this encoder is running at, snapped to a standard
+  // broadcast rate (24/25/30/50/60). The portal derives every transcode gop
+  // from an assumed 60 fps because it cannot know the ingest's (DT-22: the
+  // allocate request carries only the POP), so the gop is restated here as two
+  // seconds at the real rate. Zero means "not known yet", and the portal's
+  // value is then left alone rather than guessed at.
   static bool prepare_hosted_body(const std::string& start_body_json,
                                   codec source_codec,
                                   std::string& out_body,
                                   std::string& err,
-                                  std::uint32_t fps_num = 0,
-                                  std::uint32_t fps_den = 0);
+                                  std::uint32_t ingest_fps = 0);
 
   static bool start_hosted(const std::string& control_url,
                            const std::string& control_token,
                            const std::string& start_body_json,
                            codec source_codec,
                            std::string& err,
-                           std::uint32_t fps_num = 0,
-                           std::uint32_t fps_den = 0);
+                           std::uint32_t ingest_fps = 0);
 
   // POST /stop for the given session.
   bool stop(const std::string& session_id, std::string& err);

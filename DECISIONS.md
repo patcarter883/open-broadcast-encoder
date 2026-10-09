@@ -9,9 +9,16 @@ Product/management-plane decisions and the scope of the specs live in
 ## EN-1 — The encoder restates the portal's transcode gop at the real ingest rate (2026-10-09)
 
 **Choice.** After correcting `schema_version` and `source.codec`, `prepare_hosted_body` also rewrites every
-output's `transcode.gop` as two seconds at the rate the encoder is actually running —
-`(fps_num * 2 + fps_den / 2) / fps_den`, integer arithmetic, exact for 30000/1001. The codec, scale and
-bitrate inside that block remain the portal's decision and pass through untouched.
+output's `transcode.gop` as two seconds at the rate the encoder is actually running — `ingest_fps * 2`, where
+`ingest_fps` is the measured rate **snapped to a standard broadcast rate** (24/25/30/50/60, nearest) by
+`fps_snap::standard_rate` and cached when first measured. The codec, scale and bitrate inside that block remain
+the portal's decision and pass through untouched.
+
+The rate is measured where a pipeline is live: `encode::source_fps_snapped()` reads the video encoder's own
+sink-pad caps, and caches the snapped result because Allocate and Start Encode are independent UI actions.
+**Snapping is the rule, not rounding** — a source measuring 29.97 or 30.17 must give 30 (a gop of 60, not 59 or
+61), and a stalled source reading 29.0 must not give 58. No input configuration or setting carries a rate, which
+is why the measurement comes from caps rather than from the input step's settings.
 
 **Rationale.** The gop is not a decision, it is a duration. The portal states it in frames derived from an
 assumed 60 fps (`Allocator::TRANSCODE_FPS`) because the allocate request carries only the POP (DT-22), so it
@@ -23,9 +30,12 @@ so it is the side that should state the frame count.
 adjust the transcode *target* to suit the rate (the target is the portal's decision — DT-22); adding a
 `source.fps` field to the allocate request (the backplane refuses anything but the POP by design).
 
-**Known limitation.** The correction fires only when the rate is knowable at that instant, and the hosted
-allocation is a separate UI action from Start Encode: `/start` is normally POSTed before the pipeline has
-negotiated any caps, so `encode::source_fps()` returns false and the portal's value stands. The rate is only
-always knowable on the side that sees the arriving stream — the receiver's source parser — so the durable form
-of this rule is to express the gop as a duration and convert it there. Tracked as Task C2 in
-`~/.hermes/plans/2026-10-09_101758-open-broadcast-portal-destination-editing.md`.
+**Known limitation.** The measurement can only be taken once a pipeline has negotiated caps, so an allocation
+POSTed *before* Start Encode sees no rate and the portal's value stands — the two UI actions are independent and
+the cache cannot be filled any earlier. Correcting that ordering would need the allocate path to wait for the
+first measurement, or to re-post once the rate is known; neither is in scope here.
+
+**Withdrawn.** An earlier form of this entry proposed moving the rule to the receiver ("the rate is only always
+knowable on the side that sees the arriving stream"). That was wrong: the encoder can measure the rate before it
+assigns or starts, so the encoder is the single correct home for this rule and the receiver's contract stays
+untouched. The plan tracked that as Task C2, now collapsed.

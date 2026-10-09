@@ -8,6 +8,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
 
+#include "encode/fps_snap.h"
+
 using nlohmann::json;
 
 namespace
@@ -87,7 +89,8 @@ TEST_CASE("the transcode gop follows the ingest rate, not the portal's guess",
   // every transcode gop as two seconds at an assumed 60 fps: 120 frames. Two
   // seconds at 60 is four at the 30 fps this deployment runs, which is the
   // ceiling the destination's own guidance says not to exceed. The encoder
-  // knows the real rate, so it restates the gop and leaves the rest alone.
+  // knows the real rate -- measured and snapped to a standard rate before it
+  // gets here -- so it restates the gop and leaves the rest alone.
   const char* portal = R"({
     "schema_version": 2,
     "session_id": "s_9f2c",
@@ -102,8 +105,8 @@ TEST_CASE("the transcode gop follows the ingest rate, not the portal's guess",
   std::string err;
 
   // 30 fps: two seconds is 60 frames.
-  REQUIRE(control_client::prepare_hosted_body(
-      portal, codec::h265, out, err, 30, 1));
+  REQUIRE(
+      control_client::prepare_hosted_body(portal, codec::h265, out, err, 30));
   {
     const json body = json::parse(out);
     REQUIRE(body["outputs"][1]["transcode"]["gop"] == 60);
@@ -114,19 +117,53 @@ TEST_CASE("the transcode gop follows the ingest rate, not the portal's guess",
     REQUIRE_FALSE(body["outputs"][0].contains("transcode"));
   }
 
-  // 30000/1001 (29.97): also 60 frames, exactly, with integer arithmetic.
-  REQUIRE(control_client::prepare_hosted_body(
-      portal, codec::h265, out, err, 30000, 1001));
-  REQUIRE(json::parse(out)["outputs"][1]["transcode"]["gop"] == 60);
-
   // 25 fps: 50 frames.
-  REQUIRE(control_client::prepare_hosted_body(
-      portal, codec::h265, out, err, 25, 1));
+  REQUIRE(
+      control_client::prepare_hosted_body(portal, codec::h265, out, err, 25));
   REQUIRE(json::parse(out)["outputs"][1]["transcode"]["gop"] == 50);
 
   // Rate not known yet: the portal's value stands rather than being guessed at.
   REQUIRE(control_client::prepare_hosted_body(portal, codec::h265, out, err));
   REQUIRE(json::parse(out)["outputs"][1]["transcode"]["gop"] == 120);
+}
+
+TEST_CASE("a measured rate is snapped to a standard broadcast rate",
+          "[encode][fps]")
+{
+  // Two seconds of frames has to land on a whole number, so a measured rate is
+  // snapped to the standard rate the source is running at rather than used as
+  // measured. This is the rule the gop above depends on.
+  SECTION("standard rates pass through unchanged")
+  {
+    REQUIRE(fps_snap::standard_rate(24, 1) == 24);
+    REQUIRE(fps_snap::standard_rate(25, 1) == 25);
+    REQUIRE(fps_snap::standard_rate(30, 1) == 30);
+    REQUIRE(fps_snap::standard_rate(50, 1) == 50);
+    REQUIRE(fps_snap::standard_rate(60, 1) == 60);
+  }
+
+  SECTION("the NTSC drop rates snap up to their nominal rate")
+  {
+    REQUIRE(fps_snap::standard_rate(30000, 1001)
+            == 30);  // 29.97 -> 30, gop 60 not 59
+    REQUIRE(fps_snap::standard_rate(60000, 1001) == 60);  // 59.94 -> 60
+    REQUIRE(fps_snap::standard_rate(24000, 1001) == 24);  // 23.976 -> 24
+  }
+
+  SECTION("a drifting or stalled source cannot produce an odd gop")
+  {
+    // A measured 30.17 must give 30 (gop 60), and a stalled source reading 29.0
+    // must not give 58.
+    REQUIRE(fps_snap::standard_rate(3017, 100) == 30);
+    REQUIRE(fps_snap::standard_rate(29, 1) == 30);
+    REQUIRE(fps_snap::standard_rate(511, 10) == 50);  // 51.1 -> 50
+  }
+
+  SECTION("no measurement means no answer")
+  {
+    REQUIRE(fps_snap::standard_rate(0, 1) == 0);
+    REQUIRE(fps_snap::standard_rate(30, 0) == 0);
+  }
 }
 
 TEST_CASE("an unusable allocation body is refused rather than sent",

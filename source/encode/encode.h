@@ -18,6 +18,7 @@
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
 
+#include "encode/fps_snap.h"
 #include "lib/lib.h"
 
 class raw_local_input;
@@ -52,12 +53,16 @@ public:
   auto pull_video_buffer() -> buffer_data;
   auto pull_audio_buffer() -> buffer_data;
   void set_encode_bitrate(int new_bitrate);
-  // The rate this encoder is actually running at. One caller needs it: the
-  // receiver's transcode gop is a duration (two seconds), and the portal can
-  // only state it in frames at an assumed 60 fps because the allocate request
-  // carries nothing but the POP. False means nothing has been negotiated yet,
-  // and the caller then leaves the portal's value alone rather than guessing.
-  bool source_fps(std::uint32_t& num, std::uint32_t& den);
+  // The rate this encoder is running at, snapped to a standard broadcast rate
+  // (24/25/30/50/60), or zero when nothing has been measured yet -- a caller
+  // then leaves a rate-dependent value alone rather than guessing at one.
+  //
+  // No input configuration or setting carries a rate, so the measurement can
+  // only happen where a pipeline is live: the encode pipeline's caps negotiate
+  // when it starts, and the raw/OBS header arrives when OBS connects. The first
+  // result is cached, because Allocate and Start Encode are independent UI
+  // actions -- the measurement and its use are different moments.
+  std::uint32_t source_fps_snapped();
   explicit encode(const input_config& input_config,
                   const encode_config& encode_config,
                   const receiver_control_config& receiver_config,
@@ -76,6 +81,12 @@ private:
   std::mutex pipeline_mutex;
   std::vector<std::thread> threads;
   std::shared_ptr<std::atomic<bool>> run_flag;
+  // The snapped rate once measured. Written by whichever thread first measures
+  // (the encode pipeline's own start); read by the allocation worker --
+  // different threads, so atomic. Never cleared: a measurement is not
+  // invalidated by a later pipeline stop, and the rate of a live input does not
+  // change.
+  std::atomic<std::uint32_t> cached_snapped_fps {0};
   std::function<void(const std::string&)> log_func;
   const input_config& input_c;
   const encode_config& encode_c;
