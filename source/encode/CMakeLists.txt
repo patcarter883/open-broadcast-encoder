@@ -25,6 +25,8 @@ target_sources(encode_lib ${warning_guard}
     raw_format.cpp
     raw_local.h
     raw_local.cpp
+    raw_local_port.h
+    raw_local_port.cpp
 )
 
 target_include_directories(

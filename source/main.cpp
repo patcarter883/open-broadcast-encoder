@@ -35,6 +35,8 @@
 #include "bridge/ubus.h"
 #include "control/control.h"
 #include "encode.h"
+#include "raw_local.h"
+#include "raw_local_port.h"
 #include "lib.h"
 #include "ndi_input.h"
 #include "settings/settings.h"
@@ -1117,6 +1119,83 @@ static void start_preview_thread(std::string pipeline_str)
                                        { run_preview_pipeline(pipeline_str); });
 }
 
+// Preview the OBS raw ingest. Deliberately the SAME reader the encode path
+// uses, fed into a display pipeline instead of the encoder: the preview opens
+// the same listen port and decodes the same wire, so it answers the question
+// the operator actually has -- is OBS reaching this box, and is it sending
+// something usable -- before anything goes live. A preview built from a second
+// implementation would answer a different question.
+static void run_raw_preview(std::uint16_t port)
+{
+  GError* error = nullptr;
+  auto* pipeline = gst_parse_launch(
+      "appsrc name=rawvideo is-live=true format=time do-timestamp=false "
+      "max-bytes=16777216 ! queue ! videoconvert ! autovideosink "
+      "appsrc name=rawaudio is-live=true format=time do-timestamp=false "
+      "max-bytes=1048576 ! queue ! audioconvert ! autoaudiosink",
+      &error);
+  if (pipeline == nullptr) {
+    encode_log(std::format("Preview: could not build the pipeline: {}\n",
+                           error != nullptr ? error->message : "unknown"));
+    g_clear_error(&error);
+    ctx.lib.preview_running = false;
+    return;
+  }
+
+  auto* video_src = gst_bin_get_by_name(GST_BIN(pipeline), "rawvideo");
+  auto* audio_src = gst_bin_get_by_name(GST_BIN(pipeline), "rawaudio");
+  auto* bus = gst_element_get_bus(pipeline);
+  gst_element_set_state(pipeline, GST_STATE_PLAYING);
+
+  // No format verdict here: a preview shows what arrives, it does not police
+  // what the selected codec and destinations could carry. That decision belongs
+  // to the encode path, and passing it twice would be two policies to keep true.
+  raw_local_input reader(
+      video_src, audio_src, port, &encode_log, {}, &input_status);
+  reader.start();
+
+  // preview_running is set true by the launcher on the main thread BEFORE this
+  // worker starts; the worker must only ever clear it. Writing true here would
+  // clobber a concurrent cancel issued before the OS scheduled this thread,
+  // leaving the loop spinning on a live listener and blocking the joiner -- the
+  // same contract as run_preview_pipeline.
+  while (ctx.lib.preview_running.load(std::memory_order_acquire)) {
+    auto* msg = gst_bus_timed_pop_filtered(
+        bus,
+        static_cast<GstClockTime>(100 * GST_MSECOND),
+        static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_EOS));
+    if (msg == nullptr) {
+      continue;  // OBS attaching and detaching is not a reason to end a preview
+    }
+    if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR) {
+      GError* err = nullptr;
+      gchar* debug_info = nullptr;
+      gst_message_parse_error(msg, &err, &debug_info);
+      encode_log(std::format("Preview error: {}\n", err->message));
+      g_clear_error(&err);
+      g_free(debug_info);
+    } else {
+      encode_log("Preview ended.\n");
+    }
+    gst_message_unref(msg);
+    break;
+  }
+
+  // The reader goes down before the pipeline does: it is still pushing into
+  // these appsrcs until it has joined.
+  reader.stop();
+  gst_element_set_state(pipeline, GST_STATE_NULL);
+  gst_object_unref(bus);
+  if (video_src != nullptr) {
+    gst_object_unref(video_src);
+  }
+  if (audio_src != nullptr) {
+    gst_object_unref(audio_src);
+  }
+  gst_object_unref(pipeline);
+  ctx.lib.preview_running = false;
+}
+
 static void preview_input()
 {
   switch (ctx.lib.input_cfg.selected_input_mode) {
@@ -1177,6 +1256,31 @@ static void preview_input()
                 tmp_path.string()));
             std::filesystem::remove(tmp_path);
           });
+      break;
+    }
+
+    case input_mode::raw_local: {
+      // A raw preview and a live encode both hold the one listen port, so this
+      // is the same single-listener rule the transport enforces -- stated
+      // before the press rather than discovered after it.
+      if (ctx.lib.is_running) {
+        encode_log("Preview: the raw ingest is already listening; stop the "
+                   "encode first.\n");
+        input_status("cannot preview - the ingest is running");
+        break;
+      }
+      const std::uint16_t port =
+          raw_local::resolve_port(ctx.lib.input_cfg.listen_port);
+      // Same lifecycle as the sdp case below: join any finished thread, then
+      // set the flag before the worker starts.
+      if (ctx.lib.preview_thread.joinable()) {
+        if (ctx.lib.preview_running.load(std::memory_order_acquire)) {
+          break;  // preview still running; leave it rather than blocking the UI
+        }
+        ctx.lib.preview_thread.join();
+      }
+      ctx.lib.preview_running = true;
+      ctx.lib.preview_thread = std::thread([port] { run_raw_preview(port); });
       break;
     }
 

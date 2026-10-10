@@ -703,24 +703,16 @@ void encode::start_raw_reader()
     return;
   }
 
-  // The listen-port field is shared with the MPEG-TS ingest; empty means the
-  // OBS plugin's default target.
-  std::uint16_t port = raw_local_input::default_port;
-  if (!this->input_c.listen_port.empty()) {
-    try {
-      const int parsed = std::stoi(this->input_c.listen_port);
-      if (parsed > 0 && parsed <= 65535) {
-        port = static_cast<std::uint16_t>(parsed);
-      } else {
-        log(std::format("raw_local: port {} is out of range; using {}\n",
-                        parsed,
-                        raw_local_input::default_port));
-      }
-    } catch (const std::exception&) {
-      log(std::format("raw_local: '{}' is not a valid port; using {}\n",
-                      this->input_c.listen_port,
-                      raw_local_input::default_port));
-    }
+  // The listen-port field is shared with the MPEG-TS ingest; empty or not a
+  // port means the OBS plugin's default target.
+  const std::uint16_t port =
+      raw_local::resolve_port(this->input_c.listen_port);
+  if (!this->input_c.listen_port.empty()
+      && this->input_c.listen_port != std::to_string(port))
+  {
+    log(std::format("raw_local: '{}' is not a usable port; using {}\n",
+                    this->input_c.listen_port,
+                    port));
   }
 
   this->raw_reader = std::make_unique<raw_local_input>(

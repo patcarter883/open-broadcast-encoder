@@ -6,6 +6,8 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+
+#include "encode/raw_local_port.h"
 #include <functional>
 #include <string>
 #include <thread>
@@ -43,7 +45,6 @@ using format_verdict_fn = std::function<std::string(std::uint32_t)>;
 class raw_local_input
 {
 public:
-  static constexpr std::uint16_t default_port = 9300;
 
   // `format_verdict` carries the encoder's policy (see format_verdict_fn): the
   // reader itself never decides what a format is good enough for.

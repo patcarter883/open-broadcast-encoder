@@ -22,6 +22,19 @@ target_compile_features(open-broadcast-encoder_test PRIVATE cxx_std_20)
 
 catch_discover_tests(open-broadcast-encoder_test)
 
+# The OBS raw ingest's port decision, compiled the same way capture_source_test
+# is: the .cpp directly, because it carries no GStreamer types and the decision
+# must be pinned without a pipeline.
+add_executable(raw_local_port_test
+    source/raw_local_port_test.cpp
+    ${CMAKE_SOURCE_DIR}/source/encode/raw_local_port.cpp
+)
+target_include_directories(raw_local_port_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(raw_local_port_test PRIVATE cxx_std_20)
+target_link_libraries(raw_local_port_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(raw_local_port_test)
+
 add_executable(backplane_test source/backplane_test.cpp)
 target_link_libraries(
     backplane_test PRIVATE

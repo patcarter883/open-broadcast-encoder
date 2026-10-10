@@ -123,6 +123,7 @@ void raw_local_input::log(const std::string& msg) const
   }
 }
 
+
 void raw_local_input::status(const std::string& msg) const
 {
   if (this->status_func) {
