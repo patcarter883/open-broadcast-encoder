@@ -369,6 +369,15 @@ std::string format_calibration(const calibrate_outcome& out)
     } else if (out.shaper == "applied") {
       // This run installed the shaper it derived from the measurement.
       text += ", a shaper was applied from the measurement";
+    } else if (out.shaper == "started") {
+      // SQM was not running when the run began, so there was nothing to restore
+      // and this run derived nothing new: what came up is the bridge's own
+      // configured rates. Say which -- otherwise it reads as a shaper derived
+      // from THIS measurement, which it is not.
+      text += ", the shaper was not running and was started";
+    } else if (out.shaper == "start_failed") {
+      // The other state the operator must not miss.
+      text += ", THE SHAPER DID NOT COME UP";
     } else if (out.shaper == "restore_failed") {
       // The one state the operator must not miss: the WAN was left unshaped.
       text += ", PREVIOUS SHAPER NOT RESTORED";

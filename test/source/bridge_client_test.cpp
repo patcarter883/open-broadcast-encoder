@@ -855,6 +855,12 @@ TEST_CASE("the aggregate shaper field says what it is, not 'shaper none'",
         != std::string::npos);
   CHECK(render("restore_failed").find("PREVIOUS SHAPER NOT RESTORED")
         != std::string::npos);
+  // SQM that was stopped and that this run brought back: the WAN is shaped now,
+  // from the bridge's own configured rates rather than from this measurement.
+  CHECK(render("started").find("the shaper was not running and was started")
+        != std::string::npos);
+  CHECK(render("start_failed").find("THE SHAPER DID NOT COME UP")
+        != std::string::npos);
   // An unknown state is shown as given rather than swallowed.
   CHECK(render("half_applied").find("half_applied") != std::string::npos);
 }

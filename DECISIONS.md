@@ -39,3 +39,38 @@ first measurement, or to re-post once the rate is known; neither is in scope her
 knowable on the side that sees the arriving stream"). That was wrong: the encoder can measure the rate before it
 assigns or starts, so the encoder is the single correct home for this rule and the receiver's contract stays
 untouched. The plan tracked that as Task C2, now collapsed.
+
+---
+
+## EN-2 — The calibration leaves the bridge SHAPED: SQM is started unconditionally (2026-10-10)
+
+**Choice.** `method_calibrate` now ends EVERY path through one function, `shaper_finalise`. If the run cleared a
+shaper, it restores exactly that (`shape_resume`, which starts SQM and verifies each leg). Otherwise, if the
+box's OWN SQM config names a queue for one of the present legs, it runs `sqm start` **unconditionally** — SQM
+comes up even when the run derived no rate at all — and then verifies the legs are actually shaped rather than
+assuming it. The outcome is reported as two new `shaper` values: `started` (SQM was down and came up on the
+config's rates) and `start_failed` (it did not). `applied` still wins when this run derived and applied its own
+rate. A bridge with **no configured queue** is left untouched and still reports `none`.
+
+**Rationale.** `start` was gated on the run having derived a rate, and the shaper was only ever resumed if the
+run had cleared one — so on a box whose SQM anything had stopped (another agent, a previous run, a reboot), the
+derived rate was written to uci, nothing was started, and the operator was handed an **unshaped WAN while the
+report said `none`**. That is not cosmetic: an unshaped leg fills the **modem's own queue**, so the NEXT
+calibration measures the modem instead of the link, and the shaper the operator asked for never exists. Seen
+live: SQM inactive, `wwan0` carrying only the kernel's default `fq_codel`, while `uci` said `qdisc=cake
+upload=675`. `sqm start` is idempotent, so unconditional is safe.
+
+**Rejected.** Gating the start on "was anything cleared" (the state that produced the defect); starting SQM in
+two places (the derived-shaper path and the resume path — the two drifted apart, which is how the defect
+survived a fix); reporting `applied` for a config-rate start-up, which would claim a measurement this run never
+made; starting SQM on a bridge whose config names no queue, which would install a shaper the operator never
+configured.
+
+**Open — ingress (downstream) shaping, NOT implemented.** `shape_configure` sets only `upload`; each leg's
+`download` stays a static `10000` that is never derived — exactly the "wrong shaper" class this feature exists
+to remove, since an ingress limit that no measurement supports either never binds or caps below the leg.
+Deriving it needs a **downlink** instrument and none exists: the probe is a sender. Taking it from the uplink
+figure would be a guess on an asymmetric link. Two candidate routes, for a decision: (a) measure downlink with
+a leg-bound HTTP fetch (`wget --bind-address` — present on the bridge) against a fixed-size resource with a
+documented byte budget, or (b) make `download` an explicit operator policy with its own `capacity_margin`.
+
