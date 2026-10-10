@@ -30,14 +30,14 @@ class ui_widgets {open
           xywh {25 25 1550 760} type HORIZONTAL gap 25
         } {
           Fl_Flex flx_col_left {open
-            xywh {25 25 762 758} gap 25 fixed_size_tuples {3  0 395  1 205  2 108 }
+            xywh {25 25 762 758} gap 25 fixed_size_tuples {3  0 410  1 205  2 108 }
           } {
           Fl_Flex {} {open
-            xywh {25 25 433 395} gap 25 fixed_size_tuples {2  0 165  1 205 }
+            xywh {25 25 433 410} gap 25 fixed_size_tuples {2  0 180  1 205 }
           } {
             Fl_Flex flx_input {
               label Input open
-              xywh {25 25 433 165} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {5  0 25  3 62  4 62  5 25  6 25 }
+              xywh {25 25 433 180} box BORDER_BOX margin {5 25 5 5} gap 15 fixed_size_tuples {5  0 25  3 62  4 62  5 25  6 25 }
             } {
               Fl_Choice choice_input_protocol {
                 label Protocol open
@@ -75,7 +75,7 @@ class ui_widgets {open
                 }
               }
               Fl_Flex mpegts_options_group {open
-                xywh {110 110 260 127} align 5 hide gap 12 fixed_size_tuples {1  0 45 }
+                xywh {110 110 260 127} align 5 hide gap 12 fixed_size_tuples {1  0 25 }
               } {
                 Fl_Input input_listen_port {
                   label {Listen Port}
