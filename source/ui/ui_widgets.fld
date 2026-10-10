@@ -37,7 +37,7 @@ class ui_widgets {open
           } {
             Fl_Flex flx_input {
               label Input open
-              xywh {25 25 433 165} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {4  0 25  3 62  4 62  5 25 }
+              xywh {25 25 433 165} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {5  0 25  3 62  4 62  5 25  6 25 }
             } {
               Fl_Choice choice_input_protocol {
                 label Protocol open
@@ -75,7 +75,7 @@ class ui_widgets {open
                 }
               }
               Fl_Flex mpegts_options_group {open
-                xywh {110 110 260 127} align 5 hide gap 12 fixed_size_tuples {1  0 25 }
+                xywh {110 110 260 127} align 5 hide gap 12 fixed_size_tuples {1  0 45 }
               } {
                 Fl_Input input_listen_port {
                   label {Listen Port}
@@ -103,7 +103,7 @@ class ui_widgets {open
                 }
               }
               Fl_Flex capture_options_group {open
-                xywh {100 252 260 128} align 5 hide gap 12 fixed_size_tuples {2  0 25  1 25 }
+                xywh {100 252 260 128} align 5 hide gap 12 fixed_size_tuples {2  0 45  1 25 }
               } {
                 Fl_Choice choice_capture_input {
                   label Camera open
@@ -121,6 +121,11 @@ class ui_widgets {open
               Fl_Button btn_preview_input {
                 label {Preview Input}
                 xywh {31 101 421 25}
+              }
+              Fl_Output input_status_output {
+                label Status
+                xywh {31 126 421 25} align 5
+                code0 {input_status_output->value("not started");}
               }
             }
             Fl_Flex {} {

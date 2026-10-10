@@ -51,7 +51,8 @@ public:
                   GstElement* audio_src,
                   std::uint16_t port,
                   std::function<void(const std::string&)> log_func,
-                  format_verdict_fn format_verdict = {});
+                  format_verdict_fn format_verdict = {},
+                  std::function<void(const std::string&)> status_func = {});
   ~raw_local_input();
 
   raw_local_input(const raw_local_input&) = delete;
@@ -66,6 +67,10 @@ public:
 
 private:
   void run();
+  // A reader-state line for the operator, separate from the log: it says what
+  // the ingest is doing NOW (listening where, whether OBS is attached, frames
+  // arriving), which is what tells a dead input from a healthy one.
+  void status(const std::string& msg) const;
   auto open_listener() -> bool;
   auto accept_connection() -> int;
   auto read_exact(int fd, void* buf, std::size_t len) -> bool;
@@ -83,6 +88,7 @@ private:
   std::uint16_t port;
   std::function<void(const std::string&)> log_func;
   std::function<std::string(std::uint32_t)> format_verdict_slot;
+  std::function<void(const std::string&)> status_func;
 
   std::thread reader;
   std::atomic<bool> stop_requested {false};

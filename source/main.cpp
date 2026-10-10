@@ -78,6 +78,16 @@ static auto encode_log(const std::string& msg)
   }
 }
 
+// The input reader's state for the UI's input-status line. Same discipline as
+// encode_log: the reader calls this from its own thread, so it only forwards --
+// the UI takes the FLTK lock for the widget write itself.
+static auto input_status(const std::string& msg)
+{
+  if (ctx.ui != nullptr) {
+    ctx.ui->set_input_status(msg);
+  }
+}
+
 static auto transport_log(const std::string& msg)
 {
   if (ctx.ui != nullptr) {
@@ -202,7 +212,8 @@ static void run_loop()
                                           ctx.lib.encode_cfg,
                                           ctx.lib.receiver_ctl,
                                           ctx.lib.run_flag,
-                                          &encode_log);
+                                          &encode_log,
+                                          &input_status);
   ctx.lib.encoder_ptr.store(encoder);
 
   encoder->run_encode_thread();

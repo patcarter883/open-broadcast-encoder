@@ -83,12 +83,14 @@ raw_local_input::raw_local_input(
     GstElement* audio_src,
     std::uint16_t port,
     std::function<void(const std::string&)> log_func,
-    format_verdict_fn format_verdict)
+    format_verdict_fn format_verdict,
+    std::function<void(const std::string&)> status_func)
     : video_src {video_src}
     , audio_src {audio_src}
     , port {port}
     , log_func {std::move(log_func)}
     , format_verdict_slot {std::move(format_verdict)}
+    , status_func {std::move(status_func)}
 {
 }
 
@@ -118,6 +120,13 @@ void raw_local_input::log(const std::string& msg) const
 {
   if (this->log_func) {
     this->log_func(msg);
+  }
+}
+
+void raw_local_input::status(const std::string& msg) const
+{
+  if (this->status_func) {
+    this->status_func(msg);
   }
 }
 
@@ -153,6 +162,9 @@ auto raw_local_input::open_listener() -> bool
   }
 
   this->listen_fd.store(fd);
+  this->status(
+      std::format("listening on port {} - waiting for the OBS raw output",
+                  this->port));
   log(
       std::format("[raw] listening on port {} for the OBS raw output "
                   "(set OBC_RAW_TARGET=127.0.0.1:{})\n",
@@ -431,6 +443,9 @@ auto raw_local_input::read_and_push(int fd) -> bool
 
   const std::uint64_t total = this->video_frames + this->audio_chunks;
   if (total % 600 == 0) {
+    this->status(std::format("OBS connected - {} video frames, {} audio chunks",
+                             this->video_frames,
+                             this->audio_chunks));
     log(std::format("[raw] {} video frames, {} audio chunks ingesting\n",
                     this->video_frames,
                     this->audio_chunks));
@@ -498,6 +513,7 @@ void raw_local_input::run()
       continue;
     }
 
+    this->status("OBS raw output connected - receiving");
     log("[raw] OBS raw output connected\n");
     if (this->read_stream_header(fd)) {
       this->frame_loop(fd);
@@ -506,6 +522,9 @@ void raw_local_input::run()
 
     // No EOS: OBS's plugin retries every couple of seconds, so the pipeline
     // stays up and a restarted OBS resumes into the same session.
+    this->status(std::format(
+        "OBS disconnected after {} frames - waiting for it to reconnect",
+        this->video_frames));
     log(
         std::format("[raw] OBS raw output disconnected after {} video frames "
                     "and {} audio chunks; waiting for it to reconnect\n",

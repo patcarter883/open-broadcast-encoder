@@ -250,6 +250,7 @@ bool save(const library& lib)
 
   root["input"] = {
       {"selected_input", in.selected_input},
+      {"listen_port", in.listen_port},
       {"selected_input_mode", input_mode_str(in.selected_input_mode)},
       // MC4 jpegxs_capture: the LAN camera chosen in the picker. Persisted so a
       // restart keeps the operator's selection; the browse repopulates the
@@ -356,6 +357,34 @@ bool load(library& lib)
     if (auto m = j.find("selected_input_mode"); m != j.end() && m->is_string())
     {
       parse_input_mode(m->get<std::string>(), in.selected_input_mode);
+    }
+    get_to(j, "listen_port", in.listen_port);
+    // Migrate a file written before the split, when the port lived in
+    // selected_input for every mode that takes one. Only a numeric value can
+    // have been a port -- an NDI name must not be adopted as one.
+    if (in.listen_port.empty() && in.selected_input_mode != input_mode::ndi
+        && !in.selected_input.empty())
+    {
+      const bool numeric = in.selected_input.find_first_not_of("0123456789")
+                           == std::string::npos;
+      if (numeric)
+      {
+        in.listen_port = in.selected_input;
+      }
+    }
+    // Seed the model with the same default the field displays, so the field, the
+    // saved file and the reader cannot disagree about which port this input
+    // listens on. The field is a view of the model, not a second copy of it.
+    if (in.listen_port.empty())
+    {
+      if (in.selected_input_mode == input_mode::raw_local)
+      {
+        in.listen_port = "9300";
+      }
+      else if (in.selected_input_mode == input_mode::jpegxs_capture)
+      {
+        in.listen_port = "5000";
+      }
     }
     get_to(j, "capture_address", in.capture_address);
     get_to(j, "capture_name", in.capture_name);

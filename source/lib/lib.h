@@ -106,6 +106,11 @@ struct input_config
   // is the manual fallback (DT-19): bind the wildcard and accept any sender.
   std::string capture_address;
   std::string capture_name;  // the advertised name, for the UI/logs only
+  // The LISTEN PORT of the TCP ingests (mpegts, raw_local/OBS raw, jpegxs
+  // capture), kept apart from `selected_input`. One field served both that port
+  // and the NDI device name, so switching to NDI and back left the device name
+  // sitting in the port field, where it read as a port.
+  std::string listen_port;
 };
 
 struct encode_config

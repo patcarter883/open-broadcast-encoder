@@ -28,10 +28,12 @@ encode::encode(const input_config& input_config,
                const encode_config& encode_config,
                const receiver_control_config& receiver_config,
                std::shared_ptr<std::atomic<bool>> run_flag,
-               std::function<void(const std::string&)> log_func)
+               std::function<void(const std::string&)> log_func,
+               std::function<void(const std::string&)> input_status_func)
     : encoder_running {false}
     , run_flag {std::move(run_flag)}
     , log_func {std::move(log_func)}
+    , input_status_func {std::move(input_status_func)}
     , input_c {input_config}
     , encode_c {encode_config}
     , receiver_c {receiver_config}
@@ -704,9 +706,9 @@ void encode::start_raw_reader()
   // The listen-port field is shared with the MPEG-TS ingest; empty means the
   // OBS plugin's default target.
   std::uint16_t port = raw_local_input::default_port;
-  if (!this->input_c.selected_input.empty()) {
+  if (!this->input_c.listen_port.empty()) {
     try {
-      const int parsed = std::stoi(this->input_c.selected_input);
+      const int parsed = std::stoi(this->input_c.listen_port);
       if (parsed > 0 && parsed <= 65535) {
         port = static_cast<std::uint16_t>(parsed);
       } else {
@@ -716,7 +718,7 @@ void encode::start_raw_reader()
       }
     } catch (const std::exception&) {
       log(std::format("raw_local: '{}' is not a valid port; using {}\n",
-                      this->input_c.selected_input,
+                      this->input_c.listen_port,
                       raw_local_input::default_port));
     }
   }
@@ -727,7 +729,13 @@ void encode::start_raw_reader()
       port,
       [this](const std::string& msg) { this->log(msg); },
       [this](std::uint32_t obs_format)
-      { return this->raw_format_verdict(obs_format); });
+      { return this->raw_format_verdict(obs_format); },
+      [this](const std::string& msg)
+      {
+        if (this->input_status_func) {
+          this->input_status_func(msg);
+        }
+      });
   this->raw_reader->start();
 }
 

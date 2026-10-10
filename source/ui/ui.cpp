@@ -235,6 +235,15 @@ void user_interface::set_encode_state(const std::string& text, bool is_failed)
   Fl::awake();
 }
 
+void user_interface::set_input_status(const std::string& text)
+{
+  lock();
+  input_status_output->value(text.c_str());
+  input_status_output->redraw();
+  unlock();
+  Fl::awake();
+}
+
 void user_interface::encode_log_append(const std::string& msg) const
 {
   const std::string clean = secrets::redact(msg);
@@ -330,6 +339,10 @@ void user_interface::choose_input_protocol(input_config* input_config,
       if (input_listen_port->value()[0] == '\0') {
         input_listen_port->value("9300");
       }
+      // Keep the model in step with the field: a programmatic value() does not
+      // fire the callback, so without this the save writes an empty port and the
+      // reader falls back to its own default while the field shows another.
+      input_config->listen_port = input_listen_port->value();
       mpegts_options_group->show();
       sdp_options_group->hide();
       ndi_options_group->hide();
@@ -348,6 +361,7 @@ void user_interface::choose_input_protocol(input_config* input_config,
       if (input_listen_port->value()[0] == '\0') {
         input_listen_port->value("5000");
       }
+      input_config->listen_port = input_listen_port->value();
       capture_options_group->show();
       mpegts_options_group->show();
       sdp_options_group->hide();
@@ -483,7 +497,7 @@ void user_interface::input_listen_port_cb(input_config* input_config)
   } catch (...) {
     return;
   }
-  input_config->selected_input = raw;
+  input_config->listen_port = raw;
 }
 
 void user_interface::input_rist_address_cb(output_config* output_config,
@@ -737,14 +751,21 @@ void user_interface::apply_settings(const input_config& input_c,
   capture_options_group->hide();
   switch (input_c.selected_input_mode) {
     case input_mode::mpegts:
-      input_listen_port->value(input_c.selected_input.c_str());
+      input_listen_port->value(input_c.listen_port.c_str());
       mpegts_options_group->show();
       break;
     case input_mode::raw_local:
-      input_listen_port->value(input_c.selected_input.empty()
-                                   ? "9300"
-                                   : input_c.selected_input.c_str());
+      // The OBS raw output's own default. Never the NDI device name: that is
+      // what this field used to show, which is not a port at all.
+      input_listen_port->value(input_c.listen_port.c_str());
       mpegts_options_group->show();
+      // Say what has to happen for this input to receive anything. The listener
+      // opens with the pipeline, so before Start the port is closed and an
+      // operator staring at OBS has no way to tell that from a dead ingest.
+      input_status_output->value(std::string("not started - press Start Encode to "
+                                             "listen on ")
+                                     .append(input_c.listen_port)
+                                     .c_str());
       break;
     case input_mode::sdp:
       sdp_options_group->show();
@@ -755,9 +776,7 @@ void user_interface::apply_settings(const input_config& input_c,
       ndi_options_group->show();
       break;
     case input_mode::jpegxs_capture:
-      input_listen_port->value(input_c.selected_input.empty()
-                                   ? "5000"
-                                   : input_c.selected_input.c_str());
+      input_listen_port->value(input_c.listen_port.c_str());
       mpegts_options_group->show();
       capture_options_group->show();
       // Show the SAVED camera as the only item until a browse repopulates the

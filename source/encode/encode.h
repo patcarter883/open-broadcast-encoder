@@ -67,7 +67,8 @@ public:
                   const encode_config& encode_config,
                   const receiver_control_config& receiver_config,
                   std::shared_ptr<std::atomic<bool>> run_flag,
-                  std::function<void(const std::string&)> log_func);
+                  std::function<void(const std::string&)> log_func,
+                  std::function<void(const std::string&)> input_status_func = {});
   ~encode();
   encode(const encode&) = delete;
   encode& operator=(const encode&) = delete;
@@ -88,6 +89,9 @@ private:
   // change.
   std::atomic<std::uint32_t> cached_snapped_fps {0};
   std::function<void(const std::string&)> log_func;
+  // The input reader's state, for the UI's input-status line. Separate from
+  // log_func: the log is history, this is the current state.
+  std::function<void(const std::string&)> input_status_func;
   const input_config& input_c;
   const encode_config& encode_c;
   // Read for the raw-capture policy only: a destination that cannot carry the
