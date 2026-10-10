@@ -66,11 +66,30 @@ survived a fix); reporting `applied` for a config-rate start-up, which would cla
 made; starting SQM on a bridge whose config names no queue, which would install a shaper the operator never
 configured.
 
-**Open — ingress (downstream) shaping, NOT implemented.** `shape_configure` sets only `upload`; each leg's
-`download` stays a static `10000` that is never derived — exactly the "wrong shaper" class this feature exists
-to remove, since an ingress limit that no measurement supports either never binds or caps below the leg.
-Deriving it needs a **downlink** instrument and none exists: the probe is a sender. Taking it from the uplink
-figure would be a guess on an asymmetric link. Two candidate routes, for a decision: (a) measure downlink with
-a leg-bound HTTP fetch (`wget --bind-address` — present on the bridge) against a fixed-size resource with a
-documented byte budget, or (b) make `download` an explicit operator policy with its own `capacity_margin`.
+**Ingress (downstream) shaping — IMPLEMENTED, option (a) chosen (2026-10-10).** `shape_configure` set only
+`upload`; each leg's `download` stayed a static `10000` that was never derived — exactly the "wrong shaper"
+class this feature exists to remove. Pat chose the measured route over a policy constant, so a new instrument,
+`rist2rist-downlink`, measures ONE leg's ingress with a leg-bound HTTP fetch (`wget --bind-address`) and meters
+the **leg's own `rx_bytes`**.
+
+Four calls that matter, each rejecting a cheaper wrong answer:
+
+- **Meter the leg, not the fetch.** A bound fetch on a leg with no usable route still completes and would
+  report a perfect rate for a link it never touched. The leg's own counter is the only thing that proves which
+  leg carried it, so the tool refuses (`no_leg_traffic`, exit 1) when the leg moved less than `MIN_LEG_BYTES`.
+- **HTTP, not a ramp.** The uplink probe must ramp because UDP never back-pressures; TCP does, so congestion
+  control finds the achievable rate and a ramp would only add bytes.
+- **Bounded twice.** A server-side byte target AND a wall-clock cap: a metered link must not be drained, and a
+  slow leg must not hold the run open. A fetch killed by the clock is a measurement of a slow leg, not a failure.
+- **A monotonic clock** (`/proc/uptime`), not `date +%s`: a 1 s clock over a ~10 s window is a 10 % error on the
+  very figure being produced (busybox `date` has no `%N`).
+
+The ingress figure is written only when a downlink measurement EXISTS — no guess — and is kept OUT of the egress
+arithmetic that sizes `bandwidth=`. Report gains `download_kbps` / `download_shaper_kbps` per leg.
+
+**Trap hit while wiring it:** `sv=$(shape_configure …)` is a command substitution, i.e. a **subshell**, so an
+assignment made inside the function is discarded — the uplink value was already collected by the *caller* for
+exactly this reason, and the downlink value is now echoed on a second line for the caller to collect too. A
+report field that silently stays null is what this looks like from outside.
+
 
