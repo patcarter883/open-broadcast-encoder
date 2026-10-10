@@ -63,6 +63,16 @@ class ui_widgets {open
                   user_data 3
                   xywh {0 0 100 20}
                 }
+                MenuItem {} {
+                  label {OBS Raw (TCP)}
+                  user_data 4
+                  xywh {0 0 100 20}
+                }
+                MenuItem {} {
+                  label {JPEG XS Camera (LAN)}
+                  user_data 5
+                  xywh {0 0 100 20}
+                }
               }
               Fl_Flex mpegts_options_group {open
                 xywh {110 110 260 127} align 5 hide gap 12 fixed_size_tuples {1  0 25 }
