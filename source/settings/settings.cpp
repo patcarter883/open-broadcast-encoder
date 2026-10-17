@@ -366,23 +366,18 @@ bool load(library& lib)
         && !in.selected_input.empty())
     {
       const bool numeric = in.selected_input.find_first_not_of("0123456789")
-                           == std::string::npos;
-      if (numeric)
-      {
+          == std::string::npos;
+      if (numeric) {
         in.listen_port = in.selected_input;
       }
     }
-    // Seed the model with the same default the field displays, so the field, the
-    // saved file and the reader cannot disagree about which port this input
+    // Seed the model with the same default the field displays, so the field,
+    // the saved file and the reader cannot disagree about which port this input
     // listens on. The field is a view of the model, not a second copy of it.
-    if (in.listen_port.empty())
-    {
-      if (in.selected_input_mode == input_mode::raw_local)
-      {
+    if (in.listen_port.empty()) {
+      if (in.selected_input_mode == input_mode::raw_local) {
         in.listen_port = "9300";
-      }
-      else if (in.selected_input_mode == input_mode::jpegxs_capture)
-      {
+      } else if (in.selected_input_mode == input_mode::jpegxs_capture) {
         in.listen_port = "5000";
       }
     }

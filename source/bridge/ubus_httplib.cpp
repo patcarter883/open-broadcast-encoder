@@ -46,9 +46,9 @@ bridge::ubus_client::transport_fn bridge::make_ubus_transport(
     // matters for keeping the UI usable. The READ timeout has to cover the
     // slowest method instead, and `calibrate` measures every WAN leg and then
     // confirms the result -- about a minute. At 8s it gave up first and the
-    // panel reported "the bridge did not answer" for a bridge that was answering
-    // perfectly well. Control calls run on tracked background threads, so a long
-    // read does not block the UI.
+    // panel reported "the bridge did not answer" for a bridge that was
+    // answering perfectly well. Control calls run on tracked background
+    // threads, so a long read does not block the UI.
     cli.set_connection_timeout(3, 0);
     cli.set_read_timeout(300, 0);
     cli.set_write_timeout(30, 0);

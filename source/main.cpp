@@ -35,10 +35,10 @@
 #include "bridge/ubus.h"
 #include "control/control.h"
 #include "encode.h"
-#include "raw_local.h"
-#include "raw_local_port.h"
 #include "lib.h"
 #include "ndi_input.h"
+#include "raw_local.h"
+#include "raw_local_port.h"
 #include "settings/settings.h"
 #include "stats.h"
 #include "transport.h"
@@ -247,8 +247,7 @@ static void run_loop()
         break;
       }
       if (encoder->state.load(std::memory_order_relaxed)
-          == encode_state::starting)
-      {
+          == encode_state::starting) {
         encoder->state.store(encode_state::streaming,
                              std::memory_order_relaxed);
         publish_encode_state(encode_state::streaming);
@@ -1149,7 +1148,8 @@ static void run_raw_preview(std::uint16_t port)
 
   // No format verdict here: a preview shows what arrives, it does not police
   // what the selected codec and destinations could carry. That decision belongs
-  // to the encode path, and passing it twice would be two policies to keep true.
+  // to the encode path, and passing it twice would be two policies to keep
+  // true.
   raw_local_input reader(
       video_src, audio_src, port, &encode_log, {}, &input_status);
   reader.start();
@@ -1264,8 +1264,9 @@ static void preview_input()
       // is the same single-listener rule the transport enforces -- stated
       // before the press rather than discovered after it.
       if (ctx.lib.is_running) {
-        encode_log("Preview: the raw ingest is already listening; stop the "
-                   "encode first.\n");
+        encode_log(
+            "Preview: the raw ingest is already listening; stop the "
+            "encode first.\n");
         input_status("cannot preview - the ingest is running");
         break;
       }

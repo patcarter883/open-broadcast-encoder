@@ -70,8 +70,8 @@ public:
   // buttons as stopped (Start available, Stop inactive) because the send loop
   // has already ended.
   void set_encode_state(const std::string& text, bool is_failed);
-  // The input reader's state (listening / connected / frames). Separate from the
-  // encode lifecycle: "Streaming" with no input attached is not streaming.
+  // The input reader's state (listening / connected / frames). Separate from
+  // the encode lifecycle: "Streaming" with no input attached is not streaming.
   void set_input_status(const std::string& text);
   // Bridge state. Safe to call from a background thread: takes the FLTK lock.
   // set_bridge_discovered updates the model AND the widgets, so a worker never

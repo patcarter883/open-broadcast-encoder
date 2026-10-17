@@ -180,7 +180,8 @@ void user_interface::show(int argc, char** argv)
   layout();
 }
 
-namespace {
+namespace
+{
 // Lay out every flex in the tree, outermost first.
 //
 // A flex positions its OWN children when its layout() runs -- laying out just
@@ -190,14 +191,11 @@ namespace {
 // rather than naming each one.
 void layout_flex_tree(Fl_Widget* w)
 {
-  if (Fl_Flex* flex = dynamic_cast<Fl_Flex*>(w))
-  {
+  if (Fl_Flex* flex = dynamic_cast<Fl_Flex*>(w)) {
     flex->layout();
   }
-  if (Fl_Group* group = w->as_group())
-  {
-    for (int i = 0; i < group->children(); ++i)
-    {
+  if (Fl_Group* group = w->as_group()) {
+    for (int i = 0; i < group->children(); ++i) {
       layout_flex_tree(group->child(i));
     }
   }
@@ -340,8 +338,8 @@ void user_interface::choose_input_protocol(input_config* input_config,
         input_listen_port->value("9300");
       }
       // Keep the model in step with the field: a programmatic value() does not
-      // fire the callback, so without this the save writes an empty port and the
-      // reader falls back to its own default while the field shows another.
+      // fire the callback, so without this the save writes an empty port and
+      // the reader falls back to its own default while the field shows another.
       input_config->listen_port = input_listen_port->value();
       mpegts_options_group->show();
       sdp_options_group->hide();
@@ -762,10 +760,11 @@ void user_interface::apply_settings(const input_config& input_c,
       // Say what has to happen for this input to receive anything. The listener
       // opens with the pipeline, so before Start the port is closed and an
       // operator staring at OBS has no way to tell that from a dead ingest.
-      input_status_output->value(std::string("not started - press Start Encode to "
-                                             "listen on ")
-                                     .append(input_c.listen_port)
-                                     .c_str());
+      input_status_output->value(
+          std::string("not started - press Start Encode to "
+                      "listen on ")
+              .append(input_c.listen_port)
+              .c_str());
       break;
     case input_mode::sdp:
       sdp_options_group->show();

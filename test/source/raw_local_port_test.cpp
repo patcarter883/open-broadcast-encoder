@@ -39,8 +39,7 @@ TEST_CASE("anything that is not a usable port falls back to the default",
           == raw_local::k_default_port);
   // Out of range both ways.
   REQUIRE(raw_local::resolve_port("0") == raw_local::k_default_port);
-  REQUIRE(raw_local::resolve_port("65536")
-          == raw_local::k_default_port);
+  REQUIRE(raw_local::resolve_port("65536") == raw_local::k_default_port);
   REQUIRE(raw_local::resolve_port("-1") == raw_local::k_default_port);
 }
 

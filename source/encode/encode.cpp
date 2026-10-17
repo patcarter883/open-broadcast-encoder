@@ -705,8 +705,7 @@ void encode::start_raw_reader()
 
   // The listen-port field is shared with the MPEG-TS ingest; empty or not a
   // port means the OBS plugin's default target.
-  const std::uint16_t port =
-      raw_local::resolve_port(this->input_c.listen_port);
+  const std::uint16_t port = raw_local::resolve_port(this->input_c.listen_port);
   if (!this->input_c.listen_port.empty()
       && this->input_c.listen_port != std::to_string(port))
   {

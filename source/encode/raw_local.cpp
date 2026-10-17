@@ -123,7 +123,6 @@ void raw_local_input::log(const std::string& msg) const
   }
 }
 
-
 void raw_local_input::status(const std::string& msg) const
 {
   if (this->status_func) {
@@ -163,9 +162,8 @@ auto raw_local_input::open_listener() -> bool
   }
 
   this->listen_fd.store(fd);
-  this->status(
-      std::format("listening on port {} - waiting for the OBS raw output",
-                  this->port));
+  this->status(std::format(
+      "listening on port {} - waiting for the OBS raw output", this->port));
   log(
       std::format("[raw] listening on port {} for the OBS raw output "
                   "(set OBC_RAW_TARGET=127.0.0.1:{})\n",

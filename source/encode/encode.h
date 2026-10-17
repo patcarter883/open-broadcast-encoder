@@ -63,12 +63,13 @@ public:
   // result is cached, because Allocate and Start Encode are independent UI
   // actions -- the measurement and its use are different moments.
   std::uint32_t source_fps_snapped();
-  explicit encode(const input_config& input_config,
-                  const encode_config& encode_config,
-                  const receiver_control_config& receiver_config,
-                  std::shared_ptr<std::atomic<bool>> run_flag,
-                  std::function<void(const std::string&)> log_func,
-                  std::function<void(const std::string&)> input_status_func = {});
+  explicit encode(
+      const input_config& input_config,
+      const encode_config& encode_config,
+      const receiver_control_config& receiver_config,
+      std::shared_ptr<std::atomic<bool>> run_flag,
+      std::function<void(const std::string&)> log_func,
+      std::function<void(const std::string&)> input_status_func = {});
   ~encode();
   encode(const encode&) = delete;
   encode& operator=(const encode&) = delete;

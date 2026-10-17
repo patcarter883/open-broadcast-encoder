@@ -6,13 +6,13 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-
-#include "encode/raw_local_port.h"
 #include <functional>
 #include <string>
 #include <thread>
 
 #include <gst/gst.h>
+
+#include "encode/raw_local_port.h"
 
 // Ingest for the OBS raw output plugin (open-broadcast/obs-raw-output).
 //
@@ -45,7 +45,6 @@ using format_verdict_fn = std::function<std::string(std::uint32_t)>;
 class raw_local_input
 {
 public:
-
   // `format_verdict` carries the encoder's policy (see format_verdict_fn): the
   // reader itself never decides what a format is good enough for.
   raw_local_input(GstElement* video_src,
