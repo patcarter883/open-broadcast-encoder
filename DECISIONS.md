@@ -141,4 +141,47 @@ base-time recipe was measured on a live pipeline: PTS ≈ 0.002 s under the defa
 within 53 ms with this recipe. **Not verified:** a PTP-locked run — the grandmaster (192.168.1.1) sits on the
 video LAN segment and PTP multicast does not route to this box, so the lock path is reasoned-and-reviewed only.
 
+---
+
+## EN-4 — The no-grandmaster fallback is CLOCK_REALTIME, not MONOTONIC (2026-10-19)
+
+**Choice.** When `GstPtpClock` does not lock, `sync_clock()` falls back to the system clock with
+`clock-type = GST_CLOCK_TYPE_REALTIME` (previously `GST_CLOCK_TYPE_MONOTONIC`). Every path now logs which
+clock was chosen: the PTP branch says so, each of the three no-lock branches names `CLOCK_REALTIME`, and the
+fallback logs that it is comparable across machines **only if this host's clock is PTP-disciplined**
+(`timedatectl` / a running `ptp4l`). `OBC_PTP=off` logs its own line instead of silently skipping the PTP probe.
+
+**Why REALTIME and not MONOTONIC.** On a host whose `CLOCK_REALTIME` is PTP-disciplined, REALTIME *already is*
+the LAN timeline, so an emitted PTS stays comparable with the recorder, the camera nodes and OBS — the whole
+point of EN-3 — even on the fallback path. MONOTONIC is time-since-boot: a *different* timeline, whose PTS look
+perfectly healthy while silently destroying cross-machine alignment. Picking a timeline that cannot align
+anything, and doing it silently, is the defect EN-3 was meant to remove; the fallback was the half it missed.
+
+**The fallback is the operative path on this rig, by measurement.** `gst-ptp-helper` (which implements
+`GstPtpClock`) binds UDP 319/320; so does `ptp4l`; there is no `SO_REUSEPORT`, so only one binder wins. Where
+`ptp4l` runs — every camera node, the OBS box — `GstPtpClock` can never lock, and the code takes the REALTIME
+fallback. Confirmed on the Pi (192.168.1.118, `ptp4l-slave` slaved to the router): with `ptp4l` running,
+`sudo ss -lunp` shows `ptp4l` holding `0.0.0.0:319`/`:320` and a `gst_clock_wait_for_sync` returns FALSE for a
+20 s wait; with `ptp4l-slave` stopped and 319/320 free, the helper still did not lock within 20 s (it *selected*
+grandmaster `0x60beb4fffe24f277` from the announces but logged `Currently selected clock timed out, downgrading`
+and never reached synced). `ptp4l-slave` was restarted immediately and re-verified (`gmPresent true`,
+`master_offset ≈ −46 µs`). So on this LAN the REALTIME fallback is not a corner case — it is what every node
+runs, which is exactly why its timeline must be the right one.
+
+**Rejected.** `GST_CLOCK_TYPE_MONOTONIC` (incomparable to anything, and silently so); `gst_system_clock_obtain()`
+without setting the type (defaults to MONOTONIC — the pre-EN-3 behaviour); an NTP clock (`gst_net_client_clock`)
+(a second time source with its own offset and no PTP traceability); refusing to run without a lock (the fallback
+is legitimate and comparable here).
+
+**Verified / not verified (2026-10-19).** Verified by execution, on the real `encode::run_encode_thread()` path
+(a scratch harness drives the pipeline with a `videotestsrc` source): with no lock reachable the log reads
+`Clock: no PTP master via GstPtpClock (or gst-ptp-helper cannot bind 319/320 - e.g. ptp4l already holds them) -
+falling back to CLOCK_REALTIME.` followed by `Clock: using CLOCK_REALTIME - comparable across machines ONLY if
+this host's clock is PTP-disciplined (timedatectl / ptp4l).`; with `OBC_PTP=off` the log reads `Clock:
+OBC_PTP=off - using CLOCK_REALTIME.` then the same second line. The build is clean (`cmake --build build`, RC 0,
+`encode.cpp` recompiled and relinked). **Not verified:** a PTP-*locked* run — the grandmaster (192.168.1.1) is
+not reachable from this box, and even with 319/320 freed on the Pi the lock did not complete (above), so the
+locked branch is reasoned-and-reviewed only.
+
+
 

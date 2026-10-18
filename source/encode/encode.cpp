@@ -40,10 +40,18 @@ namespace
 // started", which is what lets the camera nodes, this encoder, the recorder and
 // OBS all name the same moment.
 //
-// Without a grandmaster we fall back to the monotonic system clock and say so
+// Without a grandmaster we fall back to the REALTIME system clock and say so
 // LOUDLY: an encoder that quietly emits misaligned timestamps is worse than one
 // that complains. OBC_PTP=off forces the fallback, for a box deliberately run
 // off-timeline.
+//
+// REALTIME, not MONOTONIC. On a host whose CLOCK_REALTIME is PTP-disciplined
+// (the normal case on this rig: ptp4l already runs, so GstPtpClock can never
+// bind UDP 319/320 and never locks) REALTIME already IS the LAN timeline, so
+// emitted PTS stay comparable with the other machines. MONOTONIC is
+// time-since-boot - a DIFFERENT timeline that looks perfectly healthy while
+// silently destroying cross-machine alignment. That was the previous behaviour
+// and it is the bug this fixes.
 //
 // The clock is acquired ONCE per process and reused by every later pipeline --
 // two pipelines on two clocks is exactly the defect this exists to avoid. The
@@ -60,37 +68,40 @@ auto sync_clock(const std::function<void(const std::string&)>& log) -> GstClock*
         const gchar* want = g_getenv("OBC_PTP");
         const bool forced_off =
             (want != nullptr) && (g_strcmp0(want, "off") == 0);
-        if (!forced_off) {
-          if (!gst_ptp_is_supported()) {
-            log("Clock: this GStreamer has no PTP support - falling "
-                "back to the monotonic system clock; timestamps "
-                "will NOT be comparable with other machines.\n");
-          } else if (gst_ptp_init(0, nullptr)) {
-            GstClock* ptp = gst_ptp_clock_new("obc-ptp", 0);
-            if ((ptp != nullptr)
-                && gst_clock_wait_for_sync(ptp, 5 * GST_SECOND)) {
-              log("Clock: PTP (LAN grandmaster). Every PTS is an "
-                  "absolute instant on the LAN timeline.\n");
-              cached = ptp;
-              return;
-            }
-            log("Clock: no PTP master (or gst-ptp-helper cannot bind "
-                "319/320) - falling back to the monotonic system "
-                "clock; timestamps will NOT be comparable with "
-                "other machines.\n");
-            if (ptp != nullptr) {
-              gst_object_unref(ptp);
-            }
-          } else {
-            log("Clock: gst_ptp_init() failed (is gst-ptp-helper "
-                "installed with cap_net_bind_service,cap_net_admin?) "
-                "- falling back to the monotonic system clock; "
-                "timestamps will NOT be comparable with other "
-                "machines.\n");
+        if (forced_off) {
+          log("Clock: OBC_PTP=off - using CLOCK_REALTIME.\n");
+        } else if (!gst_ptp_is_supported()) {
+          log("Clock: this GStreamer has no PTP support - falling "
+              "back to CLOCK_REALTIME.\n");
+        } else if (gst_ptp_init(0, nullptr)) {
+          GstClock* ptp = gst_ptp_clock_new("obc-ptp", 0);
+          if ((ptp != nullptr) && gst_clock_wait_for_sync(ptp, 5 * GST_SECOND))
+          {
+            log("Clock: using PTP (LAN grandmaster). Every PTS is an "
+                "absolute instant on the LAN timeline.\n");
+            cached = ptp;
+            return;
           }
+          log("Clock: no PTP master via GstPtpClock (or gst-ptp-helper "
+              "cannot bind 319/320 - e.g. ptp4l already holds them) - "
+              "falling back to CLOCK_REALTIME.\n");
+          if (ptp != nullptr) {
+            gst_object_unref(ptp);
+          }
+        } else {
+          log("Clock: gst_ptp_init() failed (is gst-ptp-helper "
+              "installed with cap_net_bind_service,cap_net_admin?) - "
+              "falling back to CLOCK_REALTIME.\n");
         }
+        // REALTIME, not MONOTONIC: on a PTP-disciplined host CLOCK_REALTIME
+        // already IS the LAN timeline, so PTS stay comparable across
+        // machines. True only if this host's clock is disciplined -
+        // `timedatectl` / a running ptp4l.
         GstClock* sys = gst_system_clock_obtain();
-        g_object_set(sys, "clock-type", GST_CLOCK_TYPE_MONOTONIC, nullptr);
+        g_object_set(sys, "clock-type", GST_CLOCK_TYPE_REALTIME, nullptr);
+        log("Clock: using CLOCK_REALTIME - comparable across machines "
+            "ONLY if this host's clock is PTP-disciplined "
+            "(timedatectl / ptp4l).\n");
         cached = sys;
       });
   return cached;
@@ -665,10 +676,10 @@ void encode::parse_pipeline()
   }
 
   // Seam onto the LAN timeline: run the pipeline on the shared PTP clock (or
-  // the logged monotonic fallback) so that every buffer it emits carries an
-  // absolute instant, not time since the pipeline started. Set here, while the
-  // pipeline is still in NULL: gst_pipeline_use_clock and the base-time recipe
-  // must be in place before the first transition to PLAYING.
+  // the logged CLOCK_REALTIME fallback) so that every buffer it emits carries
+  // an absolute instant, not time since the pipeline started. Set here, while
+  // the pipeline is still in NULL: gst_pipeline_use_clock and the base-time
+  // recipe must be in place before the first transition to PLAYING.
   apply_sync_clock(this->datasrc_pipeline,
                    [this](const std::string& msg) { this->log(msg); });
 
