@@ -16,6 +16,10 @@
 
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
+// GstPtpClock. NOT <gst/net/gstnet.h>: since GStreamer 1.2x that umbrella
+// header no longer pulls in the PTP header, and gst_ptp_is_supported() then
+// reads as undeclared while gst_ntp_clock_new() still resolves.
+#include <gst/net/gstptpclock.h>
 
 #include "encode/capture_input.h"
 #include "encode/capture_source.h"
@@ -23,6 +27,96 @@
 #include "encode/raw_local.h"
 
 using std::string;
+
+namespace
+{
+// The clock every pipeline that puts timestamps on the wire must run on.
+//
+// The video LAN is PTP-disciplined: the router is the grandmaster and serves
+// UTC as PTP time deliberately -- every consumer on this side works in
+// CLOCK_REALTIME, so a TAI offset would misalign them. Sourcing the pipeline
+// clock from PTP, with base time 0 (see apply_sync_clock), makes a buffer's PTS
+// the absolute instant on that timeline instead of "time since this pipeline
+// started", which is what lets the camera nodes, this encoder, the recorder and
+// OBS all name the same moment.
+//
+// Without a grandmaster we fall back to the monotonic system clock and say so
+// LOUDLY: an encoder that quietly emits misaligned timestamps is worse than one
+// that complains. OBC_PTP=off forces the fallback, for a box deliberately run
+// off-timeline.
+//
+// The clock is acquired ONCE per process and reused by every later pipeline --
+// two pipelines on two clocks is exactly the defect this exists to avoid. The
+// reference is held for the life of the process (gst_pipeline_use_clock takes
+// its own ref per pipeline) and never unref'd.
+auto sync_clock(const std::function<void(const std::string&)>& log) -> GstClock*
+{
+  static GstClock* cached = nullptr;
+  static std::once_flag once;
+  std::call_once(
+      once,
+      [&]
+      {
+        const gchar* want = g_getenv("OBC_PTP");
+        const bool forced_off =
+            (want != nullptr) && (g_strcmp0(want, "off") == 0);
+        if (!forced_off) {
+          if (!gst_ptp_is_supported()) {
+            log("Clock: this GStreamer has no PTP support - falling "
+                "back to the monotonic system clock; timestamps "
+                "will NOT be comparable with other machines.\n");
+          } else if (gst_ptp_init(0, nullptr)) {
+            GstClock* ptp = gst_ptp_clock_new("obc-ptp", 0);
+            if ((ptp != nullptr)
+                && gst_clock_wait_for_sync(ptp, 5 * GST_SECOND)) {
+              log("Clock: PTP (LAN grandmaster). Every PTS is an "
+                  "absolute instant on the LAN timeline.\n");
+              cached = ptp;
+              return;
+            }
+            log("Clock: no PTP master (or gst-ptp-helper cannot bind "
+                "319/320) - falling back to the monotonic system "
+                "clock; timestamps will NOT be comparable with "
+                "other machines.\n");
+            if (ptp != nullptr) {
+              gst_object_unref(ptp);
+            }
+          } else {
+            log("Clock: gst_ptp_init() failed (is gst-ptp-helper "
+                "installed with cap_net_bind_service,cap_net_admin?) "
+                "- falling back to the monotonic system clock; "
+                "timestamps will NOT be comparable with other "
+                "machines.\n");
+          }
+        }
+        GstClock* sys = gst_system_clock_obtain();
+        g_object_set(sys, "clock-type", GST_CLOCK_TYPE_MONOTONIC, nullptr);
+        cached = sys;
+      });
+  return cached;
+}
+
+// Put `pipeline` on the shared clock and make its buffer PTS an absolute
+// instant on it.
+//
+// base time 0 is the deliberate choice, not a value read off the clock: this
+// encoder EMITS, it does not record relative to a session start (that is the
+// recorder's job, and it uses gst_clock_get_time(clock) + a margin instead).
+// With base time 0 a live source's timestamped PTS IS the instant the clock
+// reports, so a consumer that reads the PTS gets "which moment on the LAN
+// timeline". start-time NONE stops the pipeline recomputing the base when it
+// goes to PLAYING, which would otherwise discard the absolute value.
+void apply_sync_clock(GstElement* pipeline,
+                      const std::function<void(const std::string&)>& log)
+{
+  if (pipeline == nullptr) {
+    return;
+  }
+  gst_pipeline_use_clock(GST_PIPELINE(pipeline), sync_clock(log));
+  gst_element_set_start_time(pipeline, GST_CLOCK_TIME_NONE);
+  gst_element_set_base_time(pipeline, 0);
+}
+}  // namespace
 
 encode::encode(const input_config& input_config,
                const encode_config& encode_config,
@@ -569,6 +663,14 @@ void encode::parse_pipeline()
     log("*** Bad datasrc_pipeline ***\n");
     return;
   }
+
+  // Seam onto the LAN timeline: run the pipeline on the shared PTP clock (or
+  // the logged monotonic fallback) so that every buffer it emits carries an
+  // absolute instant, not time since the pipeline started. Set here, while the
+  // pipeline is still in NULL: gst_pipeline_use_clock and the base-time recipe
+  // must be in place before the first transition to PLAYING.
+  apply_sync_clock(this->datasrc_pipeline,
+                   [this](const std::string& msg) { this->log(msg); });
 
   this->video_encoder =
       gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), "videncoder");

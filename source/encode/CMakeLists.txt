@@ -40,6 +40,7 @@ target_compile_features(encode_lib PUBLIC cxx_std_20)
 target_link_libraries(encode_lib PRIVATE ${warning_guard}
 open-broadcast-encoder_lib
 PkgConfig::gstreamer
+PkgConfig::gstreamer-net
 PkgConfig::gstreamer-sdp
 PkgConfig::gstreamer-rtp
 PkgConfig::gstreamer-app

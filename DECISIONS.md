@@ -92,4 +92,53 @@ assignment made inside the function is discarded — the uplink value was alread
 exactly this reason, and the downlink value is now echoed on a second line for the caller to collect too. A
 report field that silently stays null is what this looks like from outside.
 
+---
+
+## EN-3 — The encode pipeline runs on the LAN's PTP clock, so its PTS is an absolute instant (2026-10-19)
+
+**Choice.** The encode pipeline takes its clock from the video LAN's PTP grandmaster. In `encode::parse_pipeline`,
+once the pipeline has parsed and while it is still in NULL, it is put on the process's shared clock — the PTP
+clock when a grandmaster answers (`gst_ptp_clock_new`) — with `gst_element_set_start_time(pipeline,
+GST_CLOCK_TIME_NONE)` and `gst_element_set_base_time(pipeline, 0)`. The clock is acquired **once per process** and
+cached, so every later Start runs on the same timeline; `OBC_PTP=off` forces the fallback. Without a master the
+monotonic system clock is used and the log says so **loudly**, naming what is lost, rather than emitting
+quietly-misaligned timestamps. GStreamer's `gst-ptp-helper` must carry `cap_net_bind_service` **and**
+`cap_net_admin` — a `setcap` REPLACES the set, it does not add to it.
+
+**Base time 0, chosen deliberately.** A PTS of 0 at base time 0 *is* the instant the clock reports, so a live
+source's timestamped frame reaches the wire naming the moment on the LAN timeline instead of "time since this
+pipeline started". The recorder's recipe (`gst_clock_get_time(clock) + margin`) is right for the recorder and
+wrong here: a take's timeline begins when the operator pressed record, whereas this encoder **emits** and must name
+the instant a frame happened. The router serves **UTC as PTP time on purpose** — every consumer on this side works
+in `CLOCK_REALTIME`, so a 37 s TAI offset would misalign them; nothing here "corrects" it to TAI.
+
+**Rationale.** Camera nodes, this encoder, the recorder and OBS are to land on one timeline. The camera link
+already carries PTP-referenced MPEG-TS; the encoder was the one hop that re-stamped everything relative to its own
+pipeline start, which makes two runs — or two machines — incomparable by construction. Where the pipeline clock
+comes from is the one place that decision belongs.
+
+**Rejected.** `gst_system_clock_obtain()` alone (the previous behaviour: right within one process, meaningless
+across machines); a base time read off the clock at Start (turns an absolute PTS back into a session-relative one
+— the recorder's need, not this one); `GST_CLOCK_TIME_NONE` start time *without* base time 0 (the pipeline then
+recomputes the base at PLAYING and throws the absolute value away).
+
+**Needs `gstreamer-net-1.0`.** `GstPtpClock` lives in `gst/net`, i.e. `libgstnet-1.0`, which the plain
+`gstreamer-1.0` pkg-config module does not cover — hence the added `pkg_search_module` and link entry. The header
+must be `#include <gst/net/gstptpclock.h>`: since GStreamer 1.2x `<gst/net/gstnet.h>` no longer pulls in the PTP
+header, and with the umbrella header `gst_ptp_is_supported()` reads as undeclared while `gst_ntp_clock_new()`
+still resolves.
+
+**Scope.** A direct request, outside the v1 bug-fix phase plan (`SPEC.md` / `ROADMAP.md` cover memory safety and
+codec correctness only), so it is recorded here rather than folded into a phase. The preview pipelines
+(`main.cpp`'s general and OBS-raw previews, `ndi_input`'s preview) are deliberately **left on the default clock**:
+they display, they emit nothing to the LAN, and a monitor that showed live frames shifted onto a remote timeline
+would be a worse monitor, not a better one. Only the encode pipeline feeds the network.
+
+**Verified / not verified (2026-10-19).** Verified by execution: it builds clean; and with no master reachable
+(`gst_ptp_is_supported()` TRUE, `gst_ptp_init()` succeeding, `gst_clock_wait_for_sync` timing out) the real
+`encode::run_encode_thread()` path logs the fallback line and the pipeline still parses, plays and stops. The
+base-time recipe was measured on a live pipeline: PTS ≈ 0.002 s under the default, PTS = the clock's own reading
+within 53 ms with this recipe. **Not verified:** a PTP-locked run — the grandmaster (192.168.1.1) sits on the
+video LAN segment and PTP multicast does not route to this box, so the lock path is reasoned-and-reviewed only.
+
 

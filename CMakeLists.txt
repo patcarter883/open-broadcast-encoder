@@ -66,6 +66,10 @@ target_link_libraries(httplib_ssl INTERFACE OpenSSL::SSL OpenSSL::Crypto)
 
 find_package(PkgConfig REQUIRED)
     pkg_search_module(gstreamer REQUIRED IMPORTED_TARGET gstreamer-1.0>=1.28)
+    # GstPtpClock lives in gst/net, i.e. libgstnet-1.0 -- the plain
+    # gstreamer-1.0 package's link flags do NOT cover it, so the PTP clock
+    # call in source/encode/encode.cpp fails to link without this.
+    pkg_search_module(gstreamer-net REQUIRED IMPORTED_TARGET gstreamer-net-1.0>=1.28)
     pkg_search_module(gstreamer-sdp REQUIRED IMPORTED_TARGET gstreamer-sdp-1.0>=1.28)
     pkg_search_module(gstreamer-rtp REQUIRED IMPORTED_TARGET gstreamer-rtp-1.0>=1.28)
     pkg_search_module(gstreamer-app REQUIRED IMPORTED_TARGET gstreamer-app-1.0>=1.28)
@@ -139,6 +143,7 @@ target_link_libraries(open-broadcast-encoder_exe PRIVATE
   ristnet
   nlohmann_json::nlohmann_json
   PkgConfig::gstreamer
+  PkgConfig::gstreamer-net
   PkgConfig::gstreamer-sdp
   PkgConfig::gstreamer-rtp
   PkgConfig::gstreamer-app
