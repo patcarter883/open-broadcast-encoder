@@ -183,5 +183,57 @@ OBC_PTP=off - using CLOCK_REALTIME.` then the same second line. The build is cle
 not reachable from this box, and even with 319/320 freed on the Pi the lock did not complete (above), so the
 locked branch is reasoned-and-reviewed only.
 
+---
+
+## EN-5 — The lock fails because the grandmaster answers only unicast DELAY_REQ; `gst_ptp_init(0, NULL)` is not the cause (2026-10-19)
+
+**Choice.** No code change. A source-level and on-wire investigation of "`gst_clock_wait_for_sync()` returns FALSE
+with the master plainly announcing" finds that (a) `gst_ptp_init(0, NULL)` is **not** an empty interface list and
+never was, and (b) the sync cannot complete because this LAN's grandmaster replies only to a **unicast** (hybrid)
+DELAY_REQ while `gst-ptp-helper` always sends its DELAY_REQ to the E2E **multicast** address. Neither is something
+this repo can change, so `sync_clock()` is left exactly as EN-3/EN-4 wrote it and the REALTIME fallback remains
+the operative path — for a deeper reason than EN-4 had.
+
+**`NULL` means "all compatible interfaces", not "none".** `gst_ptp_init_full()` only appends `-i <iface>` for
+each element when `interfaces != NULL`; with `NULL` it appends none and the helper falls back to its own
+"every compatible interface" default. Measured on the OBS box (192.168.1.235), ports 319/320 free, same process
+shape as this encoder: `gst_ptp_init(0, NULL)` and `gst_ptp_init(0, ["enp7s0"])` behave **identically** — both log
+`Binding to interface enp7s0`, both elect master `0x60beb4fffe24f277`, both then fail to sync. The
+`interfaces: []` line that suggested an empty list is the **GstStructure config dump** at `GST_DEBUG=ptp:6`, not
+the helper's interface set. Passing an explicit list is therefore not a fix, and is not a safe substitute either:
+the helper calls `bail!` (`"Not all selected network interfaces found"`) if any named interface is not one it
+considers compatible, so an explicit list can make `gst_ptp_init()` **fail** where `NULL` succeeded (e.g. a box
+with a `tun`/`wg` interface UP).
+
+**What actually blocks the lock.** With the helper bound and the master elected, the exchange runs as
+SYNC → FOLLOW_UP → DELAY_REQ → (no DELAY_RESP). `gstptpclock.c` is compiled with `USE_ONLY_SYNC_WITH_DELAY`, so
+without the DELAY_RESP it never reaches `update_ptp_time()`, `domain->last_ptp_time` stays 0, the GstPtpClock
+never reports `synced`, and every second the PTP thread logs `Currently selected clock timed out, downgrading`.
+`tcpdump` on enp7s0 over a 45 s probe: 359 SYNC, 359 FOLLOW_UP, 23 ANNOUNCE from 192.168.1.1, our DELAY_REQ
+(`0x9c6b00fffe0749fa` → `224.0.1.129:319`) — and **zero** DELAY_RESP. A/B against the same master with `ptp4l`:
+`hybrid_e2e 1` (DELAY_REQ sent unicast to 192.168.1.1) draws **8 DELAY_RESP**; plain E2E (DELAY_REQ sent to
+`224.0.1.129`) draws **0**. The grandmaster is therefore hybrid-only, which is exactly what the old
+`/etc/ptp4l-slave.conf` (`hybrid_e2e 1`) was written for. GStreamer has no equivalent option: the Rust helper's
+send path is `send_to(buf, (PTP_MULTICAST_ADDR, PTP_EVENT_PORT))` for every event message.
+
+**Consequence for EN-3/EN-4.** They stand as written — the PTP clock is still the clock the encoder *wants*, and
+the REALTIME fallback is still the one it *runs* — but EN-4's account of the fallback ("`ptp4l` holds 319/320, so
+the helper cannot bind") is only half of it. Freeing the ports is necessary and **not sufficient**: even with the
+helper bound and the master elected, this rig's grandmaster will not answer a multicast DELAY_REQ. The two real
+fixes are outside this repo: allow multicast E2E delay-req on the router (it must not be changed — the camera
+link and the Pi's `ptp4l` depend on it), or make `gst-ptp-helper` send DELAY_REQ unicast (an upstream change).
+
+**Rejected.** Switching `sync_clock()` to `gst_ptp_init(0, [...])` (behaviour-identical here, and a regression
+risk elsewhere — above); disabling the PTP probe and going straight to REALTIME (loses the lock on any conformant
+master, which is the whole of EN-3); tightening the wait or retrying (the DELAY_RESP never arrives, so no wait
+length helps).
+
+**Verified / not verified (2026-10-19).** Verified by execution on the OBS box, `ptp4l-slave` stopped so the
+helper owns 319/320: `GST_DEBUG=ptp:6` shows `Binding to interface enp7s0` and `Selected new master clock`,
+`wait_for_sync` returns FALSE after 45 s, and the wire capture shows no DELAY_RESP (vs 8 with `ptp4l hybrid_e2e`).
+**Not verified:** any configuration in which `wait_for_sync` returns TRUE on this rig — none was found. The
+encoder binary itself was not run headless (Start Encode needs an input source and a live pipeline); the finding
+is from the same GStreamer PTP code path driven directly, and the builds are clean (`cmake --build build`, RC 0).
+
 
 
