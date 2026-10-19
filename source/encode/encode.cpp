@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <format>
 #include <memory>
 #include <mutex>
@@ -16,10 +17,10 @@
 
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
-// GstPtpClock. NOT <gst/net/gstnet.h>: since GStreamer 1.2x that umbrella
-// header no longer pulls in the PTP header, and gst_ptp_is_supported() then
-// reads as undeclared while gst_ntp_clock_new() still resolves.
-#include <gst/net/gstptpclock.h>
+// GstNetClientClock. NOT <gst/net/gstnet.h>: since GStreamer 1.2x that umbrella
+// header does not pull in every clock header, and gst_net_client_clock_new()
+// then reads as undeclared while gst_ntp_clock_new() still resolves.
+#include <gst/net/gstnetclientclock.h>
 
 #include "encode/capture_input.h"
 #include "encode/capture_source.h"
@@ -32,24 +33,35 @@ namespace
 {
 // The clock every pipeline that puts timestamps on the wire must run on.
 //
-// The video LAN is PTP-disciplined: the router is the grandmaster and serves
-// UTC as PTP time deliberately -- every consumer on this side works in
-// CLOCK_REALTIME, so a TAI offset would misalign them. Sourcing the pipeline
-// clock from PTP, with base time 0 (see apply_sync_clock), makes a buffer's PTS
-// the absolute instant on that timeline instead of "time since this pipeline
-// started", which is what lets the camera nodes, this encoder, the recorder and
-// OBS all name the same moment.
+// The video LAN has ONE time authority: the video router runs a GstNetTime
+// provider (UDP 5637) serving its CLOCK_REALTIME in the UTC epoch -- the same
+// clock it serves as PTP grandmaster and NTP server, and the same one the
+// camera nodes slave to with GstNetClientClock. Sourcing this encoder's
+// pipeline clock from that provider, with base time 0 (see apply_sync_clock),
+// makes a buffer's PTS the absolute instant on that timeline instead of "time
+// since this pipeline started", which is what lets the camera nodes, this
+// encoder, the recorder and OBS all name the same moment.
 //
-// Without a grandmaster we fall back to the REALTIME system clock and say so
+// GstNetClientClock is self-slaving: it polls the provider, estimates offset
+// and rate and filters round trips in-process, and gst_clock_get_time() returns
+// the already-corrected provider time. It needs no privileged ports and no file
+// capabilities -- unlike GstPtpClock, whose gst-ptp-helper must bind UDP
+// 319/320, which ptp4l already holds on a PTP-disciplined host so that clock
+// can never lock here.
+//
+// Server address: OBR_NETTIME=host[:port] (default port 5637). Unset falls back
+// to the LAN router's provider, 192.168.1.1:5637 -- a default, not a
+// hardcoding: the env var always wins. OBR_NETTIME=off forces the fallback, for
+// a box deliberately run off-timeline.
+//
+// Without a provider we fall back to the REALTIME system clock and say so
 // LOUDLY: an encoder that quietly emits misaligned timestamps is worse than one
-// that complains. OBC_PTP=off forces the fallback, for a box deliberately run
-// off-timeline.
+// that complains.
 //
 // REALTIME, not MONOTONIC. On a host whose CLOCK_REALTIME is PTP-disciplined
-// (the normal case on this rig: ptp4l already runs, so GstPtpClock can never
-// bind UDP 319/320 and never locks) REALTIME already IS the LAN timeline, so
-// emitted PTS stay comparable with the other machines. MONOTONIC is
-// time-since-boot - a DIFFERENT timeline that looks perfectly healthy while
+// (the normal case on this rig: ptp4l already runs) REALTIME already IS the LAN
+// timeline, so emitted PTS stay comparable with the other machines. MONOTONIC
+// is time-since-boot - a DIFFERENT timeline that looks perfectly healthy while
 // silently destroying cross-machine alignment. That was the previous behaviour
 // and it is the bug this fixes.
 //
@@ -65,33 +77,56 @@ auto sync_clock(const std::function<void(const std::string&)>& log) -> GstClock*
       once,
       [&]
       {
-        const gchar* want = g_getenv("OBC_PTP");
-        const bool forced_off =
-            (want != nullptr) && (g_strcmp0(want, "off") == 0);
+        // Server: OBR_NETTIME=host[:port]; default the LAN router's provider.
+        string host = "192.168.1.1";
+        int port = 5637;
+        bool forced_off = false;
+        const gchar* want = g_getenv("OBR_NETTIME");
+        if (want != nullptr) {
+          if (g_strcmp0(want, "off") == 0) {
+            forced_off = true;
+          } else {
+            const string addr {want};
+            const auto colon = addr.rfind(':');
+            if ((colon != string::npos) && (colon != 0)) {
+              host = addr.substr(0, colon);
+              const auto p = addr.substr(colon + 1);
+              if (!p.empty()) {
+                port = std::atoi(p.c_str());
+              }
+            } else if (!addr.empty()) {
+              host = addr;
+            }
+          }
+        }
         if (forced_off) {
-          log("Clock: OBC_PTP=off - using CLOCK_REALTIME.\n");
-        } else if (!gst_ptp_is_supported()) {
-          log("Clock: this GStreamer has no PTP support - falling "
-              "back to CLOCK_REALTIME.\n");
-        } else if (gst_ptp_init(0, nullptr)) {
-          GstClock* ptp = gst_ptp_clock_new("obc-ptp", 0);
-          if ((ptp != nullptr) && gst_clock_wait_for_sync(ptp, 5 * GST_SECOND))
-          {
-            log("Clock: using PTP (LAN grandmaster). Every PTS is an "
-                "absolute instant on the LAN timeline.\n");
-            cached = ptp;
-            return;
-          }
-          log("Clock: no PTP master via GstPtpClock (or gst-ptp-helper "
-              "cannot bind 319/320 - e.g. ptp4l already holds them) - "
-              "falling back to CLOCK_REALTIME.\n");
-          if (ptp != nullptr) {
-            gst_object_unref(ptp);
-          }
+          log("Clock: OBR_NETTIME=off - using CLOCK_REALTIME.\n");
         } else {
-          log("Clock: gst_ptp_init() failed (is gst-ptp-helper "
-              "installed with cap_net_bind_service,cap_net_admin?) - "
-              "falling back to CLOCK_REALTIME.\n");
+          GstClock* netclock =
+              gst_net_client_clock_new("obc-nettime", host.c_str(), port, 0);
+          if (netclock == nullptr) {
+            log(
+                std::format("Clock: gst_net_client_clock_new({}:{}) failed - "
+                            "falling back to CLOCK_REALTIME.\n",
+                            host,
+                            port));
+          } else if (gst_clock_wait_for_sync(netclock, 5 * GST_SECOND)) {
+            log(std::format(
+                "Clock: locked to net time provider {}:{} - every PTS is an "
+                "absolute instant on the LAN timeline.\n",
+                host,
+                port));
+            cached = netclock;
+            return;
+          } else {
+            log(
+                std::format("Clock: no answer from net time provider {}:{} "
+                            "(GstNetClientClock did not lock) - falling back "
+                            "to CLOCK_REALTIME.\n",
+                            host,
+                            port));
+            gst_object_unref(netclock);
+          }
         }
         // REALTIME, not MONOTONIC: on a PTP-disciplined host CLOCK_REALTIME
         // already IS the LAN timeline, so PTS stay comparable across

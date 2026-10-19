@@ -237,3 +237,31 @@ is from the same GStreamer PTP code path driven directly, and the builds are cle
 
 
 
+
+## EN-6 — The encode pipeline's clock is the LAN's net-time provider (GstNetClientClock), not GstPtpClock (2026-10-19)
+
+**Choice.** `sync_clock()` in `source/encode/encode.cpp` now acquires its clock from the video LAN's
+**GstNetTime provider** -- the video router's `jxs-nettime` on UDP 5637, serving its `CLOCK_REALTIME` in the UTC
+epoch -- via `gst_net_client_clock_new("obc-nettime", host, port, 0)`. The pipeline still runs on the process's
+one shared, cached clock with `base_time 0` and `start-time NONE` (see EN-3): a live buffer's PTS is the absolute
+instant on that timeline. `GstPtpClock`/`gst_ptp_init`/`gst_ptp_clock_new` are gone from this file.
+
+**Why.** EN-5 established that this rig's grandmaster answers only *unicast* DELAY_REQ, while `gst-ptp-helper`
+sends every event message multicast -- so `GstPtpClock` can never reach `synced` here no matter the port state, and
+the encoder was running on the REALTIME fallback. The router's net-time provider serves **the same CLOCK_REALTIME
+it already serves as PTP grandmaster and NTP server**, over an unprivileged UDP port, to any host that can route to
+it. `GstNetClientClock` is self-slaving (offset + rate estimation, round-trip filtering in-process), so
+`gst_clock_get_time()` returns the corrected provider time directly; no helper, no file capabilities, no 319/320.
+The Pi camera node was moved to the same mechanism (commit `ce4b5f9` in `jpegxs-arm-port`), so encoder and cameras
+now slave to one provider and name one timeline.
+
+**Server address, not hardcoded.** `OBR_NETTIME=host[:port]` (default port 5637) overrides everything; unset uses
+`192.168.1.1:5637` (the router) as a default only. `OBR_NETTIME=off` forces the REALTIME fallback, replacing the
+old `OBC_PTP=off`. Every path logs which clock was chosen; on lock the line is
+`Clock: locked to net time provider <host>:<port> - every PTS is an absolute instant on the LAN timeline.`
+
+**Fallback unchanged (EN-4).** If the provider does not answer within 5 s, or the clock cannot be created, the
+code falls back to `CLOCK_REALTIME` (not MONOTONIC) and says so loudly, naming what is lost.
+
+**Rejected.** Keeping `GstPtpClock` and "fixing" it (EN-5: impossible here without a router or upstream change);
+hardcoding the router IP with no override (a box moved off the video LAN would silently fail to lock).
