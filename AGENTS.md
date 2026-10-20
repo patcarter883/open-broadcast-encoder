@@ -533,3 +533,21 @@ The [`stats`](source/stats/stats.cppm:10) module handles RIST statistics and ada
 2. Add menu item to [`menu_choice_input_protocol`](source/ui/ui.cppm:106) in `ui.cppm`
 3. Implement source building in `pipeline_build_source()` in [`encode.cppm`](source/encode/encode.cppm:107)
 4. Handle demux in `pipeline_build_video_demux()` and `pipeline_build_audio_demux()`
+
+
+## Rig workflow
+
+Applies to every repo in the JPEG XS camera rig.
+
+1. The main repo checkout ALWAYS remains on the default branch. Never change the
+   branch checked out there: no `git checkout`, `git switch`, `git stash` or
+   `git clean`. Another agent may be working in that directory.
+2. All work happens in a branch worktree:
+
+       git worktree add ../<repo>-<branch> -b <branch>
+
+   Edit, build and commit only in your own worktree.
+3. Land work by MERGING YOUR WORKTREE BRANCH INTO THE DEFAULT BRANCH, from the main
+   checkout, once the work is complete. That is the landing procedure - it is not a
+   breach of rule 1.
+4. Never commit directly onto the default branch.
