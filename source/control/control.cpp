@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 
+#include <chrono>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include "control/control.h"
@@ -205,7 +207,20 @@ bool control_client::start_hosted(const std::string& control_url,
     headers.emplace("Authorization", "Bearer " + control_token);
   }
 
-  httplib::Result res = cli.Post(path, headers, body, "application/json");
+  // The session container is created by the allocation, so the receiver is
+  // still starting when this runs: a first POST can meet a connection failure
+  // or the ingress's 502. Retry those briefly rather than making the operator
+  // press Start again.
+  httplib::Result res;
+  for (int attempt = 0; attempt < 12; ++attempt) {
+    res = cli.Post(path, headers, body, "application/json");
+    const bool transient = !res || res->status == 502 || res->status == 503
+        || res->status == 504;
+    if (!transient) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+  }
   if (!res) {
     err = "no response from the receiver's control plane at " + origin + path
         + " (" + httplib::to_string(res.error()) + ")";
