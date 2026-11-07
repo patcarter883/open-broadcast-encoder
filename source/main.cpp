@@ -387,21 +387,23 @@ auto as_rist_url(const std::string& address) -> std::string
 
 // What we push to the bridge: where it listens, and where it forwards. Only
 // non-empty values are sent -- reconcile replaces the output list WHOLESALE, so
-// an empty entry would be a destructive no-op rather than a no-op.
+// an empty entry would be a destructive no-op rather than a no-op. The shape
+// itself comes from bridge_desired_config(), which is the one definition of what
+// a bridge accepts: `address` inside an output and nothing else, because rpcd
+// refuses the whole adopt on any other key.
 auto bridge_desired(const bridge_control_config& cfg) -> nlohmann::json
 {
-  nlohmann::json desired = nlohmann::json::object();
-  if (!cfg.listen_url.empty()) {
-    desired["listen_url"] = cfg.listen_url;
-  }
-  if (!cfg.forward_to.empty()) {
-    nlohmann::json output = nlohmann::json::object();
-    output["address"] = as_rist_url(cfg.forward_to);
-    if (!cfg.interface_name.empty()) {
-      output["interface"] = cfg.interface_name;
-    }
-    output["weight"] = "1";
-    desired["outputs"] = nlohmann::json::array({output});
+  bridge::actuate_request req;
+  req.listen_url = cfg.listen_url;
+
+  hosted_session session;
+  session.rist_url = as_rist_url(cfg.forward_to);
+
+  nlohmann::json desired = bridge::bridge_desired_config(req, session);
+  if (session.rist_url.empty()) {
+    // Reconcile replaces the destination list wholesale, so an empty list here
+    // would clear the bridge's destinations rather than leave them alone.
+    desired.erase("outputs");
   }
   return desired;
 }
