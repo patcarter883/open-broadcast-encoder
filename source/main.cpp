@@ -847,7 +847,8 @@ static void hosted_sign_out()
 // the allocation worker, never the FLTK thread.
 static void apply_allocation_to_receiver(const hosted_session& session,
                                          codec source_codec,
-                                         std::uint32_t ingest_fps)
+                                         std::uint32_t ingest_fps,
+                                         int ingest_kbps)
 {
   if (session.start_body_json.empty()) {
     transport_log("Allocated " + session.session_id
@@ -861,7 +862,8 @@ static void apply_allocation_to_receiver(const hosted_session& session,
                                    session.start_body_json,
                                    source_codec,
                                    err,
-                                   ingest_fps))
+                                   ingest_fps,
+                                   ingest_kbps))
   {
     transport_log("Receiver configured for session " + session.session_id
                   + ".\n");
@@ -876,6 +878,9 @@ static void hosted_allocate()
   const bridge_control_config bridge_cfg = ctx.lib.bridge_ctl;
   // Copied on the UI thread: the worker below must never read ctx itself.
   const codec source_codec = ctx.lib.encode_cfg.selected_codec;
+  // The encoder is authoritative on the ingest rate: the portal's transport row
+  // states a placeholder it cannot know (DT-22 sends only the POP).
+  const int video_kbps = ctx.lib.encode_cfg.bitrate.load();
 
   if (hosted.backplane_url.empty() || hosted.device_token.empty()) {
     if (ctx.ui != nullptr) {
@@ -889,7 +894,7 @@ static void hosted_allocate()
   }
 
   track_control_thread(std::thread(
-      [hosted, bridge_cfg, source_codec]
+      [hosted, bridge_cfg, source_codec, video_kbps]
       {
         backplane_client backplane(
             hosted.backplane_url,
@@ -999,7 +1004,8 @@ static void hosted_allocate()
         if (auto encoder = ctx.lib.encoder_ptr.load()) {
           ingest_fps = encoder->source_fps_snapped();
         }
-        apply_allocation_to_receiver(outcome.session, source_codec, ingest_fps);
+        apply_allocation_to_receiver(
+            outcome.session, source_codec, ingest_fps, video_kbps);
         if (!outcome.reported) {
           transport_log("Bridge report failed: " + outcome.error + "\n");
         }

@@ -119,7 +119,8 @@ bool control_client::prepare_hosted_body(const std::string& start_body_json,
                                          codec source_codec,
                                          std::string& out_body,
                                          std::string& err,
-                                         std::uint32_t ingest_fps)
+                                         std::uint32_t ingest_fps,
+                                         int ingest_kbps)
 {
   json body = json::parse(start_body_json, nullptr, false);
   if (body.is_discarded() || !body.is_object()) {
@@ -141,6 +142,13 @@ bool control_client::prepare_hosted_body(const std::string& start_body_json,
   body["schema_version"] = k_receiver_schema_version;
   body["source"]["codec"] = codec_str(source_codec);
 
+  // The ingest rate is the encoder's: it is the only side that knows what it is
+  // actually sending, and the portal cannot state it (the allocate request
+  // carries only the POP). A body with no ingest object keeps the portal's.
+  if (ingest_kbps > 0 && body["ingest"].is_object()) {
+    body["ingest"]["bandwidth"] = ingest_kbps;
+  }
+
   if (ingest_fps > 0) {
     const std::uint32_t gop = ingest_fps * 2;
     for (auto& output : body["outputs"]) {
@@ -159,7 +167,8 @@ bool control_client::start_hosted(const std::string& control_url,
                                   const std::string& start_body_json,
                                   codec source_codec,
                                   std::string& err,
-                                  std::uint32_t ingest_fps)
+                                  std::uint32_t ingest_fps,
+                                  int ingest_kbps)
 {
   // Split the allocation's control_url into the origin httplib wants and the
   // path /start hangs off. The URL carries the per-session path (e.g.
@@ -182,7 +191,7 @@ bool control_client::start_hosted(const std::string& control_url,
 
   std::string body;
   if (!prepare_hosted_body(
-          start_body_json, source_codec, body, err, ingest_fps)) {
+          start_body_json, source_codec, body, err, ingest_fps, ingest_kbps)) {
     return false;
   }
 

@@ -94,6 +94,7 @@ TEST_CASE("the transcode gop follows the ingest rate, not the portal's guess",
   const char* portal = R"({
     "schema_version": 2,
     "session_id": "s_9f2c",
+    "ingest": {"bandwidth": 6000},
     "source": {"codec": "h264"},
     "outputs": [
       {"id": "out1", "type": "rtmp", "url": "rtmp://a.example/live2"},
@@ -125,6 +126,19 @@ TEST_CASE("the transcode gop follows the ingest rate, not the portal's guess",
   // Rate not known yet: the portal's value stands rather than being guessed at.
   REQUIRE(control_client::prepare_hosted_body(portal, codec::h265, out, err));
   REQUIRE(json::parse(out)["outputs"][1]["transcode"]["gop"] == 120);
+
+  // The encoder states the ingest rate: the portal's placeholder is replaced,
+  // and the outputs' own bitrates stay the portal's decision.
+  REQUIRE(control_client::prepare_hosted_body(
+      portal, codec::h265, out, err, 30, 7000));
+  {
+    const json body = json::parse(out);
+    REQUIRE(body["ingest"]["bandwidth"] == 7000);
+    REQUIRE(body["outputs"][1]["transcode"]["bitrate_kbps"] == 6000);
+  }
+  // An unknown rate leaves the portal's value alone.
+  REQUIRE(control_client::prepare_hosted_body(portal, codec::h265, out, err));
+  REQUIRE(json::parse(out)["ingest"]["bandwidth"] == 6000);
 }
 
 TEST_CASE("a measured rate is snapped to a standard broadcast rate",
