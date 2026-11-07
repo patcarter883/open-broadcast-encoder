@@ -408,6 +408,9 @@ TEST_CASE("bridge_desired_config maps the session to the bridge's upstream",
   REQUIRE(desired.at("outputs").size() == 1);
   CHECK(desired.at("outputs").at(0).at("address")
         == "rist://syd1-a.example.au:5000");
-  CHECK(desired.at("outputs").at(0).at("interface") == "wan");
-  CHECK(desired.at("outputs").at(0).at("weight") == "1");
+  // The bridge accepts `address` and nothing else inside an output: which WAN
+  // legs carry it and their weights are resolved on the router, and rpcd refuses
+  // the whole adopt on any other key ("unknown or disallowed field"). The
+  // encoder's own interface setting must therefore never reach the wire.
+  CHECK(desired.at("outputs").at(0).size() == 1);
 }
