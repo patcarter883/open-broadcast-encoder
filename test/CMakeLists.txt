@@ -160,6 +160,20 @@ target_compile_features(capture_settings_test PRIVATE cxx_std_20)
 
 catch_discover_tests(capture_settings_test)
 
+# The hosted (portal) block and the bridge block are the settings an operator
+# types by hand; losing either on restart signs the encoder out of hosted mode.
+add_executable(hosted_settings_test source/hosted_settings_test.cpp)
+target_link_libraries(
+    hosted_settings_test PRIVATE
+    settings_lib
+    open-broadcast-encoder_lib
+    nlohmann_json::nlohmann_json
+    Catch2::Catch2WithMain
+)
+target_compile_features(hosted_settings_test PRIVATE cxx_std_20)
+
+catch_discover_tests(hosted_settings_test)
+
 # The one Allocate action: allocate -> apply the bridge on the LAN -> report. Links
 # both libs because the whole point is the seam between them.
 add_executable(actuate_test source/actuate_test.cpp)

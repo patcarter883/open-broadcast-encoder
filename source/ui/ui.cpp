@@ -273,6 +273,13 @@ int user_interface::run_ui()
   return Fl::run();
 }
 
+void user_interface::request_close()
+{
+  if (main_window != nullptr) {
+    main_window->hide();
+  }
+}
+
 void user_interface::choose_input_protocol(input_config* input_config,
                                            FuncPtr refresh_ndi_funcptr,
                                            FuncPtr refresh_capture_funcptr)

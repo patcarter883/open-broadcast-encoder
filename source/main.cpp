@@ -14,6 +14,8 @@
 #include <utility>
 #include <vector>
 
+#include <csignal>
+
 #ifdef _WIN32
 #  include <winsock2.h>
 #else
@@ -21,6 +23,7 @@
 #endif
 #include <atomic>
 
+#include <FL/Fl.H>
 #include <gst/gst.h>
 #include <gst/video/video.h>
 #include <nlohmann/json.hpp>
@@ -45,6 +48,28 @@
 #include "ui.h"
 
 app_context ctx;
+
+namespace
+{
+// Written only by the signal handler, which may touch nothing but a sig_atomic_t.
+// The FLTK timeout below reads it on the UI thread and closes the window, so a
+// signal takes the normal shutdown path and the settings still get saved.
+volatile std::sig_atomic_t g_stop_requested = 0;
+
+void request_stop(int)
+{
+  g_stop_requested = 1;
+}
+
+void poll_stop_requested(void*)
+{
+  if (g_stop_requested != 0) {
+    ctx.ui->request_close();
+    return;  // hiding the main window ends Fl::run(), so stop polling
+  }
+  Fl::repeat_timeout(0.25, poll_stop_requested);
+}
+}  // namespace
 
 // Receiver-control POSTs run on background threads so the FLTK UI never blocks
 // on network I/O. They are tracked (not detached) so they can be joined at
@@ -1358,6 +1383,15 @@ auto main(int argc, char** argv) -> int
   // updates output_cfg; it must not build or tear down the live sender.
 
   ctx.ui->show(argc, argv);
+
+  // A signal must take the SAME path as the window's close button. Settings are
+  // persisted after Fl::run() returns, so a process killed by SIGTERM (a service
+  // stop, a system shutdown, an operator's kill) used to persist nothing at all —
+  // hand-typed values such as the backplane URL were lost without a trace.
+  std::signal(SIGTERM, request_stop);
+  std::signal(SIGINT, request_stop);
+  Fl::add_timeout(0.25, poll_stop_requested);
+
   const int result = ctx.ui->run_ui();
 
   // Fl::run() returns with the main thread still holding the FLTK lock taken in

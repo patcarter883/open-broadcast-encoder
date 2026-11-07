@@ -1,0 +1,95 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Pat Carter
+//
+// The hosted (portal) settings must survive a save/load round-trip. The
+// backplane URL is the one field an operator types by hand, and an encoder that
+// forgets it silently drops out of hosted mode on the next start.
+
+#include <cstdlib>
+#include <filesystem>
+#include <string>
+
+#include <catch2/catch_test_macros.hpp>
+#include <unistd.h>
+
+#include "lib/lib.h"
+#include "settings/settings.h"
+
+namespace
+{
+// A private XDG_CONFIG_HOME for the test process, so the developer's real
+// settings file is never read or written. settings::settings_file_path() reads
+// XDG_CONFIG_HOME first on POSIX.
+class temp_config_home
+{
+public:
+  temp_config_home()
+  {
+    dir = std::filesystem::temp_directory_path()
+        / ("obc-hosted-settings-test-" + std::to_string(::getpid()));
+    std::filesystem::create_directories(dir);
+    ::setenv("XDG_CONFIG_HOME", dir.c_str(), 1);
+  }
+  ~temp_config_home()
+  {
+    ::unsetenv("XDG_CONFIG_HOME");
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+  }
+  temp_config_home(const temp_config_home&) = delete;
+  temp_config_home& operator=(const temp_config_home&) = delete;
+  temp_config_home(temp_config_home&&) = delete;
+  temp_config_home& operator=(temp_config_home&&) = delete;
+
+private:
+  std::filesystem::path dir;
+};
+}  // namespace
+
+TEST_CASE("the backplane URL and hosted identity survive a round-trip",
+          "[settings][hosted]")
+{
+  const temp_config_home home;
+
+  library saved;
+  saved.hosted.backplane_url = "https://api.stream.example.au";
+  saved.hosted.device_token = "device-token-123";
+  saved.hosted.device_id = 6;
+  saved.hosted.bridge_id = 1;
+
+  REQUIRE(settings::save(saved));
+
+  library loaded;
+  REQUIRE(settings::load(loaded));
+
+  CHECK(loaded.hosted.backplane_url == "https://api.stream.example.au");
+  CHECK(loaded.hosted.device_token == "device-token-123");
+  CHECK(loaded.hosted.device_id == 6);
+  CHECK(loaded.hosted.bridge_id == 1);
+}
+
+TEST_CASE("the bridge control settings survive a round-trip",
+          "[settings][bridge]")
+{
+  const temp_config_home home;
+
+  library saved;
+  saved.bridge_ctl.address = "192.168.1.1";
+  saved.bridge_ctl.bridge_uid = "rist2rist-60:be:b4:24:f2:76";
+  saved.bridge_ctl.token = "pair-token-abc";
+  saved.bridge_ctl.listen_url = "rist://192.168.1.1:5000";
+  saved.bridge_ctl.forward_to = "rist://relay.example.au:20000";
+  saved.bridge_ctl.interface_name = "wwan0";
+
+  REQUIRE(settings::save(saved));
+
+  library loaded;
+  REQUIRE(settings::load(loaded));
+
+  CHECK(loaded.bridge_ctl.address == "192.168.1.1");
+  CHECK(loaded.bridge_ctl.bridge_uid == "rist2rist-60:be:b4:24:f2:76");
+  CHECK(loaded.bridge_ctl.token == "pair-token-abc");
+  CHECK(loaded.bridge_ctl.listen_url == "rist://192.168.1.1:5000");
+  CHECK(loaded.bridge_ctl.forward_to == "rist://relay.example.au:20000");
+  CHECK(loaded.bridge_ctl.interface_name == "wwan0");
+}
