@@ -390,7 +390,9 @@ void encode::pipeline_build_video_demux()
     case input_mode::raw_local:
       // Already uncompressed, so straight to conversion: nothing to depay or
       // decode. videoconvert then hands the encoder whatever format it wants.
-      this->pipeline_str += " rawvideo. ! queue silent=true ! videoconvert !";
+      this->pipeline_str +=
+          " rawvideo. ! queue silent=true max-size-buffers=8 max-size-bytes=0 "
+          "max-size-time=0 ! videoconvert !";
       break;
     default:
       // Deliberately no `demux.` here. The MPEG-TS demux's pads are dynamic and
@@ -424,7 +426,8 @@ void encode::pipeline_build_audio_demux()
     case input_mode::raw_local:
       // OBS hands over planar float32; resample/convert let avenc_aac take it.
       this->pipeline_str +=
-          " rawaudio. ! queue silent=true ! audioresample ! audioconvert !";
+          " rawaudio. ! queue silent=true max-size-buffers=16 max-size-bytes=0 "
+          "max-size-time=0 ! audioresample ! audioconvert !";
       break;
     default:
       // See the video-demux case: linked by caps in link_demux_pad().
