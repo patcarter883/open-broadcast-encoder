@@ -229,6 +229,23 @@ TEST_CASE(
 }
 
 TEST_CASE(
+    "a bridge's wildcard listen address is never used as a destination",
+    "[bridge][actuate]")
+{
+  fakes f;
+  // The bridge binds 0.0.0.0 so it accepts media on any interface. Sending
+  // there loops back to this host, so the host must be the one we reached.
+  f.reconciled_listen_url = "rist://0.0.0.0:5000";
+  actuator a = f.make();
+
+  const actuate_outcome out =
+      a.run(bridged_request(), std::chrono::milliseconds {2000});
+
+  REQUIRE(out.ok);
+  CHECK(out.encoder_target == "rist://192.168.8.1:5000");
+}
+
+TEST_CASE(
     "a bridged chain with nowhere to send fails rather than bypassing the "
     "bridge",
     "[bridge][actuate]")
