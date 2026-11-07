@@ -60,14 +60,16 @@ public:
                                   codec source_codec,
                                   std::string& out_body,
                                   std::string& err,
-                                  std::uint32_t ingest_fps = 0);
+                                  std::uint32_t ingest_fps = 0,
+                                  int ingest_kbps = 0);
 
   static bool start_hosted(const std::string& control_url,
                            const std::string& control_token,
                            const std::string& start_body_json,
                            codec source_codec,
                            std::string& err,
-                           std::uint32_t ingest_fps = 0);
+                           std::uint32_t ingest_fps = 0,
+                           int ingest_kbps = 0);
 
   // POST /stop for the given session.
   bool stop(const std::string& session_id, std::string& err);
