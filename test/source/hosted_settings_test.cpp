@@ -93,3 +93,26 @@ TEST_CASE("the bridge control settings survive a round-trip",
   CHECK(loaded.bridge_ctl.forward_to == "rist://relay.example.au:20000");
   CHECK(loaded.bridge_ctl.interface_name == "wwan0");
 }
+
+TEST_CASE("a persisted allocation can be read back and cleared",
+          "[settings][hosted][session]")
+{
+  const temp_config_home home;
+
+  hosted_session allocation;
+  allocation.session_id = "s_test123";
+  allocation.control_url = "https://relay.example.au/s/s_test123";
+  allocation.control_token = "control-token-xyz";
+
+  REQUIRE(settings::save_hosted_session(allocation));
+
+  // The release path depends on reading this back: with no reader, a Stop or a
+  // crash could never give the allocation back, and the node kept the receiver
+  // and its RIST port for a session nobody was feeding.
+  const auto loaded = settings::load_hosted_session();
+  REQUIRE(loaded.has_value());
+  CHECK(loaded->session_id == "s_test123");
+
+  settings::clear_hosted_session();
+  CHECK_FALSE(settings::load_hosted_session().has_value());
+}
