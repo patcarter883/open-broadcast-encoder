@@ -888,8 +888,11 @@ static void hosted_allocate()
   // Copied on the UI thread: the worker below must never read ctx itself.
   const codec source_codec = ctx.lib.encode_cfg.selected_codec;
   // The encoder is authoritative on the ingest rate: the portal's transport row
-  // states a placeholder it cannot know (DT-22 sends only the POP).
-  const int video_kbps = ctx.lib.encode_cfg.bitrate.load();
+  // states a placeholder it cannot know (DT-22 sends only the POP). RIST's
+  // ceiling covers the whole stream, so the receiver's ingest budget is derived
+  // from the video rate the same way the sender's is.
+  const int video_kbps = rist_bandwidth_kbps(
+      ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed));
 
   if (hosted.backplane_url.empty() || hosted.device_token.empty()) {
     if (ctx.ui != nullptr) {
@@ -1105,6 +1108,14 @@ static bool run_transport()
   const std::string& host = ctx.lib.output_cfg.host;
   if (host.empty() || host == "0.0.0.0" || host == "::" || host == "[::]") {
     return false;
+  }
+  // The ceiling follows the bitrate the encoder is actually asked to produce.
+  // Left below the payload, RIST has no retransmission budget and the link
+  // reports "payload alone is N kbps against a M kbps ceiling".
+  const int ceiling = rist_bandwidth_kbps(
+      ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed));
+  if (ctx.lib.output_cfg.bandwidth < ceiling) {
+    ctx.lib.output_cfg.bandwidth = ceiling;
   }
   ctx.transporter = std::make_unique<transport>();
   ctx.transporter->set_log_callback(&rist_log_cb);
