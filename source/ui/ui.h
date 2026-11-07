@@ -114,6 +114,10 @@ public:
   void encode_log_append(const std::string& msg) const;
   void init_ui();
   int run_ui();
+  // Close the main window, so Fl::run() returns by the same path the window's
+  // own close button takes. Signal-driven shutdown calls this so the settings
+  // save still runs instead of the process dying with the values in memory.
+  void request_close();
   void add_ndi_choices(const std::vector<std::string>& choice_names);
   void clear_ndi_choices();
   // Capture (MC4) picker callbacks, mirroring the NDI picker. The chooser
