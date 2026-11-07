@@ -954,6 +954,9 @@ static void hosted_allocate()
           } else {
             // Half-applied: the session EXISTS and is billable. Say it plainly
             // rather than reporting a bare failure that hides it.
+            // The destination goes with it: this allocation produced no target,
+            // and the previous one belongs to a session that is gone.
+            ctx.ui->set_encoder_target(std::string {});
             ctx.ui->set_hosted_state("Allocated " + outcome.session.session_id
                                          + " but the bridge did not apply ("
                                          + outcome.error
