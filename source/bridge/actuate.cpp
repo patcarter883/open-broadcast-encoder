@@ -22,10 +22,6 @@ json bridge_desired_config(const actuate_request& req,
   if (!session.rist_url.empty()) {
     json out;
     out["address"] = session.rist_url;
-    out["weight"] = "1";
-    if (!req.interface_name.empty()) {
-      out["interface"] = req.interface_name;
-    }
     outputs.push_back(std::move(out));
   }
   desired["outputs"] = std::move(outputs);
