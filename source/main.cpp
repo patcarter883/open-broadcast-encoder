@@ -1186,11 +1186,21 @@ static void start_preview_thread(std::string pipeline_str)
 static void run_raw_preview(std::uint16_t port)
 {
   GError* error = nullptr;
+  // A preview must never be able to stall the ingest. The reader pushes both
+  // streams from one thread, so anything that blocks a push stops the socket
+  // being drained -- and OBS gives up after 90 frames ("peer unreachable"),
+  // which reads as a frozen preview. Hence: a small queue that can DROP
+  // (leaky=downstream) and a sink that renders as frames arrive (sync=false),
+  // instead of a clock-synced sink applying back-pressure through the appsrc.
   auto* pipeline = gst_parse_launch(
       "appsrc name=rawvideo is-live=true format=time do-timestamp=false "
-      "max-bytes=16777216 ! queue ! videoconvert ! autovideosink "
+      "max-bytes=16777216 ! queue max-size-buffers=4 max-size-bytes=0 "
+      "max-size-time=0 leaky=downstream ! videoconvert ! autovideosink "
+      "sync=false "
       "appsrc name=rawaudio is-live=true format=time do-timestamp=false "
-      "max-bytes=1048576 ! queue ! audioconvert ! autoaudiosink",
+      "max-bytes=1048576 ! queue max-size-buffers=16 max-size-bytes=0 "
+      "max-size-time=0 leaky=downstream ! audioconvert ! autoaudiosink "
+      "sync=false",
       &error);
   if (pipeline == nullptr) {
     encode_log(std::format("Preview: could not build the pipeline: {}\n",
