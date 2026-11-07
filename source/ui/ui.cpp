@@ -933,9 +933,9 @@ void user_interface::set_hosted_state(const std::string& text, bool is_error)
 // live pipeline.
 void user_interface::set_encoder_target(const std::string& url)
 {
-  if (url.empty()) {
-    return;
-  }
+  // An empty url CLEARS the target. A half-applied allocation still leaves a
+  // live session behind, and leaving the previous destination in the field
+  // would send the next Start Encode to a session that no longer exists.
   lock();
   if (output_config_ptr != nullptr) {
     output_config_ptr->address = url;
@@ -949,6 +949,8 @@ void user_interface::set_encoder_target(const std::string& url)
       } catch (const std::exception&) {
         // A non-numeric port is the sender's to reject, not this setter's.
       }
+    } else if (url.empty()) {
+      output_config_ptr->host.clear();
     }
     input_rist_address->value(url.c_str());
   }
