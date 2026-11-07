@@ -198,6 +198,19 @@ encode::~encode()
 
 void encode::clear_pipeline_state()
 {
+  // The pipeline goes to NULL BEFORE the readers are stopped. A reader blocked
+  // in gst_app_src_push_buffer (its queue full because the sender stalled) only
+  // returns once the element reports FLUSHING, and setting NULL is what makes
+  // that happen. Stopping the reader first joins a thread that can never
+  // finish, and the caller is the FLTK thread -- Stop Encode then hangs the
+  // whole application.
+  {
+    std::lock_guard<std::mutex> guard(this->pipeline_mutex);
+    if (this->datasrc_pipeline != nullptr) {
+      gst_element_set_state(this->datasrc_pipeline, GST_STATE_NULL);
+    }
+  }
+
   // The reader pushes into the appsrcs below, so it stops first -- and here,
   // rather than in the callers, so both stop_encode_thread() and the destructor
   // get the ordering for free.
@@ -215,10 +228,6 @@ void encode::clear_pipeline_state()
   std::lock_guard<std::mutex> guard(this->pipeline_mutex);
   if (this->pipeline_cleaned_up.load(std::memory_order_acquire)) {
     return;
-  }
-
-  if (this->datasrc_pipeline != nullptr) {
-    gst_element_set_state(this->datasrc_pipeline, GST_STATE_NULL);
   }
 
   // Unref in reverse-dependency order. Elements first (each holds a ref from
