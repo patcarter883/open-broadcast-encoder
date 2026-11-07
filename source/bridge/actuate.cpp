@@ -28,6 +28,40 @@ json bridge_desired_config(const actuate_request& req,
   return desired;
 }
 
+namespace
+{
+// A bridge binds its media port to a wildcard so it accepts RIST on every
+// interface. That is a BIND address, not a destination: sending to it loops
+// back to this host. Keep the bridge's port, use the host we reached it on.
+std::string sendable_target(const std::string& listen_url,
+                            const std::string& host_hint)
+{
+  if (listen_url.rfind("rist://", 0) != 0) {
+    return listen_url;
+  }
+  const auto colon = listen_url.rfind(':');
+  if (colon == std::string::npos || colon <= 6) {
+    return listen_url;
+  }
+  const std::string host =
+      listen_url.substr(7, colon - 7);
+  const bool wildcard =
+      host.empty() || host == "0.0.0.0" || host == "::" || host == "[::]";
+  if (!wildcard) {
+    return listen_url;
+  }
+  std::string hint = host_hint;
+  const auto hint_colon = hint.rfind(':');
+  if (hint_colon != std::string::npos) {
+    hint = hint.substr(0, hint_colon);  // the hint carries an API port
+  }
+  if (hint.empty()) {
+    return listen_url;
+  }
+  return "rist://" + hint + listen_url.substr(colon);
+}
+}  // namespace
+
 actuator::actuator(allocate_fn allocate,
                    reconcile_fn reconcile,
                    report_fn report,
@@ -119,10 +153,19 @@ actuate_outcome actuator::run(const actuate_request& req,
   // Send to the BRIDGE, not to the node. Take the listen URL from what the
   // bridge reported back rather than from what we asked for: if it refused or
   // moved it, the reported value is the one that carries media.
+  //
+  // That URL is the bridge's BIND address, and a bridge binds a wildcard so it
+  // accepts media on any interface. A wildcard is not a destination -- sending
+  // to it loops straight back to this host -- so the host is replaced with the
+  // address the bridge was actually reached on.
   const json& reported = rec.report.reported_config;
-  out.encoder_target = reported.is_object()
+  const std::string reported_listen = reported.is_object()
       ? reported.value("listen_url", req.listen_url)
       : req.listen_url;
+  const std::string host_hint = !rec.service.address.empty()
+      ? rec.service.address
+      : alloc.session.bridge_lan_host;
+  out.encoder_target = sendable_target(reported_listen, host_hint);
   if (out.encoder_target.empty()) {
     // Bridged with no listen address: there is nowhere to send. Fail loudly
     // instead of falling back to the node's URL, which would bypass the bridge

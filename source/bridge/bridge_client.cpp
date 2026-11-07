@@ -170,7 +170,20 @@ reconcile_outcome bridge_client::reconcile(const reconcile_request& request,
     return outcome;
   }
 
-  const auto match = find_bridge(m_discover(window), request);
+  const auto found = m_discover(window);
+  auto match = find_bridge(found, request);
+  if (!match.found && !request.bridge_uid.empty() && found.size() == 1) {
+    // The portal names a bridge that is not advertising under that name (a
+    // stale or absent advert -- the manual address stands in for one). One
+    // bridge answers, and DT-19 makes discovery a convenience rather than a
+    // dependency: take it, and let the ubus call decide whether it is really
+    // there. Several bridges stay an error, because guessing configures the
+    // wrong box.
+    match.found = true;
+    match.service = found.front();
+    match.error.clear();
+    match.error_code.clear();
+  }
   if (!match.found) {
     fail(outcome, match.error_code, match.error);
     return outcome;

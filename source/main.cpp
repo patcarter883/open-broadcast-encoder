@@ -198,7 +198,7 @@ static void rist_oob_cb(const uint8_t* data, size_t size)
   }
 }
 
-static void run_transport();
+static bool run_transport();
 static void release_hosted_session();
 
 // Reflect the encode lifecycle in the UI. Called from the send thread, so it
@@ -234,7 +234,16 @@ static void run_loop()
   // joins, DNS), and recreating the transporter while this loop sends to it is
   // a use-after-free. The RIST output address is read from output_cfg, which
   // the address field updates directly without touching the live sender.
-  run_transport();
+  if (!run_transport()) {
+    // No destination is not a start that quietly goes nowhere: the operator
+    // allocated a session, or typed an address, or there is nothing to send to.
+    encode_log(
+        "Start refused: no RIST destination. Allocate a hosted session, or "
+        "enter a RIST address, then start again.\n");
+    ctx.lib.is_running = false;
+    publish_encode_state(encode_state::failed);
+    return;
+  }
 
   auto encoder = std::make_shared<encode>(ctx.lib.input_cfg,
                                           ctx.lib.encode_cfg,
@@ -1088,13 +1097,21 @@ static void release_hosted_session()
   settings::clear_hosted_session();
 }
 
-static void run_transport()
+static bool run_transport()
 {
+  // A missing or wildcard destination is refused before the sender exists: it
+  // used to fall back to 127.0.0.1 and send the stream to this host, which
+  // looks like a working pipeline and carries media nowhere.
+  const std::string& host = ctx.lib.output_cfg.host;
+  if (host.empty() || host == "0.0.0.0" || host == "::" || host == "[::]") {
+    return false;
+  }
   ctx.transporter = std::make_unique<transport>();
   ctx.transporter->set_log_callback(&rist_log_cb);
   ctx.transporter->set_statistics_callback(&rist_stats_cb);
   ctx.transporter->set_oob_callback(&rist_oob_cb);
   ctx.transporter->setup_rist_sender(ctx.lib.output_cfg);
+  return true;
 }
 
 // Persist the current Encode / Output / Receiver / Input configuration. Wired
