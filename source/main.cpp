@@ -199,6 +199,7 @@ static void rist_oob_cb(const uint8_t* data, size_t size)
 }
 
 static void run_transport();
+static void release_hosted_session();
 
 // Reflect the encode lifecycle in the UI. Called from the send thread, so it
 // takes the FLTK lock for the widget writes only -- never across anything that
@@ -1045,6 +1046,37 @@ static void stop()
 
   // Tell the receiver to tear down its restream pipeline.
   release_receiver();
+  // ...and give the allocation back, so the node is not left running a receiver
+  // (holding its RIST port) for a session nobody is feeding.
+  release_hosted_session();
+}
+
+// Release the hosted allocation this encoder still holds, if any. The session id
+// is only known through the file written at allocation time, so reading it back
+// is what makes a release possible at all: without this, a Stop (or a crash)
+// left the receiver running and its RIST port bound on the node, and the portal
+// kept counting the slot.
+static void release_hosted_session()
+{
+  const std::optional<hosted_session> held = settings::load_hosted_session();
+  if (!held.has_value()) {
+    return;
+  }
+  const hosted_config hosted = ctx.lib.hosted;
+  if (!hosted.backplane_url.empty() && !hosted.device_token.empty()) {
+    backplane_client backplane(
+        hosted.backplane_url,
+        hosted.device_token,
+        make_httplib_transport(hosted.backplane_url, hosted.device_token));
+    std::string err;
+    if (backplane.deallocate(held->session_id, err)) {
+      transport_log("Released hosted session " + held->session_id + ".\n");
+    } else {
+      transport_log("Release of session " + held->session_id + " failed: " + err
+                    + "\n");
+    }
+  }
+  settings::clear_hosted_session();
 }
 
 static void run_transport()
@@ -1378,6 +1410,16 @@ auto main(int argc, char** argv) -> int
                            ctx.lib.receiver_ctl,
                            ctx.lib.bridge_ctl,
                            ctx.lib.hosted);
+  }
+
+  // A previous run can leave an allocation behind (a crash, or a kill that beat
+  // the release). Give it back before the operator can allocate again, so the
+  // node is not left holding a receiver and its RIST port for a dead session.
+  {
+    std::error_code ec;
+    if (std::filesystem::exists(settings::hosted_session_path(), ec)) {
+      track_control_thread(std::thread([] { release_hosted_session(); }));
+    }
   }
 
   // NOTE: the RIST sender is created at Start, inside run_loop() on its own
