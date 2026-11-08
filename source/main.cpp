@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <cstring>
 #include <filesystem>
 #include <format>
@@ -13,8 +14,6 @@
 #include <thread>
 #include <utility>
 #include <vector>
-
-#include <csignal>
 
 #ifdef _WIN32
 #  include <winsock2.h>
@@ -51,9 +50,10 @@ app_context ctx;
 
 namespace
 {
-// Written only by the signal handler, which may touch nothing but a sig_atomic_t.
-// The FLTK timeout below reads it on the UI thread and closes the window, so a
-// signal takes the normal shutdown path and the settings still get saved.
+// Written only by the signal handler, which may touch nothing but a
+// sig_atomic_t. The FLTK timeout below reads it on the UI thread and closes the
+// window, so a signal takes the normal shutdown path and the settings still get
+// saved.
 volatile std::sig_atomic_t g_stop_requested = 0;
 
 void request_stop(int)
@@ -272,7 +272,6 @@ static void run_loop()
 
   auto encoder = std::make_shared<encode>(ctx.lib.input_cfg,
                                           ctx.lib.encode_cfg,
-                                          ctx.lib.receiver_ctl,
                                           ctx.lib.run_flag,
                                           &encode_log,
                                           &input_status);
@@ -328,61 +327,6 @@ static void run_loop()
   // or at exit (after Fl::run() returns, when no Fl::lock is held).
 }
 
-// Provision the partner receiver over its REST control plane before the
-// encoder begins sending RIST. Runs on a tracked background thread so the FLTK
-// UI never blocks on receiver network I/O; results are reported via
-// transport_log (which is itself thread-safe). Tracked (not detached) so it is
-// joined at shutdown before ctx.ui is torn down.
-static void provision_receiver()
-{
-  receiver_control_config& rc = ctx.lib.receiver_ctl;
-  if (!rc.enabled || rc.destinations.empty()) {
-    return;
-  }
-  if (rc.session_id.empty()) {
-    rc.session_id = std::format(
-        "enc-{}", std::chrono::steady_clock::now().time_since_epoch().count());
-  }
-  const receiver_control_config cfg = rc;  // copy for the worker thread
-  const codec source_codec = ctx.lib.encode_cfg.selected_codec;
-  track_control_thread(std::thread(
-      [cfg, source_codec]
-      {
-        control_client client(cfg.control_host, cfg.control_port, cfg.token);
-        std::string err;
-        if (client.start(cfg, source_codec, err)) {
-          transport_log("Receiver provisioned (session " + cfg.session_id
-                        + ").\n");
-        } else {
-          transport_log("Receiver start failed: " + err + "\n");
-        }
-      }));
-}
-
-static void release_receiver()
-{
-  receiver_control_config& rc = ctx.lib.receiver_ctl;
-  if (!rc.enabled || rc.session_id.empty()) {
-    return;
-  }
-  const std::string host = rc.control_host;
-  const int port = rc.control_port;
-  const std::string token = rc.token;
-  const std::string session = rc.session_id;
-  rc.session_id.clear();
-  track_control_thread(std::thread(
-      [host, port, token, session]
-      {
-        control_client client(host, port, token);
-        std::string err;
-        if (client.stop(session, err)) {
-          transport_log("Receiver released (session " + session + ").\n");
-        } else {
-          transport_log("Receiver stop failed: " + err + "\n");
-        }
-      }));
-}
-
 // ---------------------------------------------------------------------------
 // Bridge (LAN) control (DT-19, DT-21). The encoder is the actuator: it finds
 // the bridge on the LAN, claims it once, and applies the configuration the
@@ -423,13 +367,14 @@ auto as_rist_url(const std::string& address) -> std::string
 // What we push to the bridge: where it listens, and where it forwards. Only
 // non-empty values are sent -- reconcile replaces the output list WHOLESALE, so
 // an empty entry would be a destructive no-op rather than a no-op. The shape
-// itself comes from bridge_desired_config(), which is the one definition of what
-// a bridge accepts: `address` inside an output and nothing else, because rpcd
-// refuses the whole adopt on any other key.
+// itself comes from bridge_desired_config(), which is the one definition of
+// what a bridge accepts: `address` inside an output and nothing else, because
+// rpcd refuses the whole adopt on any other key.
 auto bridge_desired(const bridge_control_config& cfg) -> nlohmann::json
 {
   bridge::actuate_request req;
   req.listen_url = cfg.listen_url;
+  req.encrypt_wan_leg = cfg.encrypt_wan_leg;
 
   hosted_session session;
   session.rist_url = as_rist_url(cfg.forward_to);
@@ -683,6 +628,11 @@ static void bridge_apply()
     }
     return;
   }
+  if (cfg.encrypt_wan_leg) {
+    transport_log(
+        "Bridge: a manual apply has no session key, so the WAN leg stays "
+        "clear; WAN encryption applies to an allocated session.\n");
+  }
   if (ctx.ui != nullptr) {
     ctx.ui->set_bridge_message("Applying...", false);
   }
@@ -769,6 +719,7 @@ std::atomic<bool> g_hosted_signin_cancel {false};
 static void hosted_sign_in()
 {
   const hosted_config cfg = ctx.lib.hosted;
+  const std::string encoder_name = ctx.lib.encoder_name;
   if (cfg.backplane_url.empty()) {
     if (ctx.ui != nullptr) {
       ctx.ui->set_hosted_state("Set the backplane URL first", true);
@@ -783,13 +734,13 @@ static void hosted_sign_in()
   }
 
   track_control_thread(std::thread(
-      [cfg]
+      [cfg, encoder_name]
       {
         backplane::device_auth auth(
             cfg.backplane_url, make_device_auth_transport(cfg.backplane_url));
 
         std::string error;
-        auto code = auth.start("open-broadcast-encoder", "linux", error);
+        auto code = auth.start(encoder_name, "linux", error);
         if (!code.valid()) {
           transport_log("Hosted sign-in failed: " + error + "\n");
           if (ctx.ui != nullptr) {
@@ -910,12 +861,13 @@ static void hosted_allocate()
 {
   const hosted_config hosted = ctx.lib.hosted;
   const bridge_control_config bridge_cfg = ctx.lib.bridge_ctl;
+  const std::string encoder_name = ctx.lib.encoder_name;
   // Copied on the UI thread: the worker below must never read ctx itself.
   const codec source_codec = ctx.lib.encode_cfg.selected_codec;
   // The encoder is authoritative on the ingest rate: the portal's transport row
-  // states a placeholder it cannot know (DT-22 sends only the POP). The receiver
-  // gets the same ceiling the sender uses, so the two ends size their recovery
-  // rings alike.
+  // states a placeholder it cannot know (DT-22 sends only the POP). The
+  // receiver gets the same ceiling the sender uses, so the two ends size their
+  // recovery rings alike.
   const int video_kbps = rist_bandwidth_ceiling_kbps;
 
   if (hosted.backplane_url.empty() || hosted.device_token.empty()) {
@@ -930,7 +882,7 @@ static void hosted_allocate()
   }
 
   track_control_thread(std::thread(
-      [hosted, bridge_cfg, source_codec, video_kbps]
+      [hosted, bridge_cfg, encoder_name, source_codec, video_kbps]
       {
         backplane_client backplane(
             hosted.backplane_url,
@@ -956,14 +908,16 @@ static void hosted_allocate()
         // Fallback only -- the portal's answer in the allocation is
         // authoritative.
         request.bridge_uid = bridge_cfg.bridge_uid;
+        request.encoder_name = encoder_name;
+        request.encrypt_wan_leg = bridge_cfg.encrypt_wan_leg;
         if (hosted.device_id != 0) {
           request.encoder_uid = "device-" + std::to_string(hosted.device_id);
         }
 
         auto client = make_bridge_client(bridge_cfg);
         bridge::actuator actuator(
-            [&backplane](const std::string& pop)
-            { return backplane.allocate(pop); },
+            [&backplane](const std::string& pop, const std::string& name)
+            { return backplane.allocate(pop, name); },
             [&client](const bridge::reconcile_request& req,
                       std::chrono::milliseconds window)
             { return client.reconcile(req, window); },
@@ -1062,7 +1016,6 @@ static void run()
     ctx.lib.preview_thread.join();
   }
 
-  provision_receiver();
   ctx.lib.threads.emplace_back(run_loop);
 }
 
@@ -1089,18 +1042,16 @@ static void stop()
   }
   ctx.lib.threads.clear();
 
-  // Tell the receiver to tear down its restream pipeline.
-  release_receiver();
-  // ...and give the allocation back, so the node is not left running a receiver
+  // Give the allocation back, so the node is not left running a receiver
   // (holding its RIST port) for a session nobody is feeding.
   release_hosted_session();
 }
 
-// Release the hosted allocation this encoder still holds, if any. The session id
-// is only known through the file written at allocation time, so reading it back
-// is what makes a release possible at all: without this, a Stop (or a crash)
-// left the receiver running and its RIST port bound on the node, and the portal
-// kept counting the slot.
+// Release the hosted allocation this encoder still holds, if any. The session
+// id is only known through the file written at allocation time, so reading it
+// back is what makes a release possible at all: without this, a Stop (or a
+// crash) left the receiver running and its RIST port bound on the node, and the
+// portal kept counting the slot.
 static void release_hosted_session()
 {
   const std::optional<hosted_session> held = settings::load_hosted_session();
@@ -1134,17 +1085,20 @@ static bool run_transport()
     return false;
   }
   // The ceiling sizes the recovery ring; it is not a link budget (the encoder's
-  // leg is Ethernet, the WAN budget lives on the bridge's leg). Flat, so a saved
-  // 6000 default can never leave the ring with no retransmission budget.
-  const int payload_kbps = ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
+  // leg is Ethernet, the WAN budget lives on the bridge's leg). Flat, so a
+  // saved 6000 default can never leave the ring with no retransmission budget.
+  const int payload_kbps =
+      ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
   ctx.lib.output_cfg.bandwidth = rist_bandwidth_ceiling_kbps;
-  // State the figure on screen: the ceiling is otherwise invisible, and the only
-  // 6000 in the chain is the saved default, so an operator seeing RIST complain
-  // about it has no way to tell which side set it.
-  transport_log(std::format(
-      "[rist] ceiling {} kbps for {} kbps video ({} kbps retransmission budget)\n",
-      ctx.lib.output_cfg.bandwidth, payload_kbps,
-      ctx.lib.output_cfg.bandwidth - payload_kbps));
+  // State the figure on screen: the ceiling is otherwise invisible, and the
+  // only 6000 in the chain is the saved default, so an operator seeing RIST
+  // complain about it has no way to tell which side set it.
+  transport_log(
+      std::format("[rist] ceiling {} kbps for {} kbps video ({} kbps "
+                  "retransmission budget)\n",
+                  ctx.lib.output_cfg.bandwidth,
+                  payload_kbps,
+                  ctx.lib.output_cfg.bandwidth - payload_kbps));
   ctx.transporter = std::make_unique<transport>();
   ctx.transporter->set_log_callback(&rist_log_cb);
   ctx.transporter->set_statistics_callback(&rist_stats_cb);
@@ -1445,7 +1399,7 @@ auto main(int argc, char** argv) -> int
       &(ctx.lib.input_cfg),
       &(ctx.lib.encode_cfg),
       &(ctx.lib.output_cfg),
-      &(ctx.lib.receiver_ctl),
+      &ctx.lib.encoder_name,
       &(ctx.lib.bridge_ctl),
       &(ctx.lib.hosted),
       &run,
@@ -1482,7 +1436,7 @@ auto main(int argc, char** argv) -> int
     ctx.ui->apply_settings(ctx.lib.input_cfg,
                            ctx.lib.encode_cfg,
                            ctx.lib.output_cfg,
-                           ctx.lib.receiver_ctl,
+                           ctx.lib.encoder_name,
                            ctx.lib.bridge_ctl,
                            ctx.lib.hosted);
   }
@@ -1504,9 +1458,10 @@ auto main(int argc, char** argv) -> int
   ctx.ui->show(argc, argv);
 
   // A signal must take the SAME path as the window's close button. Settings are
-  // persisted after Fl::run() returns, so a process killed by SIGTERM (a service
-  // stop, a system shutdown, an operator's kill) used to persist nothing at all —
-  // hand-typed values such as the backplane URL were lost without a trace.
+  // persisted after Fl::run() returns, so a process killed by SIGTERM (a
+  // service stop, a system shutdown, an operator's kill) used to persist
+  // nothing at all — hand-typed values such as the backplane URL were lost
+  // without a trace.
   std::signal(SIGTERM, request_stop);
   std::signal(SIGINT, request_stop);
   Fl::add_timeout(0.25, poll_stop_requested);

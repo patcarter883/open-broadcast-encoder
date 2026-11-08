@@ -52,6 +52,12 @@ struct actuate_request
   std::string fingerprint;  // recorded at fulfilment; empty when not known
   std::string known_token;  // the pair token we already hold, if any
   std::string encoder_uid;  // who is claiming (self-asserted, never trusted)
+  // This encoder's display name, so the allocate request and the claim record
+  // identify the instance rather than a shared constant.
+  std::string encoder_name;
+  // Encrypt the bridge's WAN output leg only. Off by default; the local
+  // multicast listen leg stays clear either way.
+  bool encrypt_wan_leg = false;
   bool allow_claim = true;
 };
 
@@ -86,7 +92,8 @@ struct actuate_outcome
 class actuator
 {
 public:
-  using allocate_fn = std::function<alloc_result(const std::string& pop)>;
+  using allocate_fn = std::function<alloc_result(
+      const std::string& pop, const std::string& encoder_name)>;
   using reconcile_fn = std::function<reconcile_outcome(
       const reconcile_request&, std::chrono::milliseconds)>;
   using report_fn = std::function<report_result(const mdns::service&,

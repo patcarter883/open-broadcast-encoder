@@ -67,15 +67,18 @@ struct fakes
   int credential_calls = 0;
   long seen_credential_bridge_id = 0;
   reconcile_request seen_request;
+  std::string seen_encoder_name;
   std::string seen_new_token;
   std::string seen_service_instance;
 
   actuator make()
   {
     return actuator(
-        [this](const std::string&) -> alloc_result
+        [this](const std::string&,
+               const std::string& encoder_name) -> alloc_result
         {
           ++alloc_calls;
+          seen_encoder_name = encoder_name;
           alloc_result r;
           r.ok = alloc_ok;
           r.session = session;
@@ -228,9 +231,8 @@ TEST_CASE(
   CHECK(out.encoder_target == "rist://192.168.8.1:7007");
 }
 
-TEST_CASE(
-    "a bridge's wildcard listen address is never used as a destination",
-    "[bridge][actuate]")
+TEST_CASE("a bridge's wildcard listen address is never used as a destination",
+          "[bridge][actuate]")
 {
   fakes f;
   // The bridge binds 0.0.0.0 so it accepts media on any interface. Sending
@@ -374,13 +376,9 @@ TEST_CASE("a virgin bridge still claims when the portal holds no token",
   CHECK(f.seen_request.allow_claim);
 }
 
-TEST_CASE("the session's key rides with the reconcile request",
+TEST_CASE("WAN encryption is off by default, so the output URL stays clear",
           "[bridge][actuate]")
 {
-  // The bridge cannot obtain the passphrase any other way: it holds no
-  // backplane credential, and its config endpoint refuses secret-bearing fields
-  // by design. So every bridged actuation must carry it, or the WAN leg goes
-  // out in the clear while everything reports success.
   fakes f;
   f.session = bridged_session();
   actuate_request req = bridged_request();
@@ -389,27 +387,59 @@ TEST_CASE("the session's key rides with the reconcile request",
       f.make().run(req, std::chrono::milliseconds {2000});
 
   REQUIRE(out.ok);
-  CHECK(f.seen_request.link_secret == "deadbeef");
-  CHECK(f.seen_request.link_secret_aes == 256);
+  const auto& outputs = f.seen_request.desired.at("outputs");
+  CHECK(outputs.at(0).at("address") == "rist://syd1-a.example.au:5000");
+  CHECK(f.seen_request.desired.at("listen_url") == "rist://192.168.8.1:6000");
 }
 
-TEST_CASE("an unencrypted session CLEARS the key rather than omitting it",
+TEST_CASE("WAN encryption puts the secret on the output leg only",
           "[bridge][actuate]")
 {
-  // The dangerous case is not the encrypted session, it is the one after it. If
-  // a keyless session skipped the call, the bridge would keep the previous
-  // session's passphrase in its 0600 file and encrypt the next WAN leg with a
-  // dead key -- a failure that looks like a network fault from every angle.
+  // The LAN hop is clear; only the bridge's WAN destination carries the key.
+  fakes f;
+  f.session = bridged_session();
+  actuate_request req = bridged_request();
+  req.encrypt_wan_leg = true;
+
+  const actuate_outcome out =
+      f.make().run(req, std::chrono::milliseconds {2000});
+
+  REQUIRE(out.ok);
+  const auto& outputs = f.seen_request.desired.at("outputs");
+  CHECK(outputs.at(0).at("address")
+        == "rist://syd1-a.example.au:5000?secret=deadbeef&aes-type=256");
+  CHECK(f.seen_request.desired.at("listen_url") == "rist://192.168.8.1:6000");
+}
+
+TEST_CASE("WAN encryption without a key fails instead of going out clear",
+          "[bridge][actuate]")
+{
   fakes f;
   f.session = bridged_session();
   f.session.psk.clear();
   actuate_request req = bridged_request();
+  req.encrypt_wan_leg = true;
+
+  const actuate_outcome out =
+      f.make().run(req, std::chrono::milliseconds {2000});
+
+  REQUIRE_FALSE(out.ok);
+  CHECK(out.error_code == "no_psk");
+  CHECK(f.reconcile_calls == 0);
+}
+
+TEST_CASE("the encoder name reaches the allocation request",
+          "[bridge][actuate]")
+{
+  fakes f;
+  actuate_request req = bridged_request();
+  req.encoder_name = "enc-studio-a";
 
   const actuate_outcome out =
       f.make().run(req, std::chrono::milliseconds {2000});
 
   REQUIRE(out.ok);
-  CHECK(f.seen_request.link_secret.empty());
+  CHECK(f.seen_encoder_name == "enc-studio-a");
 }
 
 TEST_CASE("bridge_desired_config maps the session to the bridge's upstream",
@@ -426,8 +456,8 @@ TEST_CASE("bridge_desired_config maps the session to the bridge's upstream",
   CHECK(desired.at("outputs").at(0).at("address")
         == "rist://syd1-a.example.au:5000");
   // The bridge accepts `address` and nothing else inside an output: which WAN
-  // legs carry it and their weights are resolved on the router, and rpcd refuses
-  // the whole adopt on any other key ("unknown or disallowed field"). The
-  // encoder's own interface setting must therefore never reach the wire.
+  // legs carry it and their weights are resolved on the router, and rpcd
+  // refuses the whole adopt on any other key ("unknown or disallowed field").
+  // The encoder's own interface setting must therefore never reach the wire.
   CHECK(desired.at("outputs").at(0).size() == 1);
 }

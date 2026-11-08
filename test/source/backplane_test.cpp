@@ -104,6 +104,23 @@ TEST_CASE("the allocate request carries no transport config",
   CHECK(bodies.at(0).find("ingest_overrides") == std::string::npos);
 }
 
+TEST_CASE("the allocate request carries the encoder's instance name",
+          "[backplane][identity]")
+{
+  std::vector<std::string> calls;
+  std::vector<std::string> bodies;
+  backplane_client client("https://api.example.au",
+                          "devtok",
+                          scripted(calls, 201, k_good, &bodies));
+
+  const alloc_result r = client.allocate("syd1", "enc-studio-a");
+
+  REQUIRE(r.ok);
+  REQUIRE(bodies.size() == 1);
+  CHECK(bodies.at(0).find("\"encoder_name\":\"enc-studio-a\"")
+        != std::string::npos);
+}
+
 TEST_CASE("hosted_session survives a JSON round trip", "[backplane][m2.7]")
 {
   hosted_session s;

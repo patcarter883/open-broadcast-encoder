@@ -28,94 +28,7 @@ const char* codec_str(codec c) noexcept
   }
   return "h264";
 }
-
-const char* proto_str(output_proto p) noexcept
-{
-  switch (p) {
-    case output_proto::rtmp:
-      return "rtmp";
-    case output_proto::rtmps:
-      return "rtmps";
-    case output_proto::srt:
-      return "srt";
-    case output_proto::rist:
-      return "rist";
-  }
-  return "rtmp";
-}
-
-bool post_json(const std::string& host,
-               int port,
-               const std::string& token,
-               const std::string& path,
-               const std::string& body,
-               std::string& err)
-{
-  httplib::Client cli(host, port);
-  cli.set_connection_timeout(3, 0);
-  cli.set_read_timeout(5, 0);
-  cli.set_write_timeout(5, 0);
-
-  httplib::Headers headers;
-  if (!token.empty()) {
-    headers.emplace("Authorization", "Bearer " + token);
-  }
-
-  httplib::Result res = cli.Post(path, headers, body, "application/json");
-  if (!res) {
-    err = "no response from receiver at " + host + ":" + std::to_string(port)
-        + " (" + httplib::to_string(res.error()) + ")";
-    return false;
-  }
-  if (res->status / 100 != 2) {
-    err = "receiver returned HTTP " + std::to_string(res->status) + ": "
-        + res->body;
-    return false;
-  }
-  return true;
-}
 }  // namespace
-
-control_client::control_client(std::string host_, int port_, std::string token_)
-    : host {std::move(host_)}
-    , port {port_}
-    , token {std::move(token_)}
-{
-  secrets::register_secret(token);  // M1.9: never reaches the log panes
-}
-
-bool control_client::start(const receiver_control_config& cfg,
-                           codec source_codec,
-                           std::string& err)
-{
-  // CONTRACT schema_version 3 (opt-in transcode tier, 2026-10-03): the receiver
-  // is still copy-only fan-out by default — an output with no `transcode` block
-  // is copied byte-for-byte — and the video/audio mode blocks of the old decode
-  // tier remain gone, not ignored. A v1 or v2 body is rejected with
-  // invalid_schema (there is no compatibility shim), so this version MUST track
-  // the receiver's contract; see docs/CONTRACT.md.
-  json body;
-  body["schema_version"] = k_receiver_schema_version;
-  body["session_id"] = cfg.session_id;
-  body["source"]["codec"] = codec_str(source_codec);
-
-  json outputs = json::array();
-  for (std::size_t i = 0; i < cfg.destinations.size(); ++i) {
-    const receiver_destination& d = cfg.destinations[i];
-    json o;
-    o["id"] = "out" + std::to_string(i);
-    o["type"] = proto_str(d.proto);
-    o["url"] = d.url;
-    if (!d.stream_key.empty()) {
-      secrets::register_secret(d.stream_key);  // M1.9
-      o["key_or_streamid"] = d.stream_key;
-    }
-    outputs.push_back(std::move(o));
-  }
-  body["outputs"] = std::move(outputs);
-
-  return post_json(host, port, token, "/start", body.dump(), err);
-}
 
 bool control_client::prepare_hosted_body(const std::string& start_body_json,
                                          codec source_codec,
@@ -193,7 +106,8 @@ bool control_client::start_hosted(const std::string& control_url,
 
   std::string body;
   if (!prepare_hosted_body(
-          start_body_json, source_codec, body, err, ingest_fps, ingest_kbps)) {
+          start_body_json, source_codec, body, err, ingest_fps, ingest_kbps))
+  {
     return false;
   }
 
@@ -214,8 +128,8 @@ bool control_client::start_hosted(const std::string& control_url,
   httplib::Result res;
   for (int attempt = 0; attempt < 12; ++attempt) {
     res = cli.Post(path, headers, body, "application/json");
-    const bool transient = !res || res->status == 502 || res->status == 503
-        || res->status == 504;
+    const bool transient =
+        !res || res->status == 502 || res->status == 503 || res->status == 504;
     if (!transient) {
       break;
     }
@@ -232,15 +146,4 @@ bool control_client::start_hosted(const std::string& control_url,
     return false;
   }
   return true;
-}
-
-bool control_client::stop(const std::string& session_id, std::string& err)
-{
-  json body;
-  // /stop does not enforce schema_version (CONTRACT §5, deliberately lenient so
-  // a stuck encoder can always halt the stream), but we send the current
-  // version anyway so both halves of the control plane agree.
-  body["schema_version"] = k_receiver_schema_version;
-  body["session_id"] = session_id;
-  return post_json(host, port, token, "/stop", body.dump(), err);
 }

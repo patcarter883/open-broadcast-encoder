@@ -87,7 +87,8 @@ public:
   // configured in the portal, and the caller cannot override them. An encoder
   // with no transport row is refused with 409 `no_transport` — so this fails
   // loudly rather than opening a session with no outputs.
-  alloc_result allocate(const std::string& pop);
+  alloc_result allocate(const std::string& pop,
+                        const std::string& encoder_name = {});
 
   // Deallocate (the kill switch / abandon step). The device token authorises
   // it. Returns true on success (or if already gone).
@@ -96,7 +97,8 @@ public:
   // Abandon-and-reallocate (M2.7): DELETE the lost/orphaned session, then
   // allocate a fresh one with the same request. One user action.
   alloc_result abandon_and_reallocate(const std::string& lost_session_id,
-                                      const std::string& pop);
+                                      const std::string& pop,
+                                      const std::string& encoder_name = {});
 
   // One saved destination as the portal sees it (§4). `transcode` is the
   // portal's opt-in target for that output -- empty means copy. DISPLAY ONLY:

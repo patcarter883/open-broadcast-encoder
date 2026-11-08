@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <functional>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -25,84 +24,6 @@
 
 namespace
 {
-bool parse_proto(const std::string& s, output_proto& out)
-{
-  if (s == "rtmp") {
-    out = output_proto::rtmp;
-  } else if (s == "rtmps") {
-    out = output_proto::rtmps;
-  } else if (s == "srt") {
-    out = output_proto::srt;
-  } else if (s == "rist") {
-    out = output_proto::rist;
-  } else {
-    return false;
-  }
-  return true;
-}
-
-// Parse the receiver CONTROL address "host:port" / "[ipv6]:port" / "host".
-// Unlike parse_address() (RIST media, default port 5000), this defaults the
-// port to the control-plane default the caller supplies (8080) and handles the
-// bracketed IPv6 form.
-void parse_control_address(const std::string& in, std::string& host, int& port)
-{
-  std::size_t colon = std::string::npos;
-  const std::size_t bracket = in.rfind(']');
-  if (bracket != std::string::npos) {  // [ipv6]:port
-    host = in.substr(0, bracket + 1);
-    colon = in.find(':', bracket);
-  } else {
-    colon = in.rfind(':');
-    host = (colon != std::string::npos) ? in.substr(0, colon) : in;
-  }
-  if (colon != std::string::npos && colon + 1 < in.size()) {
-    try {
-      const int p = std::stoi(in.substr(colon + 1));
-      if (p >= 1 && p <= 65535) {
-        port = p;  // else keep the supplied default
-      }
-    } catch (...) {  // NOLINT(bugprone-empty-catch)
-    }
-  }
-  if (host.empty()) {
-    host = "127.0.0.1";
-  }
-}
-
-// Parse the destinations text area: one destination per line,
-// "<type> <url> [key...]" whitespace-separated. Invalid lines are skipped.
-std::vector<receiver_destination> parse_destinations(const char* text)
-{
-  std::vector<receiver_destination> dests;
-  if (text == nullptr) {
-    return dests;
-  }
-  std::istringstream stream(text);
-  std::string line;
-  while (std::getline(stream, line)) {
-    std::istringstream line_stream(line);
-    std::string type;
-    std::string url;
-    if (!(line_stream >> type >> url)) {
-      continue;  // need at least a type and a url
-    }
-    std::string key;
-    std::getline(line_stream, key);  // remainder = optional key/streamid
-    const std::size_t begin = key.find_first_not_of(" \t");
-    key = (begin == std::string::npos) ? std::string {} : key.substr(begin);
-
-    receiver_destination d;
-    if (!parse_proto(type, d.proto)) {
-      continue;
-    }
-    d.url = url;
-    d.stream_key = key;
-    dests.push_back(std::move(d));
-  }
-  return dests;
-}
-
 // Select the menu item whose user_data encodes `value`. The encoder menu order
 // (AMD, NVENC, QSV, Software) does NOT match the encoder enum order, so a saved
 // choice must be restored by matching user_data — never by using the enum as a
@@ -121,38 +42,6 @@ void select_choice_by_userdata(Fl_Choice* choice, long value)
   }
 }
 
-const char* proto_label(output_proto p)
-{
-  switch (p) {
-    case output_proto::rtmp:
-      return "rtmp";
-    case output_proto::rtmps:
-      return "rtmps";
-    case output_proto::srt:
-      return "srt";
-    case output_proto::rist:
-      return "rist";
-  }
-  return "rtmp";
-}
-
-// Render destinations back into the one-per-line text the input area expects.
-// Round-trips with parse_destinations() above.
-std::string format_destinations(const std::vector<receiver_destination>& dests)
-{
-  std::string text;
-  for (const auto& d : dests) {
-    text += proto_label(d.proto);
-    text += ' ';
-    text += d.url;
-    if (!d.stream_key.empty()) {
-      text += ' ';
-      text += d.stream_key;
-    }
-    text += '\n';
-  }
-  return text;
-}
 }  // namespace
 
 // The widget tree is generated: ui.fld -> ui_widgets.{h,cpp} (see ui.h). The
@@ -572,36 +461,24 @@ void user_interface::mpegts_alignment_cb(encode_config* encode_config)
   }
 }
 
-void user_interface::receiver_enabled_cb(receiver_control_config* rc)
+void user_interface::encoder_name_cb(std::string* encoder_name)
 {
-  rc->enabled = check_receiver_enabled->value() != 0;
-}
-
-void user_interface::receiver_address_cb(receiver_control_config* rc)
-{
-  const char* raw = input_control_address->value();
-  if (raw == nullptr) {
-    return;
+  const char* raw = input_encoder_name->value();
+  *encoder_name = (raw != nullptr) ? raw : "";
+  if (encoder_name->size() > 64) {
+    encoder_name->resize(64);
   }
-  std::string host;
-  int port = 8080;  // control-plane default (NOT the RIST media default 5000)
-  parse_control_address(raw, host, port);
-  rc->control_host = host;
-  rc->control_port = port;
-}
-
-void user_interface::receiver_token_cb(receiver_control_config* rc)
-{
-  const char* raw = input_control_token->value();
-  rc->token = (raw != nullptr) ? raw : "";
-}
-
-void user_interface::receiver_destinations_cb(receiver_control_config* rc)
-{
-  rc->destinations = parse_destinations(input_destinations->value());
+  const std::string shown =
+      encoder_name->empty() ? default_encoder_name() : *encoder_name;
+  main_window->label(("Open Broadcast Encoder - " + shown).c_str());
 }
 
 // ---- Bridge (LAN) control callbacks ---------------------------------------
+
+void user_interface::wan_encryption_cb(bridge_control_config* bridge_config)
+{
+  bridge_config->encrypt_wan_leg = check_wan_encryption->value() != 0;
+}
 
 void user_interface::bridge_address_cb(bridge_control_config* bridge_config)
 {
@@ -750,7 +627,7 @@ void user_interface::save_settings(FuncPtr save_settings_funcptr)
 void user_interface::apply_settings(const input_config& input_c,
                                     const encode_config& encode_c,
                                     const output_config& output_c,
-                                    const receiver_control_config& receiver_c,
+                                    const std::string& encoder_name,
                                     const bridge_control_config& bridge_c,
                                     const hosted_config& hosted_c)
 {
@@ -836,14 +713,11 @@ void user_interface::apply_settings(const input_config& input_c,
   // ---- Output ----
   input_rist_address->value(output_c.address.c_str());
 
-  // ---- Receiver / Restream ----
-  check_receiver_enabled->value(receiver_c.enabled ? 1 : 0);
-  input_control_address->value(
-      (receiver_c.control_host + ":" + std::to_string(receiver_c.control_port))
-          .c_str());
-  input_control_token->value(receiver_c.token.c_str());
-  input_destinations->value(
-      format_destinations(receiver_c.destinations).c_str());
+  // ---- Instance identity ----
+  const std::string shown_name =
+      encoder_name.empty() ? default_encoder_name() : encoder_name;
+  input_encoder_name->value(encoder_name.c_str());
+  main_window->label(("Open Broadcast Encoder - " + shown_name).c_str());
 
   // ---- Bridge (LAN) ----
   // Written directly rather than through the setters: this runs once on the
@@ -852,6 +726,7 @@ void user_interface::apply_settings(const input_config& input_c,
   input_bridge_listen->value(bridge_c.listen_url.c_str());
   input_bridge_forward->value(bridge_c.forward_to.c_str());
   input_bridge_interface->value(bridge_c.interface_name.c_str());
+  check_wan_encryption->value(bridge_c.encrypt_wan_leg ? 1 : 0);
   bridge_token_output->value(bridge_c.token.empty() ? "not claimed" : "set");
   bridge_state_output->value(bridge_c.bridge_uid.empty()
                                  ? "Not found yet - press Find."
@@ -1015,7 +890,7 @@ void user_interface::btn_preview_input_cb(FuncPtr preview_src_funcptr)
 void user_interface::init_ui_callbacks(input_config* input_c,
                                        encode_config* encode_c,
                                        output_config* output_c,
-                                       receiver_control_config* receiver_c,
+                                       std::string* encoder_name,
                                        bridge_control_config* bridge_c,
                                        hosted_config* hosted_c,
                                        FuncPtr start_funcptr,
@@ -1167,39 +1042,14 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        FuncPtr,
                        ndi_refresh_funcptr);
 
-  // ---- Receiver / restream control section ----
-  // Update the model live as the user types/toggles.
-  input_control_address->when(FL_WHEN_CHANGED);
-  input_control_token->when(FL_WHEN_CHANGED);
-  input_destinations->when(FL_WHEN_CHANGED);
-
-  FL_METHOD_CALLBACK_1(check_receiver_enabled,
+  // ---- Instance identity ----
+  input_encoder_name->when(FL_WHEN_CHANGED);
+  FL_METHOD_CALLBACK_1(input_encoder_name,
                        user_interface,
                        this,
-                       receiver_enabled_cb,
-                       receiver_control_config*,
-                       receiver_c);
-
-  FL_METHOD_CALLBACK_1(input_control_address,
-                       user_interface,
-                       this,
-                       receiver_address_cb,
-                       receiver_control_config*,
-                       receiver_c);
-
-  FL_METHOD_CALLBACK_1(input_control_token,
-                       user_interface,
-                       this,
-                       receiver_token_cb,
-                       receiver_control_config*,
-                       receiver_c);
-
-  FL_METHOD_CALLBACK_1(input_destinations,
-                       user_interface,
-                       this,
-                       receiver_destinations_cb,
-                       receiver_control_config*,
-                       receiver_c);
+                       encoder_name_cb,
+                       std::string*,
+                       encoder_name);
 
   // ---- Bridge (LAN) control section (DT-19, DT-21) ----
   // Held so the thread-safe setters can update the model as well as the
@@ -1236,6 +1086,13 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        user_interface,
                        this,
                        bridge_interface_cb,
+                       bridge_control_config*,
+                       bridge_c);
+
+  FL_METHOD_CALLBACK_1(check_wan_encryption,
+                       user_interface,
+                       this,
+                       wan_encryption_cb,
                        bridge_control_config*,
                        bridge_c);
 

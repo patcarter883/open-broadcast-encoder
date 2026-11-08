@@ -30,7 +30,7 @@ class ui_widgets {open
           xywh {25 25 1550 760} type HORIZONTAL gap 25
         } {
           Fl_Flex flx_col_left {open
-            xywh {25 25 762 758} gap 25 fixed_size_tuples {3  0 410  1 205  2 108 }
+            xywh {25 25 762 758} gap 25 fixed_size_tuples {3  0 410  1 205  2 133 }
           } {
           Fl_Flex {} {open
             xywh {25 25 433 410} gap 25 fixed_size_tuples {2  0 180  1 205 }
@@ -238,7 +238,7 @@ class ui_widgets {open
           }
         Fl_Flex flx_hosted {open
           label {Hosted (portal)}
-          xywh {25 25 762 108} box BORDER_BOX margin {8 25 8 8} gap 25
+          xywh {25 25 762 133} box BORDER_BOX margin {8 25 8 8} gap 25
         } {
           Fl_Flex {} {open
             xywh {25 464 1323 25} type HORIZONTAL gap 10
@@ -270,10 +270,19 @@ class ui_widgets {open
             xywh {25 489 1323 25} align 5
             code0 {hosted_state_output->value("Not signed in - the portal half stays inactive until you sign in.");}
           }
+          Fl_Flex {} {open
+            xywh {25 514 1323 25} type HORIZONTAL gap 10
+          } {
+            Fl_Input input_encoder_name {
+              label {Encoder name}
+              tooltip {This instance's name: shown in the title bar and sent to the backplane on sign-in and allocation.}
+              xywh {25 514 320 25} align 5
+            }
+          }
         }
           }
           Fl_Flex flx_col_right {open
-            xywh {787 25 762 749} gap 25 fixed_size_tuples {3  0 235  1 173  2 283 }
+            xywh {787 25 762 749} gap 25 fixed_size_tuples {2  0 235  1 283 }
           } {
           Fl_Flex {} {
             label Stats open
@@ -426,32 +435,6 @@ class ui_widgets {open
               }
             }
           }
-        Fl_Flex flx_receiver {open
-          label {Receiver / Restream}
-          xywh {25 25 762 173} box BORDER_BOX margin {8 25 8 8} gap 25 fixed_size_tuples {1  0 25 }
-        } {
-          Fl_Flex {} {open
-            xywh {25 464 1323 25} type HORIZONTAL gap 10
-          } {
-            Fl_Check_Button check_receiver_enabled {
-              label {Enable receiver}
-              xywh {25 464 110 25}
-            }
-            Fl_Input input_control_address {
-              label {Receiver host:port}
-              xywh {145 464 180 25} align 5
-              code0 {input_control_address->value("127.0.0.1:8080");}
-            }
-            Fl_Input input_control_token {
-              label Token
-              xywh {335 464 160 25} align 5
-            }
-          }
-          Fl_Input input_destinations {
-            label {Destinations (one per line:  rtmp|rtmps|srt|rist  <url>  [key])}
-            xywh {25 487 1323 90} type Multiline align 5
-          }
-        }
         Fl_Flex flx_bridge {open
           label {Bridge (LAN)}
           xywh {25 25 762 283} box BORDER_BOX margin {8 25 8 8} gap 25 fixed_size_tuples {1  3 75 }
@@ -478,6 +461,11 @@ class ui_widgets {open
             Fl_Button btn_bridge_calibrate {
               label {Calibrate links}
               xywh {535 464 110 25}
+            }
+            Fl_Check_Button check_wan_encryption {
+              label {Encrypt WAN leg}
+              tooltip {Encrypt only the bridge's WAN output leg. Off sends no secret; turning it on requires the allocation to carry a key.}
+              xywh {655 464 140 25}
             }
           }
           Fl_Flex {} {open

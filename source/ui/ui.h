@@ -39,7 +39,7 @@ public:
   void init_ui_callbacks(input_config* input_c,
                          encode_config* encode_c,
                          output_config* output_c,
-                         receiver_control_config* receiver_c,
+                         std::string* encoder_name,
                          bridge_control_config* bridge_c,
                          hosted_config* hosted_c,
                          FuncPtr start_funcptr,
@@ -62,7 +62,7 @@ public:
   void apply_settings(const input_config& input_c,
                       const encode_config& encode_c,
                       const output_config& output_c,
-                      const receiver_control_config& receiver_c,
+                      const std::string& encoder_name,
                       const bridge_control_config& bridge_c,
                       const hosted_config& hosted_c);
   // Show the encode lifecycle state. Safe to call from a non-UI thread: takes
@@ -152,13 +152,11 @@ private:
                              FuncPtr scaling_source_changed_funcptr);
   void encode_bitrate_cb(encode_config* encode_config);
   void mpegts_alignment_cb(encode_config* encode_config);
-  // Receiver / restream control callbacks
-  void receiver_enabled_cb(receiver_control_config* receiver_config);
-  void receiver_address_cb(receiver_control_config* receiver_config);
-  void receiver_token_cb(receiver_control_config* receiver_config);
-  void receiver_destinations_cb(receiver_control_config* receiver_config);
+  // Instance identity
+  void encoder_name_cb(std::string* encoder_name);
   // Bridge (LAN) control callbacks
   void bridge_address_cb(bridge_control_config* bridge_config);
+  void wan_encryption_cb(bridge_control_config* bridge_config);
   void bridge_listen_cb(bridge_control_config* bridge_config);
   void bridge_forward_cb(bridge_control_config* bridge_config);
   void bridge_interface_cb(bridge_control_config* bridge_config);

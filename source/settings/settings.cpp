@@ -162,37 +162,6 @@ bool parse_bitrate_source(const std::string& s, bitrate_source& out) noexcept
   return true;
 }
 
-const char* proto_str(output_proto p) noexcept
-{
-  switch (p) {
-    case output_proto::rtmp:
-      return "rtmp";
-    case output_proto::rtmps:
-      return "rtmps";
-    case output_proto::srt:
-      return "srt";
-    case output_proto::rist:
-      return "rist";
-  }
-  return "rtmp";
-}
-
-bool parse_proto(const std::string& s, output_proto& out) noexcept
-{
-  if (s == "rtmp") {
-    out = output_proto::rtmp;
-  } else if (s == "rtmps") {
-    out = output_proto::rtmps;
-  } else if (s == "srt") {
-    out = output_proto::srt;
-  } else if (s == "rist") {
-    out = output_proto::rist;
-  } else {
-    return false;
-  }
-  return true;
-}
-
 // ---- typed getters that tolerate a missing/wrong-typed JSON field ----------
 // load() must never throw on a partial or hand-edited file: every field is
 // optional and falls back to whatever the config already holds.
@@ -258,9 +227,12 @@ bool save(const library& lib)
   const input_config& in = lib.input_cfg;
   const encode_config& enc = lib.encode_cfg;
   const output_config& out = lib.output_cfg;
-  const receiver_control_config& rc = lib.receiver_ctl;
 
   json root;
+
+  root["encoder"] = {
+      {"name", lib.encoder_name},
+  };
 
   root["input"] = {
       {"selected_input", in.selected_input},
@@ -301,23 +273,6 @@ bool save(const library& lib)
       {"bandwidth", out.bandwidth},
   };
 
-  json dests = json::array();
-  for (const auto& d : rc.destinations) {
-    dests.push_back({
-        {"proto", proto_str(d.proto)},
-        {"url", d.url},
-        {"stream_key", d.stream_key},
-    });
-  }
-
-  root["receiver"] = {
-      {"enabled", rc.enabled},
-      {"control_host", rc.control_host},
-      {"control_port", rc.control_port},
-      {"token", rc.token},
-      {"destinations", dests},
-  };
-
   const bridge_control_config& bc = lib.bridge_ctl;
   root["bridge"] = {
       {"address", bc.address},
@@ -326,6 +281,7 @@ bool save(const library& lib)
       {"listen_url", bc.listen_url},
       {"forward_to", bc.forward_to},
       {"interface", bc.interface_name},
+      {"encrypt_wan_leg", bc.encrypt_wan_leg},
   };
 
   const hosted_config& hc = lib.hosted;
@@ -448,32 +404,11 @@ bool load(library& lib)
     get_to(j, "bandwidth", out.bandwidth);
   }
 
-  if (auto it = root.find("receiver"); it != root.end() && it->is_object()) {
-    const json& j = *it;
-    receiver_control_config& rc = lib.receiver_ctl;
-    get_to(j, "enabled", rc.enabled);
-    get_to(j, "control_host", rc.control_host);
-    get_to(j, "control_port", rc.control_port);
-    get_to(j, "token", rc.token);
-    // A settings file written before the local reencode tier was removed still
-    // carries "reencode"/"video" keys. They are simply ignored, so an upgrade
-    // does not need to rewrite the file.
-
-    if (auto d = j.find("destinations"); d != j.end() && d->is_array()) {
-      std::vector<receiver_destination> dests;
-      for (const auto& item : *d) {
-        if (!item.is_object()) {
-          continue;
-        }
-        receiver_destination dest;
-        if (auto p = item.find("proto"); p != item.end() && p->is_string()) {
-          parse_proto(p->get<std::string>(), dest.proto);
-        }
-        get_to(item, "url", dest.url);
-        get_to(item, "stream_key", dest.stream_key);
-        dests.push_back(std::move(dest));
-      }
-      rc.destinations = std::move(dests);
+  if (auto it = root.find("encoder"); it != root.end() && it->is_object()) {
+    std::string name;
+    get_to(*it, "name", name);
+    if (!name.empty()) {
+      lib.encoder_name = std::move(name);
     }
   }
 
@@ -486,6 +421,7 @@ bool load(library& lib)
     get_to(j, "listen_url", bc.listen_url);
     get_to(j, "forward_to", bc.forward_to);
     get_to(j, "interface", bc.interface_name);
+    get_to(j, "encrypt_wan_leg", bc.encrypt_wan_leg);
   }
 
   if (auto it = root.find("hosted"); it != root.end() && it->is_object()) {
