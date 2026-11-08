@@ -35,6 +35,20 @@ target_link_libraries(raw_local_port_test PRIVATE Catch2::Catch2WithMain)
 
 catch_discover_tests(raw_local_port_test)
 
+# The AV1 mezzanine contract: the profile the receiver's hardware decoder
+# accepts is only visible in the encoder fragment, which is a string.
+# video_encoder.cpp carries no GStreamer types, so this compiles directly and
+# needs no pipeline -- and no qsvav1enc, which is not installed on a dev box.
+add_executable(video_encoder_test
+    source/video_encoder_test.cpp
+    ${CMAKE_SOURCE_DIR}/source/encode/video_encoder.cpp
+)
+target_include_directories(video_encoder_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(video_encoder_test PRIVATE cxx_std_20)
+target_link_libraries(video_encoder_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(video_encoder_test)
+
 # The multicast join interface the encoder puts into a bridge's listen URL.
 # join_interface.cpp carries no other dependency, so it is compiled directly: the
 # URL it builds must be pinnable without linking the bridge's HTTP stack.
