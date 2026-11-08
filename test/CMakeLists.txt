@@ -226,6 +226,19 @@ target_compile_features(control_client_test PRIVATE cxx_std_20)
 
 catch_discover_tests(control_client_test)
 
+# The AV1-in-MPEG-TS contract: the mux settings in encode/ts_mux.h must produce a
+# stream that tsdemux reads back as video/x-av1 (stream_type 0x06 + 'AV1G').
+add_executable(ts_mux_test source/ts_mux_test.cpp)
+target_link_libraries(
+    ts_mux_test PRIVATE
+    PkgConfig::gstreamer
+    Catch2::Catch2WithMain
+)
+target_include_directories(ts_mux_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(ts_mux_test PRIVATE cxx_std_20)
+
+catch_discover_tests(ts_mux_test)
+
 # ---- End-of-file commands ----
 
 add_folders(Test)

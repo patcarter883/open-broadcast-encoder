@@ -27,6 +27,7 @@
 #include "encode/capture_source.h"
 #include "encode/raw_format.h"
 #include "encode/raw_local.h"
+#include "encode/ts_mux.h"
 
 using std::string;
 
@@ -369,14 +370,10 @@ void encode::pipeline_build_sink()
   // Clamp to a sane range; <1 would make mpegtsmux auto-size (= large buffers).
   const int alignment = std::clamp(
       encode_c.mpegts_alignment.load(std::memory_order_relaxed), 1, 7);
-  // enable-custom-mappings=true is REQUIRED to mux AV1 (and VP9): GStreamer has
-  // no standardised MPEG-TS stream type for them, so mpegtsmux otherwise fails
-  // with "AV1 requires enabling custom mapping". No-op for H.264/H.265.
   this->pipeline_str += std::format(
-      " appsink name=video_sink "
-      "mpegtsmux alignment={} enable-custom-mappings=true name=tsmux "
+      " appsink name=video_sink {} "
       "! video_sink. ",
-      alignment);
+      ts_mux::element(alignment));
 }
 
 void encode::pipeline_build_video_demux()
