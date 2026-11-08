@@ -121,6 +121,95 @@ TEST_CASE("the allocate request carries the encoder's instance name",
         != std::string::npos);
 }
 
+// The portal sizes a destination transcode from the source rate the encoder
+// reports. Without it the rule falls back to the session's plan-clamped
+// reservation, which is how a 1080p source ended up with a 29860 kbps target:
+// the reservation describes the plan, not the stream.
+TEST_CASE("the allocate request carries the encoder's source bitrate",
+          "[backplane][bitrate]")
+{
+  std::vector<std::string> calls;
+  std::vector<std::string> bodies;
+  backplane_client client("https://api.example.au",
+                          "devtok",
+                          scripted(calls, 201, k_good, &bodies));
+
+  bitrate_inputs inputs;
+  inputs.source_bitrate_kbps = 4300;
+
+  const alloc_result r = client.allocate("syd1", "enc-studio-a", inputs);
+
+  REQUIRE(r.ok);
+  REQUIRE(bodies.size() == 1);
+  CHECK(bodies.at(0).find("\"source_bitrate_kbps\":4300") != std::string::npos);
+}
+
+// A WAN budget is only ever a MEASUREMENT. The bridge does not relay link
+// statistics back over OOB, so the encoder has nothing to state: the field must
+// be absent from the wire rather than present with a guessed number, because
+// the portal cannot tell the two apart afterwards.
+TEST_CASE("an unmeasured WAN budget is omitted from the allocate request",
+          "[backplane][bitrate]")
+{
+  std::vector<std::string> calls;
+  std::vector<std::string> bodies;
+  backplane_client client("https://api.example.au",
+                          "devtok",
+                          scripted(calls, 201, k_good, &bodies));
+
+  bitrate_inputs inputs;
+  inputs.source_bitrate_kbps = 4300;
+
+  const alloc_result r = client.allocate("syd1", "enc-studio-a", inputs);
+
+  REQUIRE(r.ok);
+  REQUIRE(bodies.size() == 1);
+  CHECK(bodies.at(0).find("measured_budget_kbps") == std::string::npos);
+}
+
+// Present and real is the other half of the contract: a figure the encoder did
+// measure must reach the portal, and must reach it as a number.
+TEST_CASE("a measured WAN budget reaches the allocate request",
+          "[backplane][bitrate]")
+{
+  std::vector<std::string> calls;
+  std::vector<std::string> bodies;
+  backplane_client client("https://api.example.au",
+                          "devtok",
+                          scripted(calls, 201, k_good, &bodies));
+
+  bitrate_inputs inputs;
+  inputs.source_bitrate_kbps = 6000;
+  inputs.measured_budget_kbps = 9500;
+
+  const alloc_result r = client.allocate("syd1", "enc-studio-a", inputs);
+
+  REQUIRE(r.ok);
+  REQUIRE(bodies.size() == 1);
+  CHECK(bodies.at(0).find("\"source_bitrate_kbps\":6000") != std::string::npos);
+  CHECK(bodies.at(0).find("\"measured_budget_kbps\":9500")
+        != std::string::npos);
+}
+
+// Neither figure known: the request must still be a valid allocation, with both
+// fields absent rather than zero, which the portal would read as a real rate.
+TEST_CASE("an allocate request with no bitrate inputs sends neither field",
+          "[backplane][bitrate]")
+{
+  std::vector<std::string> calls;
+  std::vector<std::string> bodies;
+  backplane_client client("https://api.example.au",
+                          "devtok",
+                          scripted(calls, 201, k_good, &bodies));
+
+  const alloc_result r = client.allocate("syd1", "enc-studio-a");
+
+  REQUIRE(r.ok);
+  REQUIRE(bodies.size() == 1);
+  CHECK(bodies.at(0).find("source_bitrate_kbps") == std::string::npos);
+  CHECK(bodies.at(0).find("measured_budget_kbps") == std::string::npos);
+}
+
 TEST_CASE("hosted_session survives a JSON round trip", "[backplane][m2.7]")
 {
   hosted_session s;

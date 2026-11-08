@@ -169,7 +169,8 @@ backplane_client::destinations_result backplane_client::list_destinations()
 }
 
 alloc_result backplane_client::allocate(const std::string& pop,
-                                        const std::string& encoder_name)
+                                        const std::string& encoder_name,
+                                        const bitrate_inputs& bitrates)
 {
   alloc_result r;
   if (!m_transport) {
@@ -181,6 +182,10 @@ alloc_result backplane_client::allocate(const std::string& pop,
   // refuses them (422) rather than silently preferring one. `encoder_name` is
   // identity, not transport: it lets one account read back which instance
   // allocated a session.
+  //
+  // The bitrate inputs steer the portal's transcode sizing and are sent one
+  // field at a time: each is written only when a real figure exists, so the
+  // absent case reaches the portal as absent and not as zero or as a guess.
   json req;
   req["schema_version"] = 1;
   if (!pop.empty()) {
@@ -188,6 +193,12 @@ alloc_result backplane_client::allocate(const std::string& pop,
   }
   if (!encoder_name.empty()) {
     req["encoder_name"] = encoder_name;
+  }
+  if (bitrates.source_bitrate_kbps.has_value()) {
+    req["source_bitrate_kbps"] = *bitrates.source_bitrate_kbps;
+  }
+  if (bitrates.measured_budget_kbps.has_value()) {
+    req["measured_budget_kbps"] = *bitrates.measured_budget_kbps;
   }
 
   const auto [status, body] =
@@ -244,11 +255,12 @@ bool backplane_client::deallocate(const std::string& session_id,
 alloc_result backplane_client::abandon_and_reallocate(
     const std::string& lost_session_id,
     const std::string& pop,
-    const std::string& encoder_name)
+    const std::string& encoder_name,
+    const bitrate_inputs& bitrates)
 {
   std::string err;
   // Best-effort release of the orphan; a failure here (e.g. it was already
   // reaped) must not block getting a working session.
   deallocate(lost_session_id, err);
-  return allocate(pop, encoder_name);
+  return allocate(pop, encoder_name, bitrates);
 }
