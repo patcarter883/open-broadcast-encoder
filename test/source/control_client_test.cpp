@@ -189,6 +189,85 @@ TEST_CASE("the transcode gop follows the ingest rate, not the portal's guess",
   REQUIRE(json::parse(out)["ingest"]["bandwidth"] == 6000);
 }
 
+TEST_CASE("a transcode target above what the encoder sends is lowered to it",
+          "[hosted][control]")
+{
+  // The deployed body asked for 29 860 kbit/s of transcode from a 7 Mbit/s
+  // source over a cellular uplink. The portal sizes that number from the plan
+  // (an explicit destination bitrate wins there outright), and it cannot know
+  // what this pipeline is actually sending. The encoder can, so it lowers the
+  // target to its own cap -- and the transport ceiling it declares bounds that
+  // cap. A target that already fits is still the portal's decision.
+  const char* portal = R"({
+    "schema_version": 2,
+    "session_id": "s_9f2c",
+    "ingest": {"bandwidth": 20000},
+    "source": {"codec": "h264"},
+    "outputs": [
+      {"id": "out1", "type": "rtmp", "url": "rtmp://a.example/live2"},
+      {"id": "out2", "type": "rtmp", "url": "rtmp://b.example/live2",
+       "transcode": {"codec": "h265", "bitrate_kbps": 29860, "gop": 120}},
+      {"id": "out3", "type": "rtmp", "url": "rtmp://c.example/live2",
+       "transcode": {"codec": "h264", "bitrate_kbps": 5250}}
+    ]
+  })";
+  std::string out;
+  std::string err;
+
+  // fps, transport ceiling, geometry, source rate.
+  REQUIRE(control_client::prepare_hosted_body(
+      portal, codec::h265, out, err, 30, 20000, 1920, 1080, 7000));
+  {
+    const json body = json::parse(out);
+    // 29 860 > 7 000: lowered to what the source itself carries.
+    REQUIRE(body["outputs"][1]["transcode"]["bitrate_kbps"] == 7000);
+    // Inside the cap: untouched, because the portal owns the target.
+    REQUIRE(body["outputs"][2]["transcode"]["bitrate_kbps"] == 5250);
+    // The rest of the block is still the portal's.
+    REQUIRE(body["outputs"][1]["transcode"]["codec"] == "h265");
+    REQUIRE(body["outputs"][1]["transcode"]["gop"] == 60);
+    // A copy-only output never gains a block.
+    REQUIRE_FALSE(body["outputs"][0].contains("transcode"));
+  }
+
+  // A source rate above the ceiling is capped at 90% of it, not at the source.
+  REQUIRE(control_client::prepare_hosted_body(
+      portal, codec::h265, out, err, 30, 20000, 1920, 1080, 40000));
+  REQUIRE(json::parse(out)["outputs"][1]["transcode"]["bitrate_kbps"] == 18000);
+
+  // No source rate known: the portal's number stands rather than a guess.
+  REQUIRE(control_client::prepare_hosted_body(
+      portal, codec::h265, out, err, 30, 20000, 1920, 1080, 0));
+  REQUIRE(json::parse(out)["outputs"][1]["transcode"]["bitrate_kbps"] == 29860);
+}
+
+TEST_CASE("an opted-in transcode with no target is given the encoder's cap",
+          "[hosted][control]")
+{
+  // A transcode block the portal could not derive carries no bitrate; the
+  // encoder's cap is the only figure that exists. Without a source rate or a
+  // ceiling nothing is written, so the receiver's own default stands.
+  const char* portal = R"({
+    "schema_version": 2,
+    "session_id": "s_9f2c",
+    "outputs": [
+      {"id": "out1", "type": "rtmp", "url": "rtmp://a.example/live2",
+       "transcode": {"codec": "h265", "gop": 120}}
+    ]
+  })";
+  std::string out;
+  std::string err;
+  REQUIRE(control_client::prepare_hosted_body(
+      portal, codec::h265, out, err, 30, 20000, 1920, 1080, 7000));
+  REQUIRE(json::parse(out)["outputs"][0]["transcode"]["bitrate_kbps"] == 7000);
+
+  // Nothing known about either input: the key is not invented.
+  REQUIRE(control_client::prepare_hosted_body(
+      portal, codec::h265, out, err, 30, 0, 1920, 1080, 0));
+  REQUIRE_FALSE(
+      json::parse(out)["outputs"][0]["transcode"].contains("bitrate_kbps"));
+}
+
 TEST_CASE("a measured rate is snapped to a standard broadcast rate",
           "[encode][fps]")
 {

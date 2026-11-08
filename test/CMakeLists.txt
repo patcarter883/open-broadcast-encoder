@@ -71,6 +71,15 @@ target_link_libraries(appsrc_policy_test PRIVATE Catch2::Catch2WithMain)
 
 catch_discover_tests(appsrc_policy_test)
 
+# The transcode target's derivation: header-only by design, so the numbers a
+# hosted start body may carry are pinned without a portal or a WAN.
+add_executable(transcode_rate_test source/transcode_rate_test.cpp)
+target_include_directories(transcode_rate_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(transcode_rate_test PRIVATE cxx_std_20)
+target_link_libraries(transcode_rate_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(transcode_rate_test)
+
 add_executable(backplane_test source/backplane_test.cpp)
 target_link_libraries(
     backplane_test PRIVATE

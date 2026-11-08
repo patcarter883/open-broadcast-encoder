@@ -312,3 +312,31 @@ cannot wedge the preview at zero progress.
 frame (a stalled preview drops 60 a second, and the log would become the stall); raising the queue
 depth instead (that buys latency, not immunity -- a stalled sink always fills any finite queue).
 
+
+---
+
+## EN-9 — The encoder lowers a transcode target above what it sends (2026-11-09)
+
+**Choice.** `prepare_hosted_body` corrects every `outputs[].transcode.bitrate_kbps` with
+`transcode_rate::body_kbps`: the portal's target when it fits, otherwise the encoder's cap. The cap is
+`max(min(video_kbps, 90% of transport_ceiling_kbps), min(500, 90% of transport_ceiling_kbps))` — the
+logged-in video rate as the upper bound, the transport ceiling the encoder declares to the receiver and
+sizes its RIST recovery ring from (`rist_bandwidth_ceiling_kbps`) for the headroom, and the destination
+API's 500 kbit/s floor unless the ceiling cannot carry that. A target the portal left out or stated
+non-positive is filled from the cap. Unknown inputs leave the document untouched. `transcode_rate.h`
+holds the rule; the caller passes the encode bitrate and the ceiling, so nothing is sampled at runtime.
+
+**Rationale.** The observed body asked for 29 860 kbit/s of transcode from a 7 Mbit/s source over a
+cellular uplink. The portal sizes that from the plan or from an explicit destination bitrate (which wins
+there outright) and has never seen the rate this pipeline runs at, so the number can exceed the source
+by four times — a transcode that cannot add detail and spends uplink the source never needed. The encoder
+is the only side that knows both figures. The rule reproduces the portal's own headroom (90% of the
+link), keeps the floor, and lets the link win below the floor: a rate above the link is the failure this
+exists to stop.
+
+**Rejected.** Replacing the portal's target unconditionally (a target inside the cap is still the
+portal's decision — DT-22); deriving from the destination's transcode codec (a codec factor would raise
+the best case and is not the encoder's decision to make, and lowering the target is the safe direction);
+probing the link at start (the encoder has no WAN measurement — the bridge's link stats do not travel
+back to it, and the body is posted before any frames flow); sending `measured_budget_kbps` from the
+encoder (it has measured nothing, and the portal would read an estimate as a measurement).
