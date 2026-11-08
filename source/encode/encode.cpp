@@ -28,6 +28,7 @@
 #include "encode/raw_format.h"
 #include "encode/raw_local.h"
 #include "encode/ts_mux.h"
+#include "encode/video_encoder.h"
 
 using std::string;
 
@@ -210,6 +211,10 @@ void encode::clear_pipeline_state()
       gst_element_set_state(this->datasrc_pipeline, GST_STATE_NULL);
     }
   }
+  // A new pipeline negotiates its own caps, so the next session logs its own
+  // AV1 mezzanine line.
+  this->av1_mezzanine_logged.store(false, std::memory_order_release);
+  this->av1_mezzanine_fires = 0;
 
   // The reader pushes into the appsrcs below, so it stops first -- and here,
   // rather than in the callers, so both stop_encode_thread() and the destructor
@@ -446,143 +451,11 @@ void encode::pipeline_build_audio_encoder()
   this->pipeline_str += " avenc_aac ! aacparse ";
 }
 
-namespace
-{
-// Video-encoder fragment templates indexed by [encoder][codec].
-//
-// Row order follows enum class encoder: amd, qsv, nvenc, software.
-// Column order follows enum class codec: h264, h265, av1.
-//
-// Each template is byte-for-byte identical to the string the corresponding
-// pipeline_build_<vendor>_<codec>_encoder() function previously emitted
-// (including incidental double-spaces). The single "{}" is the bitrate.
-constexpr int kEncoderCount = 4;
-constexpr int kCodecCount = 3;
-
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
-constexpr std::string_view kEncoderTemplates[kEncoderCount][kCodecCount] = {
-// encoder::amd
-//
-// AMF (amfh264enc / amfh265enc / amfav1enc) is Windows-only. Everywhere
-// else the same AMD hardware is driven through VAAPI instead
-// (vah264enc / vah265enc / vaav1enc), which is also the encoder the
-// receiver's transcode tier uses. This is not a fallback: with the AMF
-// names, `encoder=amd` builds a pipeline whose elements do not exist on
-// Linux, so it can never reach PLAYING.
-#ifdef _WIN32
-    {
-        // codec::h264
-        "amfh264enc name=videncoder  bitrate={} rate-control=cbr "
-        "usage=low-latency preset=quality pre-encode=true pa-hqmb-mode=auto ! "
-        "video/x-h264,profile=high ! h264parse "
-        "config-interval=1 ",
-        // codec::h265
-        "amfh265enc name=videncoder bitrate={} rate-control=cbr "
-        "usage=low-latency preset=quality pre-encode=true pa-hqmb-mode=auto ! "
-        "h265parse config-interval=1 ",
-        // codec::av1
-        "amfav1enc name=videncoder bitrate={} rate-control=cbr "
-        "usage=low-latency preset=high-quality  pre-encode=true "
-        "pa-hqmb-mode=auto "
-        "! av1parse ! video/x-av1,stream-format=obu-stream,alignment=frame ",
-    },
-#else
-    {
-        // codec::h264
-        "vah264enc name=videncoder bitrate={} rate-control=cbr "
-        "key-int-max=60 ! video/x-h264,profile=high ! h264parse "
-        "config-interval=1 ",
-        // codec::h265
-        "vah265enc name=videncoder bitrate={} rate-control=cbr "
-        "key-int-max=60 ! h265parse config-interval=1 ",
-        // codec::av1
-        "vaav1enc name=videncoder bitrate={} rate-control=cbr "
-        "key-int-max=60 ! av1parse "
-        "! video/x-av1,stream-format=obu-stream,alignment=frame ",
-    },
-#endif
-    // encoder::qsv
-    {
-        // codec::h264
-        "qsvh264enc name=videncoder  bitrate={} rate-control=cbr "
-        "target-usage=1 ! h264parse "
-        "config-interval=1 ",
-        // codec::h265
-        "qsvh265enc name=videncoder bitrate={} rate-control=cbr "
-        "target-usage=1 ! h265parse "
-        "config-interval=1 ",
-        // codec::av1
-        "qsvav1enc name=videncoder bitrate={} rate-control=cbr "
-        "target-usage=1 gop-size=120 ! av1parse "
-        "! video/x-av1,stream-format=obu-stream,alignment=frame ",
-    },
-    // encoder::nvenc
-    {
-        // codec::h264
-        "nvh264enc name=videncoder bitrate={} rc-mode=cbr-hq "
-        "preset=low-latency-hq ! h264parse config-interval=1 ",
-        // codec::h265
-        "nvh265enc name=videncoder bitrate={} rc-mode=cbr-hq "
-        "preset=low-latency-hq ! h265parse config-interval=1 ",
-        // codec::av1
-        "nvav1enc name=videncoder bitrate={} rc-mode=cbr preset=low-latency-hq "
-        "! av1parse ! video/x-av1,stream-format=obu-stream,alignment=frame ",
-    },
-    // encoder::software
-    {
-        // codec::h264
-        "x264enc name=videncoder bitrate={} "
-        "speed-preset=fast tune=zerolatency ! h264parse config-interval=1 ",
-        // codec::h265
-        "x265enc name=videncoder bitrate={} "
-        "speed-preset=fast tune=zerolatency ! h265parse config-interval=1 ",
-        // codec::av1
-        "rav1enc name=videncoder bitrate={} speed-preset=8 tile-cols=2 "
-        "tile-rows=2 ! av1parse "
-        "! video/x-av1,stream-format=obu-stream,alignment=frame ",
-    },
-};
-}  // namespace
-
 void encode::pipeline_build_video_encoder()
 {
-  // Map encoder enum to a row, with unknown encoders falling back to software
-  // (matches the old pipeline_build_video_encoder default branch).
-  int enc_index = 0;
-  switch (encode_c.selected_encoder) {
-    case encoder::amd:
-      enc_index = 0;
-      break;
-    case encoder::qsv:
-      enc_index = 1;
-      break;
-    case encoder::nvenc:
-      enc_index = 2;
-      break;
-    default:
-      enc_index = 3;  // software
-      break;
-  }
-
-  // Map codec enum to a column, with the 'default' codec falling back to h264
-  // (matches the old per-vendor dispatcher default branch).
-  int codec_index = 0;
-  switch (encode_c.selected_codec) {
-    case codec::h265:
-      codec_index = 1;
-      break;
-    case codec::av1:
-      codec_index = 2;
-      break;
-    default:
-      codec_index = 0;  // h264
-      break;
-  }
-
-  const std::string_view tmpl = kEncoderTemplates[enc_index][codec_index];
   const int bitrate_value = encode_c.bitrate.load(std::memory_order_relaxed);
-  this->pipeline_str +=
-      std::vformat(tmpl, std::make_format_args(bitrate_value));
+  this->pipeline_str += video_encoder_fragment(
+      encode_c.selected_encoder, encode_c.selected_codec, bitrate_value);
 }
 
 void encode::pipeline_build_audio_payloader()
@@ -678,6 +551,114 @@ void encode::link_demux_pad(GstPad* pad)
   gst_caps_unref(caps);
 }
 
+auto encode::on_av1_mezzanine_buffer(GstPad* pad,
+                                     GstPadProbeInfo* info,
+                                     gpointer user_data) -> GstPadProbeReturn
+{
+  return static_cast<encode*>(user_data)->log_av1_mezzanine(pad, info);
+}
+
+// The parser publishes the stream's profile from the sequence header, and that
+// is the field the receiver's decoder screens on. Bit depth comes from the
+// format the encoder was fed: av1parse does not put its own bit-depth field in
+// the caps of a live pipeline's early buffers (measured on GStreamer 1.28), and
+// the encoder runs one depth per input format.
+auto encode::log_av1_mezzanine(GstPad* parser_src, GstPadProbeInfo* info)
+    -> GstPadProbeReturn
+{
+  if (this->av1_mezzanine_logged.load(std::memory_order_acquire)) {
+    return GST_PAD_PROBE_REMOVE;
+  }
+
+  GstCaps* caps = nullptr;
+  gboolean owned = FALSE;
+  if ((GST_PAD_PROBE_INFO_TYPE(info) & GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM)
+      != 0) {
+    GstEvent* event = GST_PAD_PROBE_INFO_EVENT(info);
+    if (GST_EVENT_TYPE(event) == GST_EVENT_CAPS) {
+      gst_event_parse_caps(event, &caps);
+    }
+  } else {
+    caps = gst_pad_get_current_caps(parser_src);
+    owned = TRUE;
+  }
+
+  const GstStructure* structure =
+      (caps != nullptr) ? gst_caps_get_structure(caps, 0) : nullptr;
+  const auto field = [structure](const char* name) -> std::string_view
+  {
+    if (structure == nullptr) {
+      return {};
+    }
+    const gchar* value = gst_structure_get_string(structure, name);
+    return (value != nullptr) ? std::string_view {value} : std::string_view {};
+  };
+
+  std::string bit_depth;
+  gint luma_depth = 0;
+  if (structure != nullptr
+      && gst_structure_get_int(structure, "bit-depth-luma", &luma_depth))
+  {
+    bit_depth = std::to_string(luma_depth);
+  }
+  const gboolean has_profile =
+      (structure != nullptr) && gst_structure_has_field(structure, "profile");
+  // Both halves of the line have to be readable, not just the parser's caps:
+  // the encoder's sink caps land one caps update later than the first profile.
+  const std::string input_format = this->encoder_input_format();
+  const gboolean readable =
+      (has_profile != FALSE || !bit_depth.empty()) && !input_format.empty();
+
+  GstPadProbeReturn verdict = GST_PAD_PROBE_OK;
+  ++this->av1_mezzanine_fires;
+  if (readable != FALSE || this->av1_mezzanine_fires >= kAv1MezzanineMaxFires) {
+    this->log(std::format(
+        "{}\n",
+        av1_mezzanine_line({.profile = field("profile"),
+                            .chroma_format = field("chroma-format"),
+                            .tier = field("tier"),
+                            .parser_bit_depth = bit_depth,
+                            .encoder_input_format = input_format})));
+    this->av1_mezzanine_logged.store(true, std::memory_order_release);
+    verdict = GST_PAD_PROBE_REMOVE;
+  }
+
+  if (owned != FALSE) {
+    gst_caps_unref(caps);
+  }
+  return verdict;
+}
+
+// The pixel format on the encoder's sink pad: NV12 for the 8-bit tier, P010 for
+// the 10-bit one. Empty when the caps are not there yet. Called from the
+// parser's pad probe, i.e. on the streaming thread, where video_encoder is
+// valid: the element is cleared only after the pipeline has left PLAYING, which
+// joins the streaming thread.
+auto encode::encoder_input_format() -> std::string
+{
+  if (this->video_encoder == nullptr) {
+    return {};
+  }
+  GstPad* sink_pad = gst_element_get_static_pad(this->video_encoder, "sink");
+  if (sink_pad == nullptr) {
+    return {};
+  }
+  std::string format;
+  GstCaps* caps = gst_pad_get_current_caps(sink_pad);
+  if (caps != nullptr) {
+    const GstStructure* structure = gst_caps_get_structure(caps, 0);
+    const gchar* format_name = (structure != nullptr)
+        ? gst_structure_get_string(structure, "format")
+        : nullptr;
+    if (format_name != nullptr) {
+      format = format_name;
+    }
+    gst_caps_unref(caps);
+  }
+  gst_object_unref(sink_pad);
+  return format;
+}
+
 void encode::build_pipeline()
 {
   this->pipeline_build_source();
@@ -744,6 +725,29 @@ void encode::parse_pipeline()
   this->capture_ts_src =
       gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), "capturets");
   this->link_demux_pads();
+
+  // The AV1 mezzanine's profile, chroma format and bit depth are only visible
+  // downstream of the parser, which fills them in from the sequence header.
+  // One line, on the first parsed buffer, so a profile the receiver refuses is
+  // readable in this log rather than inferred from a far-end failure.
+  if (this->encode_c.selected_codec == codec::av1) {
+    GstElement* parser =
+        gst_bin_get_by_name(GST_BIN(this->datasrc_pipeline), kAv1ParserName);
+    if (parser != nullptr) {
+      GstPad* parser_src = gst_element_get_static_pad(parser, "src");
+      if (parser_src != nullptr) {
+        gst_pad_add_probe(
+            parser_src,
+            static_cast<GstPadProbeType>(GST_PAD_PROBE_TYPE_BUFFER
+                                         | GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM),
+            &encode::on_av1_mezzanine_buffer,
+            this,
+            nullptr);
+        gst_object_unref(parser_src);
+      }
+      gst_object_unref(parser);
+    }
+  }
 
   this->bus = gst_element_get_bus(this->datasrc_pipeline);
   this->pipeline_cleaned_up.store(false, std::memory_order_release);

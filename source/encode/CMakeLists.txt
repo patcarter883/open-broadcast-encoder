@@ -28,6 +28,8 @@ target_sources(encode_lib ${warning_guard}
     raw_local_port.h
     raw_local_port.cpp
     ts_mux.h
+    video_encoder.h
+    video_encoder.cpp
 )
 
 target_include_directories(

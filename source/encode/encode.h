@@ -117,6 +117,22 @@ private:
   GstElement* capture_ts_src = nullptr;
   std::unique_ptr<capture_input> capture_reader;
   GstBus* bus = nullptr;
+  // The AV1 mezzanine line is logged once per session, from the parser pad
+  // once its caps carry the parsed profile, chroma format and bit depth.
+  // Touched only on the streaming thread.
+  std::atomic<bool> av1_mezzanine_logged {false};
+  // Buffers and caps events seen while waiting for a caps field to name the
+  // profile. A stream whose caps never carry one is logged from whatever they
+  // did say after this many, so the line cannot go missing. 30 fires is about a
+  // second at 30 fps.
+  static constexpr int kAv1MezzanineMaxFires = 30;
+  int av1_mezzanine_fires {0};
+  auto log_av1_mezzanine(GstPad* parser_src, GstPadProbeInfo* info)
+      -> GstPadProbeReturn;
+  auto encoder_input_format() -> std::string;
+  static auto on_av1_mezzanine_buffer(GstPad* pad,
+                                      GstPadProbeInfo* info,
+                                      gpointer user_data) -> GstPadProbeReturn;
   void clear_pipeline_state();
   auto pull_from_sink(GstElement* encode::*sink_field) -> buffer_data;
   void build_pipeline();
