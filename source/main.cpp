@@ -201,7 +201,8 @@ static void rist_oob_cb(const uint8_t* data, size_t size)
 }
 
 static bool run_transport();
-static void release_hosted_session();
+static void ensure_hosted_watchdog();
+static void stop_hosted_watchdog();
 
 // Reflect the encode lifecycle in the UI. This is called from the SEND thread,
 // and the UI thread holds the FLTK lock while it joins that thread on Stop --
@@ -869,6 +870,165 @@ static void apply_allocation_to_receiver(const hosted_session& session,
   }
 }
 
+// ---------------------------------------------------------------------------
+// E4: the held-session watchdog.
+//
+// A held session means the node should be on its standby slate until the
+// operator starts (or ends) the session. If the node restarts -- a reboot, an
+// OOM-killed container -- it comes back with no /start body at all: no outputs,
+// no slate, and a portal that still bills for a session carrying nothing. The
+// encoder is the only side that knows the body, so it re-posts it.
+//
+// What it must NEVER do is allocate. A fresh allocation is a fresh session id,
+// which is a different RIST destination and therefore a different video, and it
+// orphans the one the operator is paying for.
+//
+// The loop reads the persisted session each tick rather than caching it, which
+// is what makes "End Session cleared the file" stop the poll without any
+// cross-thread signalling: no file, no session, no poll.
+// ---------------------------------------------------------------------------
+namespace
+{
+std::atomic<bool> g_watchdog_wake {false};  // ask the loop to leave now
+std::atomic<bool> g_watchdog_live {false};  // the thread is still in its loop
+std::atomic<bool> g_shutdown {false};       // the app is exiting
+std::mutex g_watchdog_mutex;
+std::thread g_watchdog;
+
+// A sleep that stays answerable: shutdown must not wait out a five-minute
+// retry, and Stop/Start must not wait out a poll interval.
+bool interruptible_sleep(int seconds)
+{
+  for (int i = 0; i < seconds * 10; ++i) {
+    if (g_watchdog_wake.load(std::memory_order_acquire)
+        || g_shutdown.load(std::memory_order_acquire))
+    {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+  return true;
+}
+}  // namespace
+
+// Re-post the stored start body to the receiver. The rebuild is what gives a
+// restarted node its outputs and its slate back; the receiver's /start is
+// idempotent on an identical body, so a spurious re-post costs nothing.
+static void repost_stored_start(const hosted_session& session)
+{
+  source_geometry geometry;
+  // The encoder is not running while this poll does the work, so the geometry
+  // is genuinely unknown here: zero is the contract's "unknown", and the
+  // receiver then holds its slate at the feed's size instead of being told a
+  // size this side is guessing at.
+  if (auto encoder = ctx.lib.encoder_ptr.load()) {
+    geometry = encoder->source_geometry_now();
+  }
+  transport_log("Receiver was not running; re-posting the stored start body "
+                "for " + session.session_id + ".\n");
+  apply_allocation_to_receiver(session,
+                               ctx.lib.encode_cfg.selected_codec,
+                               geometry,
+                               rist_bandwidth_ceiling_kbps);
+}
+
+static void hosted_watchdog_loop()
+{
+  g_watchdog_live.store(true, std::memory_order_release);
+  int failures = 0;
+  bool failing = false;
+
+  // One interval before the first probe: a session that was just configured by
+  // an allocation is idle by definition, and asking immediately would re-post
+  // the very body that allocation just sent.
+  if (!interruptible_sleep(5)) {
+    g_watchdog_live.store(false, std::memory_order_release);
+    return;
+  }
+
+  while (!g_watchdog_wake.load(std::memory_order_acquire)
+         && !g_shutdown.load(std::memory_order_acquire))
+  {
+    // While this encoder is sending, the node is not on standby and the poll
+    // has nothing to say. The loop stays alive rather than exiting: a Stop
+    // puts the node back on the slate, and the poll has to resume then.
+    if (ctx.lib.is_running.load(std::memory_order_acquire)) {
+      failures = 0;
+      failing = false;
+      if (!interruptible_sleep(2)) {
+        break;
+      }
+      continue;
+    }
+
+    const std::optional<hosted_session> held = settings::load_hosted_session();
+    if (!held.has_value()) {
+      // End Session cleared it, or it was never there. Either way the poll is
+      // done: it exists to hold a session, not to find one.
+      transport_log("Hosted watchdog: the session was ended; polling stopped.\n");
+      break;
+    }
+    if (held->control_url.empty()) {
+      transport_log("Hosted watchdog: the held session has no control URL; "
+                    "polling stopped.\n");
+      break;
+    }
+
+    const control_client::receiver_status st =
+        control_client::status(held->control_url, held->control_token);
+    const hold_poll_decision decision =
+        decide_hold_poll(st.ok, st.is_running, failures);
+
+    if (!st.ok) {
+      ++failures;
+      // Only the transition is logged: a node that stays down for an hour must
+      // not fill the pane with the same line 40 times.
+      if (!failing) {
+        transport_log("Hosted watchdog: receiver status unavailable (" + st.error
+                      + "); retrying with backoff.\n");
+        failing = true;
+      }
+    } else {
+      if (failing) {
+        transport_log("Hosted watchdog: receiver answered again.\n");
+        failing = false;
+      }
+      failures = 0;
+      if (decision.repost_start) {
+        repost_stored_start(*held);
+      }
+    }
+
+    if (!interruptible_sleep(decision.next_poll_seconds)) {
+      break;
+    }
+  }
+
+  g_watchdog_live.store(false, std::memory_order_release);
+}
+
+static void ensure_hosted_watchdog()
+{
+  std::lock_guard<std::mutex> guard(g_watchdog_mutex);
+  if (g_watchdog.joinable()) {
+    if (g_watchdog_live.load(std::memory_order_acquire)) {
+      return;  // already polling
+    }
+    g_watchdog.join();  // the previous loop ended on its own; reclaim it
+  }
+  g_watchdog_wake.store(false, std::memory_order_release);
+  g_watchdog = std::thread(hosted_watchdog_loop);
+}
+
+static void stop_hosted_watchdog()
+{
+  g_watchdog_wake.store(true, std::memory_order_release);
+  std::lock_guard<std::mutex> guard(g_watchdog_mutex);
+  if (g_watchdog.joinable()) {
+    g_watchdog.join();
+  }
+}
+
 static void hosted_allocate()
 {
   const hosted_config hosted = ctx.lib.hosted;
@@ -1027,6 +1187,9 @@ static void hosted_allocate()
         }
         apply_allocation_to_receiver(
             outcome.session, source_codec, geometry, video_kbps);
+        // E4: from now on the session is held, so a node that restarts must get
+        // its configuration back without the operator doing anything.
+        ensure_hosted_watchdog();
         if (!outcome.reported) {
           transport_log("Bridge report failed: " + outcome.error + "\n");
         }
@@ -1100,35 +1263,168 @@ static void stop()
       ctx.ui->set_hosted_session_held(true);
       ctx.ui->set_hosted_state(text, false);
     }
+    // E4: the node is on the slate now, so the poll has to be running to notice
+    // a node that restarts while nobody is sending.
+    ensure_hosted_watchdog();
   }
 }
 
-// Release the hosted allocation this encoder still holds, if any. The session
-// id is only known through the file written at allocation time, so reading it
-// back is what makes a release possible at all: without this, a Stop (or a
-// crash) left the receiver running and its RIST port bound on the node, and the
-// portal kept counting the slot.
-static void release_hosted_session()
+// ---------------------------------------------------------------------------
+// E3: reattach to the session this encoder allocated before it restarted.
+//
+// A crash, a service restart or a power cut with a session held used to leave
+// the encoder with no idea what it had: the old code DEALLOCATED it at launch,
+// which threw away a session the operator had configured and was paying for.
+// The session id is on disk, so the encoder asks the portal what became of it
+// and acts on the answer:
+//
+//   allocated/running -> restore the destination and re-post the stored /start
+//                        body (a recreated node container has its config back)
+//   ended, or 404     -> drop the file: there is nothing left to hold
+//   no answer / 5xx   -> keep the file, say "reconnect pending", retry every
+//                        15 s for up to five minutes, then give up and KEEP the
+//                        file so the next launch tries again
+//   refused token     -> keep the file and say so: retrying would only produce
+//                        five minutes of 401s, and the session may be live
+//
+// It never allocates. A new allocation is a new session id, and the video the
+// operator is paying for is the one on the old id.
+// ---------------------------------------------------------------------------
+namespace
 {
-  const std::optional<hosted_session> held = settings::load_hosted_session();
-  if (!held.has_value()) {
+constexpr int kReattachRetrySeconds = 15;
+constexpr int kReattachGiveUpAfterSeconds = 300;  // five minutes
+}  // namespace
+
+static void hosted_reattach()
+{
+  const std::optional<hosted_session> persisted =
+      settings::load_hosted_session();
+  if (!persisted.has_value()) {
+    return;  // nothing was held
+  }
+  const std::string session_id = persisted->session_id;
+  const hosted_config hosted = ctx.lib.hosted;
+
+  if (hosted.backplane_url.empty() || hosted.device_token.empty()) {
+    // Without a device token the portal cannot be asked, so nothing is
+    // guessed at: the file stays (the session may well be live and billable)
+    // and the operator is told what is missing.
+    transport_log("A hosted session (" + session_id
+                  + ") was held but this encoder is not signed in; the session "
+                    "is left untouched. Sign in and press Allocate, or End "
+                    "Session to close it.\n");
+    if (ctx.ui != nullptr) {
+      ctx.ui->set_hosted_session_held(true);
+      ctx.ui->set_hosted_state(
+          "Session " + session_id + " held - sign in to reattach", true);
+    }
     return;
   }
-  const hosted_config hosted = ctx.lib.hosted;
-  if (!hosted.backplane_url.empty() && !hosted.device_token.empty()) {
-    backplane_client backplane(
-        hosted.backplane_url,
-        hosted.device_token,
-        make_httplib_transport(hosted.backplane_url, hosted.device_token));
-    std::string err;
-    if (backplane.deallocate(held->session_id, err)) {
-      transport_log("Released hosted session " + held->session_id + ".\n");
-    } else {
-      transport_log("Release of session " + held->session_id + " failed: " + err
-                    + "\n");
-    }
+
+  if (ctx.ui != nullptr) {
+    ctx.ui->set_hosted_state("Reattaching to " + session_id + "...", false);
   }
-  settings::clear_hosted_session();
+
+  backplane_client backplane(
+      hosted.backplane_url,
+      hosted.device_token,
+      make_httplib_transport(hosted.backplane_url, hosted.device_token));
+
+  int waited = 0;
+  bool announced = false;
+  while (!g_shutdown.load(std::memory_order_acquire)) {
+    const session_fetch_result fetched = backplane.get_session(session_id);
+    switch (decide_reattach(fetched.probe, fetched.state)) {
+      case reattach_action::reattach: {
+        // The portal may restate the URLs; the show-once secrets are only on
+        // disk, so the two are merged rather than replaced.
+        const hosted_session session =
+            merge_session(*persisted, fetched.session);
+        // Written before use: if this process dies on the way to re-posting
+        // /start, the next launch must still know the session it holds.
+        settings::save_hosted_session(session);
+
+        if (ctx.ui != nullptr) {
+          // The destination the operator lost with the restart: without it the
+          // next Start Encode has nowhere to send.
+          ctx.ui->set_encoder_target(session.rist_url);
+          ctx.ui->set_hosted_session_held(true);
+          ctx.ui->set_hosted_state("Reattached to " + session.session_id,
+                                   false);
+        }
+        transport_log("Reattached to " + session.session_id + " ("
+                      + (fetched.state.empty() ? std::string {"state unknown"}
+                                               : fetched.state)
+                      + ") - the session survived the restart.\n");
+        // Re-assert the receiver's configuration: a node whose container was
+        // recreated comes back with no outputs and no slate. /start is
+        // idempotent on an identical body, so a node that did not restart just
+        // ignores it.
+        repost_stored_start(session);
+        ensure_hosted_watchdog();
+        return;
+      }
+
+      case reattach_action::clear_session:
+        // The portal no longer has a session to hold: 404 or an ended state.
+        // Dropping the file is the honest outcome -- there is nothing to
+        // deallocate and nothing to reattach to.
+        settings::clear_hosted_session();
+        transport_log("Hosted: previous session " + session_id
+                      + " had ended; cleared it.\n");
+        if (ctx.ui != nullptr) {
+          ctx.ui->set_hosted_session_held(false);
+          ctx.ui->set_encoder_target(std::string {});
+          ctx.ui->set_hosted_state(
+              "Previous session had ended - allocate a new one", false);
+        }
+        return;
+
+      case reattach_action::keep_report:
+        // Not a transient condition: a refused token, or a state this build
+        // does not understand. Keep the file, because a billable session may
+        // still be behind it, and hand the decision to the operator.
+        transport_log("Hosted: could not reattach to " + session_id + " ("
+                      + fetched.error + "); the session record is kept.\n");
+        if (ctx.ui != nullptr) {
+          ctx.ui->set_hosted_session_held(true);
+          ctx.ui->set_hosted_state("Reattach needs attention: " + fetched.error,
+                                   true);
+        }
+        return;
+
+      case reattach_action::retry:
+        break;
+    }
+
+    if (!announced) {
+      transport_log("Hosted: reconnect pending for session " + session_id + " ("
+                    + fetched.error + "); retrying every "
+                    + std::to_string(kReattachRetrySeconds)
+                    + " s for up to five minutes.\n");
+      if (ctx.ui != nullptr) {
+        ctx.ui->set_hosted_session_held(true);
+        ctx.ui->set_hosted_state("Reconnect pending - " + session_id, false);
+      }
+      announced = true;
+    }
+    if (waited >= kReattachGiveUpAfterSeconds) {
+      // Give up trying, but keep the record: the session is still the
+      // operator's, and the next launch is another chance to reattach.
+      transport_log("Hosted: giving up reattaching to " + session_id
+                    + " after five minutes; the session record is kept.\n");
+      if (ctx.ui != nullptr) {
+        ctx.ui->set_hosted_state(
+            "Reattach gave up - " + session_id + " is still recorded", true);
+      }
+      return;
+    }
+    if (!interruptible_sleep(kReattachRetrySeconds)) {
+      return;  // the app is exiting
+    }
+    waited += kReattachRetrySeconds;
+  }
 }
 
 // The End Session action (E2). Deallocate the session the encoder still holds
@@ -1174,6 +1470,8 @@ static void hosted_end_session()
         std::string err;
         if (backplane.deallocate(session_id, err)) {
           settings::clear_hosted_session();
+          // E4: nothing is held any more, so the poll has nothing to watch.
+          stop_hosted_watchdog();
           transport_log("Session " + session_id + " ended.\n");
           if (ctx.ui != nullptr) {
             ctx.ui->set_hosted_session_held(false);
@@ -1570,13 +1868,16 @@ auto main(int argc, char** argv) -> int
                            ctx.lib.hosted);
   }
 
-  // A previous run can leave an allocation behind (a crash, or a kill that beat
-  // the release). Give it back before the operator can allocate again, so the
-  // node is not left holding a receiver and its RIST port for a dead session.
+  // A previous run can leave an allocation behind (a crash, a service restart,
+  // a kill that beat the release). E3: do NOT hand it back -- reattach to it.
+  // The session id, its RIST destination and the receiver's start body are
+  // already on disk, so the only thing missing is this process's knowledge of
+  // them. Deallocating here (what this used to do) threw away a session the
+  // operator had configured and was being billed for.
   {
     std::error_code ec;
     if (std::filesystem::exists(settings::hosted_session_path(), ec)) {
-      track_control_thread(std::thread([] { release_hosted_session(); }));
+      track_control_thread(std::thread([] { hosted_reattach(); }));
     }
   }
 
@@ -1623,6 +1924,11 @@ auto main(int argc, char** argv) -> int
   if (ctx.transporter) {
     ctx.transporter.reset();
   }
+  // Tell the background hosted workers (the E3 reattach retry and the E4
+  // poll) that the app is leaving, then join them: neither may call
+  // transport_log()/ctx.ui once the FLTK ui is destroyed below.
+  g_shutdown.store(true, std::memory_order_release);
+  stop_hosted_watchdog();
   // Join any in-flight receiver-control POSTs before the FLTK ui is destroyed
   // so a worker cannot call transport_log()/ctx.ui after teardown.
   join_control_threads();

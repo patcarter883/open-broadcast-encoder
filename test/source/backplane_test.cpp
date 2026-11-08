@@ -438,3 +438,172 @@ TEST_CASE("a transcode target this build does not word for is still shown",
       format_destination_list({dv {"Future", "rtmp", "av1"}});
   CHECK(text.find("transcode av1") != std::string::npos);
 }
+
+// ---------------------------------------------------------------------------
+// E3: reattach on launch.
+//
+// The decision table is pure so every branch is pinned: which answers mean
+// "restore and re-post", which mean "the session is over", and -- the one that
+// costs money if it is wrong -- which mean "keep the record".
+// ---------------------------------------------------------------------------
+TEST_CASE("a fetch is classified by what it can be acted on", "[backplane][e3]")
+{
+  // A 2xx with a readable session is a session.
+  CHECK(classify_probe(200, true) == session_probe::found);
+  // A 2xx nobody can read is not "gone": treat it as a transient failure, or
+  // one unparseable response would delete a live allocation.
+  CHECK(classify_probe(200, false) == session_probe::unavailable);
+  CHECK(classify_probe(404, false) == session_probe::gone);
+  CHECK(classify_probe(401, false) == session_probe::unauthorised);
+  CHECK(classify_probe(403, false) == session_probe::unauthorised);
+  CHECK(classify_probe(500, false) == session_probe::unavailable);
+  CHECK(classify_probe(503, false) == session_probe::unavailable);
+  // No HTTP status at all: the transport never reached the portal.
+  CHECK(classify_probe(0, false) == session_probe::unavailable);
+}
+
+TEST_CASE("a live session is reattached to, not replaced", "[backplane][e3]")
+{
+  CHECK(decide_reattach(session_probe::found, "allocated")
+        == reattach_action::reattach);
+  CHECK(decide_reattach(session_probe::found, "running")
+        == reattach_action::reattach);
+  // The portal's casing and padding are not a contract this build should
+  // depend on.
+  CHECK(decide_reattach(session_probe::found, " Running ")
+        == reattach_action::reattach);
+}
+
+TEST_CASE("a session that is over is cleared", "[backplane][e3]")
+{
+  for (const char* state : {"ended", "released", "terminated", "completed",
+                            "expired", "closed"})
+  {
+    INFO("state: " << state);
+    CHECK(decide_reattach(session_probe::found, state)
+          == reattach_action::clear_session);
+  }
+  // 404 is the same fact stated differently: the portal does not have it.
+  CHECK(decide_reattach(session_probe::gone, "")
+        == reattach_action::clear_session);
+}
+
+TEST_CASE("an unreadable or unknown session keeps its record", "[backplane][e3]")
+{
+  // A transient failure must never delete the file: the session may be live and
+  // billable, and the next launch is another chance.
+  CHECK(decide_reattach(session_probe::unavailable, "")
+        == reattach_action::retry);
+  CHECK(decide_reattach(session_probe::unavailable, "running")
+        == reattach_action::retry);
+
+  // A refused device token will not fix itself in fifteen seconds.
+  CHECK(decide_reattach(session_probe::unauthorised, "running")
+        == reattach_action::keep_report);
+
+  // A state this build does not know: neither reattach (it might be tearing
+  // down) nor delete (it might be billing).
+  CHECK(decide_reattach(session_probe::found, "suspended")
+        == reattach_action::keep_report);
+
+  // A document with no state word is a session the portal still has, saying
+  // nothing about it being over: refusing to reattach would cost the operator
+  // the destination for the rest of a long session.
+  CHECK(decide_reattach(session_probe::found, "")
+        == reattach_action::reattach);
+}
+
+TEST_CASE("a session read never blanks a show-once secret", "[backplane][e3]")
+{
+  hosted_session persisted;
+  persisted.session_id = "s_abc";
+  persisted.rist_url = "rist://syd1-a.relay.example.au:20144";
+  persisted.control_url = "https://syd1-a.relay.example.au/s/s_abc";
+  persisted.control_token = "tok-xyz";
+  persisted.psk = "deadbeef";
+  persisted.psk_aes = 256;
+  persisted.start_body_json = "{\"session_id\":\"s_abc\"}";
+  persisted.bridge_present = true;
+  persisted.bridge_id = 7;
+
+  // The portal restates what it may, and states the new state. It does NOT
+  // restate the control token: that is shown once, at allocation.
+  hosted_session fresh;
+  fresh.session_id = "s_abc";
+  fresh.control_url = "https://syd1-b.relay.example.au/s/s_abc";
+  fresh.state = "running";
+
+  const hosted_session merged = merge_session(persisted, fresh);
+
+  CHECK(merged.control_url == "https://syd1-b.relay.example.au/s/s_abc");
+  CHECK(merged.state == "running");
+  CHECK(merged.control_token == "tok-xyz");  // not blanked
+  CHECK(merged.psk == "deadbeef");
+  CHECK(merged.rist_url == persisted.rist_url);  // restated by nobody
+  CHECK(merged.bridge_present);
+  CHECK(merged.bridge_id == 7);
+}
+
+TEST_CASE("a session is read back from the portal by id", "[backplane][e3]")
+{
+  std::vector<std::string> calls;
+  const std::string body =
+      "{\"session\":{\"id\":\"s_abc\",\"state\":\"allocated\","
+      "\"rist_url\":\"rist://syd1-a.relay.example.au:20144\","
+      "\"control_url\":\"https://syd1-a.relay.example.au/s/s_abc\"}}";
+
+  backplane_client client(
+      "https://api.example.au",
+      "devtok",
+      [&calls, &body](const std::string& method,
+                      const std::string& path,
+                      const std::string&,
+                      const std::string&) -> std::pair<int, std::string>
+      {
+        calls.push_back(method + " " + path);
+        return {200, body};
+      });
+
+  const session_fetch_result r = client.get_session("s_abc");
+
+  REQUIRE(r.ok);
+  CHECK(r.probe == session_probe::found);
+  CHECK(r.state == "allocated");
+  CHECK(r.session.session_id == "s_abc");
+  CHECK(r.session.control_url == "https://syd1-a.relay.example.au/s/s_abc");
+  REQUIRE(calls.size() == 1);
+  CHECK(calls.at(0) == "GET /api/v1/sessions/s_abc");
+}
+
+TEST_CASE("a 404 session read is 'gone', not an error", "[backplane][e3]")
+{
+  backplane_client client(
+      "https://api.example.au",
+      "devtok",
+      [](const std::string&, const std::string&, const std::string&,
+         const std::string&) -> std::pair<int, std::string>
+      { return {404, "{\"message\":\"Not found\"}"}; });
+
+  const session_fetch_result r = client.get_session("s_old");
+
+  CHECK_FALSE(r.ok);
+  CHECK(r.probe == session_probe::gone);
+  CHECK_FALSE(r.error.empty());
+  CHECK(decide_reattach(r.probe, r.state) == reattach_action::clear_session);
+}
+
+TEST_CASE("an unreachable portal is a retry, not a verdict", "[backplane][e3]")
+{
+  backplane_client client(
+      "https://api.example.au",
+      "devtok",
+      [](const std::string&, const std::string&, const std::string&,
+         const std::string&) -> std::pair<int, std::string>
+      { return {0, ""}; });  // transport failure
+
+  const session_fetch_result r = client.get_session("s_abc");
+
+  CHECK_FALSE(r.ok);
+  CHECK(r.probe == session_probe::unavailable);
+  CHECK(decide_reattach(r.probe, r.state) == reattach_action::retry);
+}

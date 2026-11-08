@@ -248,3 +248,50 @@ TEST_CASE("an unusable allocation body is refused rather than sent",
   REQUIRE_FALSE(control_client::prepare_hosted_body("", codec::h264, out, err));
   REQUIRE_FALSE(err.empty());
 }
+
+// ---------------------------------------------------------------------------
+// E4: the held-session poll decision.
+//
+// Pure, so the branch that matters most -- re-post ONLY when the receiver
+// answered and said it is idle -- is pinned without a receiver or a clock.
+// ---------------------------------------------------------------------------
+TEST_CASE("the held-session poll re-posts only into a receiver that answered",
+          "[hosted][e4]")
+{
+  // A receiver that says it is encoding: nothing to do, still poll at the
+  // normal rate.
+  {
+    const hold_poll_decision d = decide_hold_poll(true, true, 0);
+    CHECK_FALSE(d.repost_start);
+    CHECK(d.next_poll_seconds == 5);
+  }
+
+  // The node rebooted or its container was OOM-killed: idle, and the stored
+  // body has to go back.
+  {
+    const hold_poll_decision d = decide_hold_poll(true, false, 0);
+    CHECK(d.repost_start);
+    CHECK(d.next_poll_seconds == 5);
+  }
+
+  // The receiver did not answer. Re-posting into an unknown state is how a
+  // poll becomes a retry storm against a node that is still booting.
+  {
+    const hold_poll_decision d = decide_hold_poll(false, false, 1);
+    CHECK_FALSE(d.repost_start);
+  }
+}
+
+TEST_CASE("repeated status failures lengthen the poll interval", "[hosted][e4]")
+{
+  // 5, 10, 20, 40, then the 60 s ceiling -- and it stays there.
+  CHECK(decide_hold_poll(false, false, 0).next_poll_seconds == 5);
+  CHECK(decide_hold_poll(false, false, 1).next_poll_seconds == 10);
+  CHECK(decide_hold_poll(false, false, 2).next_poll_seconds == 20);
+  CHECK(decide_hold_poll(false, false, 3).next_poll_seconds == 40);
+  CHECK(decide_hold_poll(false, false, 4).next_poll_seconds == 60);
+  CHECK(decide_hold_poll(false, false, 100).next_poll_seconds == 60);
+
+  // A success resets the interval: failures are consecutive, not cumulative.
+  CHECK(decide_hold_poll(true, true, 0).next_poll_seconds == 5);
+}

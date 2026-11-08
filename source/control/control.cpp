@@ -28,6 +28,30 @@ const char* codec_str(codec c) noexcept
   }
   return "h264";
 }
+
+// Split the allocation's control_url into the origin httplib wants and the
+// per-session path the endpoint hangs off. The URL carries the session path
+// (e.g. https://node.example.au/s/s_9f2c), and httplib::Client(origin) discards
+// any path it was given, so the two halves must be separated. Shared by /start
+// and /status so the two can never disagree about which session they address.
+struct control_target
+{
+  std::string origin;
+  std::string path;  // the session path, without the endpoint
+};
+
+control_target split_control_url(const std::string& control_url)
+{
+  control_target t;
+  const auto scheme = control_url.find("://");
+  const auto path_at =
+      control_url.find('/', scheme == std::string::npos ? 0 : scheme + 3);
+  t.origin = path_at == std::string::npos ? control_url
+                                          : control_url.substr(0, path_at);
+  t.path = path_at == std::string::npos ? std::string {}
+                                        : control_url.substr(path_at);
+  return t;
+}
 }  // namespace
 
 bool control_client::prepare_hosted_body(const std::string& start_body_json,
@@ -108,23 +132,14 @@ bool control_client::start_hosted(const std::string& control_url,
                                   std::uint32_t ingest_height)
 {
   // Split the allocation's control_url into the origin httplib wants and the
-  // path /start hangs off. The URL carries the per-session path (e.g.
-  // https://node.example.au/s/s_9f2c), and httplib::Client(origin) discards any
-  // path it was given, so the two halves must be separated here.
-  const auto scheme = control_url.find("://");
-  const auto path_at =
-      control_url.find('/', scheme == std::string::npos ? 0 : scheme + 3);
-  const std::string origin = path_at == std::string::npos
-      ? control_url
-      : control_url.substr(0, path_at);
-  const std::string path =
-      (path_at == std::string::npos ? std::string {}
-                                    : control_url.substr(path_at))
-      + "/start";
+  // path /start hangs off.
+  const control_target target = split_control_url(control_url);
+  const std::string& origin = target.origin;
   if (origin.empty()) {
     err = "allocation returned an empty control_url";
     return false;
   }
+  const std::string path = target.path + "/start";
 
   std::string body;
   if (!prepare_hosted_body(start_body_json,
@@ -174,4 +189,76 @@ bool control_client::start_hosted(const std::string& control_url,
     return false;
   }
   return true;
+}
+
+control_client::receiver_status control_client::status(
+    const std::string& control_url, const std::string& control_token)
+{
+  receiver_status r;
+  const control_target target = split_control_url(control_url);
+  if (target.origin.empty()) {
+    r.error = "empty control_url";
+    return r;
+  }
+  const std::string path = target.path + "/status";
+
+  secrets::register_secret(control_token);  // M1.9
+  httplib::Client cli(target.origin);
+  // Short timeouts: this runs on the poll loop, which must stay responsive to
+  // the encoder starting and to the app exiting. A receiver that needs longer
+  // than this is one the next poll will ask again anyway.
+  cli.set_connection_timeout(2, 0);
+  cli.set_read_timeout(3, 0);
+  httplib::Headers headers;
+  if (!control_token.empty()) {
+    headers.emplace("Authorization", "Bearer " + control_token);
+  }
+
+  const auto res = cli.Get(path, headers);
+  if (!res) {
+    r.error = "no response from the receiver's control plane at "
+        + target.origin + path + " (" + httplib::to_string(res.error()) + ")";
+    return r;
+  }
+  r.http_status = res->status;
+  if (res->status < 200 || res->status >= 300) {
+    r.error = "receiver status failed: HTTP " + std::to_string(res->status);
+    return r;
+  }
+  const json body = json::parse(res->body, nullptr, false);
+  if (body.is_discarded() || !body.is_object()
+      || !body.contains("is_running") || !body["is_running"].is_boolean())
+  {
+    // Without an unambiguous boolean there is nothing to act on, and treating
+    // a missing field as "not running" would re-post /start on every poll
+    // against a receiver that never asked for it.
+    r.error = "receiver status carried no is_running boolean";
+    return r;
+  }
+  r.is_running = body["is_running"].get<bool>();
+  r.ok = true;
+  return r;
+}
+
+hold_poll_decision decide_hold_poll(bool status_ok,
+                                    bool is_running,
+                                    int consecutive_failures)
+{
+  hold_poll_decision d;
+  if (!status_ok) {
+    // No answer: keep holding and try again later, but never re-post into an
+    // unknown state. The interval doubles so a node that is down for an hour
+    // is not asked 720 times.
+    int interval = 5;
+    for (int i = 0; i < consecutive_failures && interval < 60; ++i) {
+      interval *= 2;
+    }
+    d.next_poll_seconds = interval > 60 ? 60 : interval;
+    return d;
+  }
+  if (!is_running) {
+    d.repost_start = true;
+  }
+  d.next_poll_seconds = 5;
+  return d;
 }
