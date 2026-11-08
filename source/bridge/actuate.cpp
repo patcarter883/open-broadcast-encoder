@@ -5,10 +5,34 @@
 
 #include "bridge/actuate.h"
 
+#include "lib/lib.h"
+
 using json = nlohmann::json;
 
 namespace bridge
 {
+
+namespace
+{
+// RIST carries a per-leg key in the URL, so the secret can apply to the WAN
+// output without touching the bridge's clear listen leg. libRIST reads
+// `secret=` and `aes-type=` from the query string.
+std::string with_leg_secret(std::string url, const std::string& secret, int aes)
+{
+  if (secret.empty()) {
+    return url;
+  }
+  const char sep = url.find('?') == std::string::npos ? '?' : '&';
+  url += sep;
+  url += "secret=";
+  url += secret;
+  if (aes == 128 || aes == 256) {
+    url += "&aes-type=";
+    url += std::to_string(aes);
+  }
+  return url;
+}
+}  // namespace
 
 json bridge_desired_config(const actuate_request& req,
                            const hosted_session& session)
@@ -21,7 +45,11 @@ json bridge_desired_config(const actuate_request& req,
   json outputs = json::array();
   if (!session.rist_url.empty()) {
     json out;
-    out["address"] = session.rist_url;
+    // Encryption is opt-in and applies only to this output leg; the listen
+    // leg above stays as configured (clear).
+    out["address"] = req.encrypt_wan_leg
+        ? with_leg_secret(session.rist_url, session.psk, session.psk_aes)
+        : session.rist_url;
     outputs.push_back(std::move(out));
   }
   desired["outputs"] = std::move(outputs);
@@ -43,8 +71,7 @@ std::string sendable_target(const std::string& listen_url,
   if (colon == std::string::npos || colon <= 6) {
     return listen_url;
   }
-  const std::string host =
-      listen_url.substr(7, colon - 7);
+  const std::string host = listen_url.substr(7, colon - 7);
   const bool wildcard =
       host.empty() || host == "0.0.0.0" || host == "::" || host == "[::]";
   if (!wildcard) {
@@ -80,13 +107,24 @@ actuate_outcome actuator::run(const actuate_request& req,
 
   // 1. The session first: everything below depends on where the allocator put
   // us.
-  const alloc_result alloc = m_allocate(req.pop);
+  const alloc_result alloc = m_allocate(req.pop, req.encoder_name);
   if (!alloc.ok) {
     out.error_code = "allocate_failed";
     out.error = alloc.error;
     return out;
   }
   out.session = alloc.session;
+
+  // Encryption is opt-in per encoder. Asking for it without a key would leave
+  // the WAN leg in the clear while the UI says otherwise, so refuse instead.
+  if (req.encrypt_wan_leg && alloc.session.psk.empty()) {
+    out.error_code = "no_psk";
+    out.error = "WAN encryption is enabled but the allocation carried no key";
+    return out;
+  }
+  if (req.encrypt_wan_leg) {
+    secrets::register_secret(alloc.session.psk);
+  }
 
   // 2. Which bridge? The PORTAL's answer is authoritative (DT-20.1): the
   // allocation
@@ -129,11 +167,6 @@ actuate_outcome actuator::run(const actuate_request& req,
   rr.encoder_uid = req.encoder_uid;
   rr.allow_claim = req.allow_claim;
   rr.desired = bridge_desired_config(req, alloc.session);
-  // The session's key for the WAN leg. It comes from the allocation, and the
-  // bridge cannot obtain it any other way: it holds no backplane credential,
-  // and its config endpoint refuses secret-bearing fields by design.
-  rr.link_secret = alloc.session.psk;
-  rr.link_secret_aes = alloc.session.psk_aes;
 
   const reconcile_outcome rec = m_reconcile(rr, window);
   out.action = rec.action;

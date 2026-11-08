@@ -1,11 +1,46 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 
+#include <algorithm>
+
 #include "lib.h"
+
+#ifdef _WIN32
+#  include <windows.h>
+#else
+#  include <unistd.h>
+#endif
+
+namespace
+{
+constexpr std::size_t k_encoder_name_max = 64;
+}  // namespace
+
+auto default_encoder_name() -> std::string
+{
+  char buf[256] {};
+  std::string name;
+#ifdef _WIN32
+  DWORD len = static_cast<DWORD>(sizeof(buf));
+  if (::GetComputerNameA(buf, &len) != 0 && len > 0) {
+    name.assign(buf, len);
+  }
+#else
+  if (::gethostname(buf, sizeof(buf) - 1) == 0 && buf[0] != '\0') {
+    name = buf;
+  }
+#endif
+  if (name.empty()) {
+    return "encoder";
+  }
+  name.resize(std::min(name.size(), k_encoder_name_max));
+  return name;
+}
 
 library::library() noexcept
     : is_running {false}
     , run_flag {std::make_shared<std::atomic<bool>>(false)}
+    , encoder_name {default_encoder_name()}
 {
 }
 

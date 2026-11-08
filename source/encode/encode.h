@@ -66,7 +66,6 @@ public:
   explicit encode(
       const input_config& input_config,
       const encode_config& encode_config,
-      const receiver_control_config& receiver_config,
       std::shared_ptr<std::atomic<bool>> run_flag,
       std::function<void(const std::string&)> log_func,
       std::function<void(const std::string&)> input_status_func = {});
@@ -95,9 +94,6 @@ private:
   std::function<void(const std::string&)> input_status_func;
   const input_config& input_c;
   const encode_config& encode_c;
-  // Read for the raw-capture policy only: a destination that cannot carry the
-  // announced format earns a warning (see raw_format_verdict).
-  const receiver_control_config& receiver_c;
   std::string pipeline_str;
   GstElement* datasrc_pipeline = nullptr;
   GstElement* video_encoder = nullptr;

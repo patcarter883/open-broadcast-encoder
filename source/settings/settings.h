@@ -9,7 +9,7 @@
 #include "backplane/backplane.h"
 #include "lib/lib.h"
 
-// Persists the user-editable Encode / Output / Receiver / Input configuration
+// Persists the user-editable Encode / Output / Bridge / Input configuration
 // to a JSON file so the operator does not have to re-enter every setting on
 // each launch. JSON details (nlohmann) are confined to settings.cpp, mirroring
 // how control.cpp keeps httplib/nlohmann out of the rest of the encoder.
@@ -20,9 +20,8 @@ namespace settings
 // back to ~/.config/open-broadcast-encoder/settings.json.
 std::filesystem::path settings_file_path();
 
-// Serialize lib.input_cfg / encode_cfg / output_cfg / receiver_ctl to disk.
-// Best-effort: returns false on any I/O error (never throws). The runtime-only
-// receiver session_id is intentionally not persisted.
+// Serialize lib.input_cfg / encode_cfg / output_cfg / bridge_ctl to disk.
+// Best-effort: returns false on any I/O error (never throws).
 bool save(const library& lib);
 
 // Populate lib's configs from the settings file. Returns true if a file was

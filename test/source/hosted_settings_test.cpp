@@ -68,6 +68,29 @@ TEST_CASE("the backplane URL and hosted identity survive a round-trip",
   CHECK(loaded.hosted.bridge_id == 1);
 }
 
+TEST_CASE("the encoder's instance name survives a round-trip",
+          "[settings][identity]")
+{
+  const temp_config_home home;
+
+  library saved;
+  saved.encoder_name = "enc-studio-a";
+
+  REQUIRE(settings::save(saved));
+
+  library loaded;
+  REQUIRE(settings::load(loaded));
+
+  CHECK(loaded.encoder_name == "enc-studio-a");
+}
+
+TEST_CASE("the encoder defaults to a non-empty instance name",
+          "[settings][identity]")
+{
+  library lib;
+  CHECK_FALSE(lib.encoder_name.empty());
+}
+
 TEST_CASE("the bridge control settings survive a round-trip",
           "[settings][bridge]")
 {
@@ -80,6 +103,7 @@ TEST_CASE("the bridge control settings survive a round-trip",
   saved.bridge_ctl.listen_url = "rist://192.168.1.1:5000";
   saved.bridge_ctl.forward_to = "rist://relay.example.au:20000";
   saved.bridge_ctl.interface_name = "wwan0";
+  saved.bridge_ctl.encrypt_wan_leg = true;
 
   REQUIRE(settings::save(saved));
 
@@ -92,6 +116,7 @@ TEST_CASE("the bridge control settings survive a round-trip",
   CHECK(loaded.bridge_ctl.listen_url == "rist://192.168.1.1:5000");
   CHECK(loaded.bridge_ctl.forward_to == "rist://relay.example.au:20000");
   CHECK(loaded.bridge_ctl.interface_name == "wwan0");
+  CHECK(loaded.bridge_ctl.encrypt_wan_leg);
 }
 
 TEST_CASE("a persisted allocation can be read back and cleared",

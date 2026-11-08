@@ -166,7 +166,6 @@ void apply_sync_clock(GstElement* pipeline,
 
 encode::encode(const input_config& input_config,
                const encode_config& encode_config,
-               const receiver_control_config& receiver_config,
                std::shared_ptr<std::atomic<bool>> run_flag,
                std::function<void(const std::string&)> log_func,
                std::function<void(const std::string&)> input_status_func)
@@ -176,7 +175,6 @@ encode::encode(const input_config& input_config,
     , input_status_func {std::move(input_status_func)}
     , input_c {input_config}
     , encode_c {encode_config}
-    , receiver_c {receiver_config}
 {
 }
 
@@ -839,19 +837,8 @@ auto encode::raw_format_verdict(std::uint32_t obs_format) -> std::string
            "Format to NV12";
   }
 
-  // The stream can be carried; a destination may still not accept it. Warn and
-  // carry on -- the operator's decision is warn-but-allow -- naming the pair
-  // actually in use.
-  for (const auto& dest : this->receiver_c.destinations) {
-    if (dest.proto == output_proto::rtmp || dest.proto == output_proto::rtmps) {
-      this->log(
-          "warning: 10-bit capture with an RTMP destination: RTMP carries "
-          "10-bit only as Enhanced RTMP (eflvmux) and platform support for it "
-          "is uneven. SRT and RIST carry it cleanly, and an H.264 destination "
-          "cannot carry it at all.\n");
-      break;
-    }
-  }
+  // The stream can be carried. Which destination it fans out to is the portal's
+  // decision (DT-22) and is not known here, so there is nothing local to check.
   return {};
 }
 

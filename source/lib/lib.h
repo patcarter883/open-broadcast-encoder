@@ -147,51 +147,13 @@ struct output_config
 
 // RIST's bandwidth is a CEILING used to size the recovery ring, not a statement
 // about the link: the encoder reaches the bridge over Ethernet, and the WAN
-// budget belongs to the bridge's own leg (derived there from the shaper). A flat
-// ceiling above the payload gives the ring retransmission headroom without
-// overrunning the receiver's NACK window -- at the 5000 ms buffer the ring holds
-// ~bandwidth*0.475 packets and the window addresses 32768, so 20000 kbps keeps
-// ~9500 packets in range while leaving several Mbit/s of budget over the payload.
+// budget belongs to the bridge's own leg (derived there from the shaper). A
+// flat ceiling above the payload gives the ring retransmission headroom without
+// overrunning the receiver's NACK window -- at the 5000 ms buffer the ring
+// holds ~bandwidth*0.475 packets and the window addresses 32768, so 20000 kbps
+// keeps ~9500 packets in range while leaving several Mbit/s of budget over the
+// payload.
 inline constexpr int rist_bandwidth_ceiling_kbps = 20000;
-
-// ---------------------------------------------------------------------------
-// Receiver control: where the partner open-broadcast-receiver should restream
-// the incoming RIST stream, and how. Sent to the receiver over the REST
-// control plane on Start (see source/control/control.h and the receiver's
-// docs/CONTRACT.md). The codec/encoder enum integer order is the wire contract
-// shared with the receiver — do not renumber.
-// ---------------------------------------------------------------------------
-
-enum class output_proto : std::uint8_t
-{
-  rtmp,
-  rtmps,
-  srt,
-  rist
-};
-
-struct receiver_destination
-{
-  output_proto proto = output_proto::rtmp;
-  std::string url;
-  std::string stream_key;  // RTMP key or SRT streamid
-};
-
-struct receiver_control_config
-{
-  bool enabled = false;  // drive a receiver at all?
-  std::string control_host = "127.0.0.1";
-  int control_port = 8080;
-  std::string token;
-  std::string session_id;
-  // Transcode is NOT decided here. The portal owns the fan-out and each
-  // destination's opt-in transcode target (DT-22), and the encoder sends its
-  // `/start` body through verbatim -- see apply_allocation_to_receiver(). A
-  // local copy-vs-reencode setting used to live here and was never sent to the
-  // receiver: it collected a decision nothing acted on, so it is gone rather
-  // than kept alongside the portal's, which would be a second source of truth.
-  std::vector<receiver_destination> destinations;
-};
 
 // ---------------------------------------------------------------------------
 // Bridge control (DT-19, DT-21). The rist2rist bridge on the customer LAN: the
@@ -214,6 +176,9 @@ struct bridge_control_config
   std::string listen_url {"rist://0.0.0.0:5000"};  // what the BRIDGE listens on
   std::string forward_to;  // the external ingest node it forwards to
   std::string interface_name {"wan"};  // the bridge's uplink to bond over
+  // Encrypt the bridge's WAN output leg. The local listen leg stays clear:
+  // the secret rides the output URL, never a global bridge setting.
+  bool encrypt_wan_leg = false;
   std::string last_error;  // shown in the UI; not persisted
 };
 
@@ -264,6 +229,10 @@ inline std::pair<std::string, int> parse_address(const std::string& addr)
   }
 }
 
+// The system hostname, capped to a stable short label; "encoder" when the
+// hostname cannot be read.
+auto default_encoder_name() -> std::string;
+
 struct library
 {
   library() noexcept;
@@ -283,7 +252,9 @@ struct library
   input_config input_cfg;
   encode_config encode_cfg;
   output_config output_cfg;
-  receiver_control_config receiver_ctl;
+  // This instance's name: the title bar, the device-flow registration and the
+  // allocate request all use it so a multi-encoder account is readable.
+  std::string encoder_name;
   bridge_control_config bridge_ctl;
   hosted_config hosted;
 

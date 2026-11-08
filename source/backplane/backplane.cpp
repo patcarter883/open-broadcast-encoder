@@ -168,22 +168,26 @@ backplane_client::destinations_result backplane_client::list_destinations()
   return r;
 }
 
-alloc_result backplane_client::allocate(const std::string& pop)
+alloc_result backplane_client::allocate(const std::string& pop,
+                                        const std::string& encoder_name)
 {
   alloc_result r;
   if (!m_transport) {
     r.error = "no transport configured";
     return r;
   }
-  // DT-22: schema_version (and the optional POP) is ALL the request carries.
-  // The fan-out and recording are the operator's transport row on the
-  // backplane; sending them here would make the encoder a second source of
-  // truth for the same decision, and the backplane now REFUSES them outright
-  // (422) rather than silently preferring one.
+  // DT-22: the transport decision is never sent from here -- the fan-out and
+  // recording come from the operator's transport row, and the backplane
+  // refuses them (422) rather than silently preferring one. `encoder_name` is
+  // identity, not transport: it lets one account read back which instance
+  // allocated a session.
   json req;
   req["schema_version"] = 1;
   if (!pop.empty()) {
     req["pop"] = pop;
+  }
+  if (!encoder_name.empty()) {
+    req["encoder_name"] = encoder_name;
   }
 
   const auto [status, body] =
@@ -238,11 +242,13 @@ bool backplane_client::deallocate(const std::string& session_id,
 }
 
 alloc_result backplane_client::abandon_and_reallocate(
-    const std::string& lost_session_id, const std::string& pop)
+    const std::string& lost_session_id,
+    const std::string& pop,
+    const std::string& encoder_name)
 {
   std::string err;
   // Best-effort release of the orphan; a failure here (e.g. it was already
   // reaped) must not block getting a working session.
   deallocate(lost_session_id, err);
-  return allocate(pop);
+  return allocate(pop, encoder_name);
 }
