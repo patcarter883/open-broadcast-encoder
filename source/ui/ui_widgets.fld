@@ -477,10 +477,9 @@ class ui_widgets {open
               code0 {input_bridge_listen->value("rist://0.0.0.0:5000");}
             }
             Fl_Input input_bridge_listen_interface {
-              label {Listen interface}
-              tooltip {The bridge interface that carries the listen group; sent as miface=.}
+              label {Join iface}
+              tooltip {Interface on the bridge that joins a multicast listen group, sent as miface= inside the listen URL. Empty resolves it from this host's route to the group, then the bridge's uplink.}
               xywh {265 489 150 25} align 5
-              code0 {input_bridge_listen_interface->value("eth1");}
             }
             Fl_Input input_bridge_forward {
               label {Bridge forwards to}

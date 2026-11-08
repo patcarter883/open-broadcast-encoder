@@ -462,18 +462,18 @@ TEST_CASE("bridge_desired_config maps the session to the bridge's upstream",
   CHECK(desired.at("outputs").at(0).size() == 1);
 }
 
-TEST_CASE("a multicast listen URL carries the configured interface",
+TEST_CASE("a multicast listen URL carries the configured join interface",
           "[bridge][actuate]")
 {
   actuate_request req;
   req.listen_url = "rist://@239.1.1.10:5100";
-  req.listen_interface = "eth1";
+  req.listen_miface = "br-lan";
 
   const auto desired = bridge_desired_config(req, good_session());
 
   // A group join with no interface receives nothing, so the URL that actuates
   // the bridge already names the interface that owns the group.
-  CHECK(desired.at("listen_url") == "rist://@239.1.1.10:5100?miface=eth1");
+  CHECK(desired.at("listen_url") == "rist://@239.1.1.10:5100?miface=br-lan");
   // The destination stays a destination.
   CHECK(desired.at("outputs").at(0).at("address")
         == "rist://syd1-a.example.au:5000");
@@ -487,33 +487,54 @@ TEST_CASE("a unicast listen URL is left without an interface parameter",
 {
   actuate_request req;
   req.listen_url = "rist://0.0.0.0:5000";
-  req.listen_interface = "eth1";
+  req.listen_miface = "br-lan";
 
   const auto desired = bridge_desired_config(req, good_session());
 
   CHECK(desired.at("listen_url") == "rist://0.0.0.0:5000");
 }
 
-TEST_CASE("an empty listen interface leaves the URL untouched",
-          "[bridge][actuate]")
-{
-  actuate_request req;
-  req.listen_url = "rist://@239.1.1.10:5100";
-
-  const auto desired = bridge_desired_config(req, good_session());
-
-  CHECK(desired.at("listen_url") == "rist://@239.1.1.10:5100");
-}
-
 TEST_CASE("the interface parameter survives an existing query string",
           "[bridge][actuate]")
 {
   actuate_request req;
-  req.listen_url = "rist://@239.1.1.10:5100?buffer=2000";
-  req.listen_interface = "eth1";
+  req.listen_url = "rist://@239.1.1.10:5100?buffer=2000&rtt-max=500";
+  req.listen_miface = "br-lan";
 
   const auto desired = bridge_desired_config(req, good_session());
 
   CHECK(desired.at("listen_url")
-        == "rist://@239.1.1.10:5100?buffer=2000&miface=eth1");
+        == "rist://@239.1.1.10:5100?buffer=2000&rtt-max=500&miface=br-lan");
+}
+
+TEST_CASE("re-applying does not duplicate an interface already in the URL",
+          "[bridge][actuate]")
+{
+  actuate_request req;
+  req.listen_url = "rist://@239.1.1.10:5100?miface=br-lan&buffer=2000";
+  req.listen_miface = "br-lan";
+
+  const auto desired = bridge_desired_config(req, good_session());
+
+  // The second apply of a config already carrying the join changes nothing.
+  CHECK(desired.at("listen_url")
+        == "rist://@239.1.1.10:5100?miface=br-lan&buffer=2000");
+}
+
+TEST_CASE("an unset join interface is resolved, never left off a group",
+          "[bridge][actuate]")
+{
+  actuate_request req;
+  req.listen_url = "rist://@239.1.1.10:5100";
+  req.interface_name = "wan";  // the bridge's configured uplink
+
+  const auto desired = bridge_desired_config(req, good_session());
+
+  // With no setting the join resolves from this host's route to the group and,
+  // failing that, from the bridge's uplink -- so a multicast leg is actuated
+  // with SOME interface named rather than with none. Which name wins depends on
+  // the routing table, so only the shape is pinned here; the order itself is
+  // pinned in join_interface_test.
+  const std::string listen = desired.at("listen_url").get<std::string>();
+  CHECK(listen.rfind("rist://@239.1.1.10:5100?miface=", 0) == 0);
 }

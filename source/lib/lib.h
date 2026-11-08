@@ -174,10 +174,12 @@ struct bridge_control_config
   // reach a log pane, and shown in the UI only as "set"/"not set".
   std::string token;
   std::string listen_url {"rist://0.0.0.0:5000"};  // what the BRIDGE listens on
-  // The bridge's LAN interface that owns the listen group. A multicast listen
-  // URL reaches libRIST carrying this as `miface=`, because a group join with
-  // no interface receives nothing while every log line reads as healthy.
-  std::string listen_interface {"eth1"};
+  // Interface on the BRIDGE that joins a multicast listen group, carried in the
+  // listen URL as `miface=`. Empty means resolve it: the interface already in
+  // the URL, then this host's route to the group, then the uplink below (see
+  // bridge/join_interface.h). It names a device on the router, not on this
+  // host, so there is no compile-time value for it.
+  std::string listen_miface;
   std::string forward_to;  // the external ingest node it forwards to
   std::string interface_name {"wan"};  // the bridge's uplink to bond over
   // Encrypt the bridge's WAN output leg. The local listen leg stays clear:
