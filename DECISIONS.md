@@ -293,3 +293,22 @@ the run reports that the group will not be joined, rather than asserting a join 
 **Rejected.** A router-side init-script patch supplying the interface (a config push can drop it and
 silently darken the media path); a sibling `listen_iface` field in the desired state (rejected by the
 whitelist); hardcoding `eth1`.
+
+
+## EN-8 — The preview drops frames at the reader, before the push (2026-11-08)
+
+**Choice.** `raw_local_input` checks the preview appsrc's `current-level-bytes` against its `max-bytes`
+before every push (`appsrc_policy::preview_accepts`). A frame that would overrun the cap is unreffed
+there and counted, never handed to `gst_app_src_push_buffer`; the encode path keeps `block=true` and is
+untouched. Drops are reported one line a second with the count since the previous line.
+
+**Why.** `block=false` alone keeps the socket alive but lets a full queue drop *inside* the element,
+where nothing can count it -- so a preview that fell behind looked exactly like one that was working.
+The level check makes the drop an event the reader owns: it is counted, it is logged, and
+`push_buffer` is not called at all. An empty queue always admits one frame, so a cap below one frame
+cannot wedge the preview at zero progress.
+
+**Rejected.** Relying on `leaky-type=downstream` alone (silent, uncountable); logging every dropped
+frame (a stalled preview drops 60 a second, and the log would become the stall); raising the queue
+depth instead (that buys latency, not immunity -- a stalled sink always fills any finite queue).
+

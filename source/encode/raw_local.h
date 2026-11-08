@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -96,6 +97,11 @@ private:
   auto read_planar_as_interleaved(int fd,
                                   std::uint8_t* dst,
                                   std::uint32_t payload_bytes) -> bool;
+  // Preview pushes: never block, drop instead, and count what was dropped.
+  void push_preview(GstElement* src,
+                    GstBuffer* buf,
+                    std::uint32_t payload_bytes);
+  void note_preview_drop();
   auto running_pts(std::uint64_t timestamp) -> std::uint64_t;
   void log(const std::string& msg) const;
 
@@ -129,6 +135,11 @@ private:
   // Frames a preview sink refused; always 0 in backpressure mode, which ends
   // the stream instead of skipping.
   std::uint64_t dropped_frames {0};
+  // Drops since the last line was logged, and when that was: a stalled preview
+  // drops every frame, so the report is rate-limited to one line a second
+  // instead of one per frame.
+  std::uint64_t dropped_since_log {0};
+  std::chrono::steady_clock::time_point last_drop_log {};
   // Per-stream last PTS, so a timestamp at or behind the base can never
   // collapse to the same value twice (mpegtsmux drops non-advancing DTS).
   std::uint64_t last_video_pts {0};

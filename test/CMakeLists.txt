@@ -253,6 +253,23 @@ target_compile_features(ts_mux_test PRIVATE cxx_std_20)
 
 catch_discover_tests(ts_mux_test)
 
+# The preview queue against a real appsrc: a stalled sink must cost frames, not
+# the reader's progress. Pins the element properties the reader relies on
+# (current-level-bytes, max-bytes, and the fact that a lossy push still returns
+# GST_FLOW_OK), which is what makes the reader's own level check the only place
+# a drop can be counted.
+add_executable(preview_backpressure_test source/preview_backpressure_test.cpp)
+target_link_libraries(
+    preview_backpressure_test PRIVATE
+    PkgConfig::gstreamer
+    PkgConfig::gstreamer-app
+    Catch2::Catch2WithMain
+)
+target_include_directories(preview_backpressure_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(preview_backpressure_test PRIVATE cxx_std_20)
+
+catch_discover_tests(preview_backpressure_test)
+
 # ---- End-of-file commands ----
 
 add_folders(Test)

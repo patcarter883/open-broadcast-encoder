@@ -105,6 +105,22 @@ inline auto preview_video_max_bytes(const char* gst_format,
       wanted, k_preview_video_floor_bytes, k_preview_video_ceiling_bytes);
 }
 
+// Whether the preview pushes this frame or drops it: `level_bytes` is the
+// queue's current fill, `frame_bytes` the frame about to be pushed, `max_bytes`
+// the element's cap. A frame is dropped only when the queue already holds
+// something, so a cap smaller than one frame can never wedge the preview at
+// zero progress -- the first frame always goes in and the sink is then free to
+// consume it.
+//
+// The reader asks BEFORE pushing: block=false would keep the socket alive but a
+// full queue then drops inside the element, silently and without a count.
+inline auto preview_accepts(std::uint64_t level_bytes,
+                            std::uint64_t frame_bytes,
+                            std::uint64_t max_bytes) -> bool
+{
+  return level_bytes == 0 || level_bytes + frame_bytes <= max_bytes;
+}
+
 inline auto encode_video_src() -> std::string
 {
   return std::format(
