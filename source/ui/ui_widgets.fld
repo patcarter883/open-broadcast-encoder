@@ -219,6 +219,7 @@ class ui_widgets {open
               }
               Fl_Button btn_stop_encode {
                 label {Stop Encode}
+                tooltip {Ends the feed but keeps the hosted session: the receiver goes on its standby slate and the session stays billed until End Session.}
                 xywh {693 50 210 25} deactivate
               }
               Fl_Button btn_save_settings {
@@ -258,6 +259,11 @@ class ui_widgets {open
             Fl_Button btn_hosted_allocate {
               label Allocate
               xywh {655 464 100 25}
+            }
+            Fl_Button btn_hosted_end_session {
+              label {End Session}
+              tooltip {Closes the hosted session and stops billing it. Stop Encode leaves the session allocated (the node goes on standby), so this is the only action that ends it. Two clicks: click again within 5 s.}
+              xywh {765 464 110 25} deactivate
             }
             Fl_Output hosted_token_output {
               label {Device token}

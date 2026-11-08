@@ -842,7 +842,7 @@ static void hosted_sign_out()
 // the allocation worker, never the FLTK thread.
 static void apply_allocation_to_receiver(const hosted_session& session,
                                          codec source_codec,
-                                         std::uint32_t ingest_fps,
+                                         const source_geometry& geometry,
                                          int ingest_kbps)
 {
   if (session.start_body_json.empty()) {
@@ -857,8 +857,10 @@ static void apply_allocation_to_receiver(const hosted_session& session,
                                    session.start_body_json,
                                    source_codec,
                                    err,
-                                   ingest_fps,
-                                   ingest_kbps))
+                                   geometry.fps,
+                                   ingest_kbps,
+                                   geometry.width,
+                                   geometry.height))
   {
     transport_log("Receiver configured for session " + session.session_id
                   + ".\n");
@@ -1009,17 +1011,22 @@ static void hosted_allocate()
           // Point the encoder at the chain the allocation decided: the bridge
           // when one is in the path, the node otherwise.
           ctx.ui->set_encoder_target(outcome.encoder_target);
+          // The session is now on disk and billable, so End Session becomes the
+          // only way to close it (Stop Encode holds it).
+          ctx.ui->set_hosted_session_held(true);
         }
         // The session exists and is billable, so the receiver must be told what
         // to fan out to even when there is no UI to report to. Its transcode
         // gop is a duration, so the encoder states it in frames at the snapped
-        // rate it is actually running -- only this side can know that.
-        std::uint32_t ingest_fps = 0;
+        // rate it is actually running -- only this side can know that. The
+        // source geometry rides along for the same reason: the receiver sizes
+        // its standby slate from it, and a wrong size is a visible defect.
+        source_geometry geometry;
         if (auto encoder = ctx.lib.encoder_ptr.load()) {
-          ingest_fps = encoder->source_fps_snapped();
+          geometry = encoder->source_geometry_now();
         }
         apply_allocation_to_receiver(
-            outcome.session, source_codec, ingest_fps, video_kbps);
+            outcome.session, source_codec, geometry, video_kbps);
         if (!outcome.reported) {
           transport_log("Bridge report failed: " + outcome.error + "\n");
         }
@@ -1076,9 +1083,24 @@ static void stop()
   }
   ctx.lib.threads.clear();
 
-  // Give the allocation back, so the node is not left running a receiver
-  // (holding its RIST port) for a session nobody is feeding.
-  release_hosted_session();
+  // The hosted session is NOT released here. Stop Encode ends the feed, not the
+  // session: the receiver goes on its standby slate, the operator can start the
+  // feed again on the same allocation, and the portal keeps billing until the
+  // session is ended on purpose. Ending it is an explicit action -- the End
+  // Session button -- never a side effect of stopping the encoder, which is how
+  // a Stop used to close a session and force a fresh allocate.
+  if (const std::optional<hosted_session> held =
+          settings::load_hosted_session();
+      held.has_value())
+  {
+    const std::string text = "Session " + held->session_id
+        + " held - the node is on standby. End Session to close it.";
+    transport_log(text + "\n");
+    if (ctx.ui != nullptr) {
+      ctx.ui->set_hosted_session_held(true);
+      ctx.ui->set_hosted_state(text, false);
+    }
+  }
 }
 
 // Release the hosted allocation this encoder still holds, if any. The session
@@ -1107,6 +1129,67 @@ static void release_hosted_session()
     }
   }
   settings::clear_hosted_session();
+}
+
+// The End Session action (E2). Deallocate the session the encoder still holds
+// and clear the file ONLY on a 2xx: a deallocate that reports success without
+// the portal having accepted it would silently leave a billable session
+// running, so a failure KEEPS the file and says so. The operator can retry, and
+// the next launch's cleanup still finds it.
+//
+// Blocking HTTP, so -- like every other hosted action -- it runs on a tracked
+// background thread; the UI is only ever touched through the thread-safe
+// setters.
+static void hosted_end_session()
+{
+  const std::optional<hosted_session> held = settings::load_hosted_session();
+  if (!held.has_value()) {
+    if (ctx.ui != nullptr) {
+      ctx.ui->set_hosted_state("No session is held.", true);
+    }
+    return;
+  }
+  const std::string session_id = held->session_id;
+  const hosted_config hosted = ctx.lib.hosted;
+  if (hosted.backplane_url.empty() || hosted.device_token.empty()) {
+    // Without the credentials the deallocate cannot be attempted at all. The
+    // file stays: a sign-out must not turn into an orphaned billable session.
+    if (ctx.ui != nullptr) {
+      ctx.ui->set_hosted_state(
+          "Cannot end session " + session_id + ": sign in first.", true);
+    }
+    return;
+  }
+  if (ctx.ui != nullptr) {
+    ctx.ui->set_hosted_state("Ending session " + session_id + "...", false);
+  }
+
+  track_control_thread(std::thread(
+      [hosted, session_id]
+      {
+        backplane_client backplane(
+            hosted.backplane_url,
+            hosted.device_token,
+            make_httplib_transport(hosted.backplane_url, hosted.device_token));
+        std::string err;
+        if (backplane.deallocate(session_id, err)) {
+          settings::clear_hosted_session();
+          transport_log("Session " + session_id + " ended.\n");
+          if (ctx.ui != nullptr) {
+            ctx.ui->set_hosted_session_held(false);
+            ctx.ui->set_hosted_state("Session ended", false);
+          }
+          return;
+        }
+        // Kept, deliberately: the portal still considers this billed.
+        transport_log("Ending session " + session_id + " failed: " + err
+                      + " - the session is still held.\n");
+        if (ctx.ui != nullptr) {
+          ctx.ui->set_hosted_state(
+              "End session failed: " + err + " - the session is still held",
+              true);
+        }
+      }));
 }
 
 static bool run_transport()
@@ -1464,6 +1547,7 @@ auto main(int argc, char** argv) -> int
       &hosted_allocate,
       &hosted_sign_in,
       &hosted_sign_out,
+      &hosted_end_session,
       &refresh_capture_sources);
 
   // Restore persisted settings (if any) over the UI defaults set above, then

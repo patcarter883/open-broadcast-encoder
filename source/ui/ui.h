@@ -56,6 +56,7 @@ public:
                          FuncPtr hosted_allocate_funcptr,
                          FuncPtr hosted_signin_funcptr,
                          FuncPtr hosted_signout_funcptr,
+                         FuncPtr hosted_end_session_funcptr,
                          FuncPtr refresh_capture_funcptr);
   // Push persisted configs into the widgets after settings::load(). Call once,
   // on the main thread, after init_ui_callbacks() and before show().
@@ -90,6 +91,11 @@ public:
   // background thread, and the token is never rendered -- only set/not-set.
   void set_hosted_state(const std::string& text, bool is_error);
   void set_hosted_token(const std::string& token);
+  // Whether a hosted session is held on disk, which is what makes End Session
+  // actionable. The button is alive only when this is true AND the encoder is
+  // not streaming -- ending the session under a live feed would tear the
+  // receiver down while it is on the air. Safe from any thread (FLTK lock).
+  void set_hosted_session_held(bool held);
   // The LAN cameras found by the capture browse (MC4). Runs on the same kind of
   // tracked background thread as the bridge actions, so it takes the FLTK lock
   // and repopulates the picker from a worker without touching the config.
@@ -174,6 +180,18 @@ private:
   void hosted_allocate(FuncPtr allocate_funcptr);
   void hosted_sign_in(FuncPtr signin_funcptr);
   void hosted_sign_out(FuncPtr signout_funcptr);
+  // The two-step End Session: the first click arms it (label changes, a 5 s
+  // timer reverts), the second inside that window runs the deallocate. The work
+  // itself is in main.cpp, off the UI thread, like every other hosted action.
+  void hosted_end_session(FuncPtr end_session_funcptr);
+  static void end_session_timeout_cb(void* data);
+  void disarm_end_session();
+  // End Session is actionable only when a session is held AND nothing is being
+  // streamed. Called from the setters and from start()/stop(), all under the
+  // FLTK lock.
+  void refresh_end_session();
+  bool end_session_armed = false;
+  bool hosted_session_held = false;
   // The model the hosted widgets edit; set once in init_ui_callbacks, so the
   // thread-safe setters update the model as well as the widgets.
   hosted_config* hosted_config_ptr = nullptr;

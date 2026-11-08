@@ -33,8 +33,8 @@ public:
   // must track the receiver, not the portal: when the receiver's contract moved
   // to 4 (av1 target + output scale), an encoder still sending 3 had every
   // /start refused. Defined once here -- a stale literal at each call site is
-  // how that happens.
-  static constexpr int k_receiver_schema_version = 4;
+  // how that happens. 5 adds the source geometry and the standby slate.
+  static constexpr int k_receiver_schema_version = 5;
   //
   // Static because the hosted path has no host/port pair to construct with --
   // only the URL the allocation returned.
@@ -50,12 +50,26 @@ public:
   // allocate request carries only the POP), so the gop is restated here as two
   // seconds at the real rate. Zero means "not known yet", and the portal's
   // value is then left alone rather than guessed at.
+  //
+  // ingest_width/ingest_height are the picture size the encoder has measured on
+  // its own video encoder. The portal cannot know it either, and the receiver's
+  // standby slate must be the size of the feed that will replace it -- a slate
+  // assuming 1080p on a 720p session is a visible defect. They are written as
+  // integers (the receiver rejects a non-integer), and 0 is the contract's
+  // explicit "unknown", never a guess at a default.
+  //
+  // standby.enabled is set true here: every hosted session runs the slate,
+  // because Stop Encode now leaves the session allocated and the node on
+  // standby (see main.cpp's stop()). Any other standby members the portal sent
+  // are preserved.
   static bool prepare_hosted_body(const std::string& start_body_json,
                                   codec source_codec,
                                   std::string& out_body,
                                   std::string& err,
                                   std::uint32_t ingest_fps = 0,
-                                  int ingest_kbps = 0);
+                                  int ingest_kbps = 0,
+                                  std::uint32_t ingest_width = 0,
+                                  std::uint32_t ingest_height = 0);
 
   static bool start_hosted(const std::string& control_url,
                            const std::string& control_token,
@@ -63,5 +77,7 @@ public:
                            codec source_codec,
                            std::string& err,
                            std::uint32_t ingest_fps = 0,
-                           int ingest_kbps = 0);
+                           int ingest_kbps = 0,
+                           std::uint32_t ingest_width = 0,
+                           std::uint32_t ingest_height = 0);
 };

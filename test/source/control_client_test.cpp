@@ -36,21 +36,36 @@ TEST_CASE("a hosted start body corrects only what the portal cannot know",
 {
   std::string out;
   std::string err;
-  REQUIRE(
-      control_client::prepare_hosted_body(kPortalBody, codec::h265, out, err));
+  REQUIRE(control_client::prepare_hosted_body(
+      kPortalBody, codec::h265, out, err, 30, 0, 1920, 1080));
   REQUIRE(err.empty());
 
   const json body = json::parse(out);
 
   // The portal may lag the receiver's contract; the encoder must never ship a
   // stale version. The receiver accepts only an exact match, so this pins the
-  // version that actually goes on the wire -- currently 4 (av1 target + output
-  // scale). If the receiver's contract moves, this must move with
+  // version that actually goes on the wire -- currently 5 (source geometry +
+  // standby slate). If the receiver's contract moves, this must move with
   // control_client::k_receiver_schema_version or every /start is refused.
-  REQUIRE(body["schema_version"] == 4);
+  REQUIRE(body["schema_version"] == 5);
   // The portal can only guess the ingest codec. The encoder knows.
   REQUIRE(body["source"]["codec"] == "h265");
   REQUIRE(body["session_id"] == "s_9f2c");
+
+  // v5 geometry: the portal has never seen the picture, so the encoder states
+  // it. Integers, because the receiver rejects a non-integer with 400.
+  REQUIRE(body["source"]["width"] == 1920);
+  REQUIRE(body["source"]["height"] == 1080);
+  REQUIRE(body["source"]["fps"] == 30);
+  REQUIRE(body["source"]["width"].is_number_integer());
+  REQUIRE(body["source"]["height"].is_number_integer());
+  REQUIRE(body["source"]["fps"].is_number_integer());
+
+  // Every hosted session runs the standby slate: Stop Encode holds the session
+  // rather than releasing it, so the receiver must have something to put on
+  // air.
+  REQUIRE(body["standby"]["enabled"] == true);
+  REQUIRE(body["standby"]["enabled"].is_boolean());
 
   // Everything else is the portal's decision (DT-22) and survives verbatim.
   REQUIRE(body["outputs"].size() == 2);
@@ -62,6 +77,39 @@ TEST_CASE("a hosted start body corrects only what the portal cannot know",
   REQUIRE_FALSE(body["outputs"][0].contains("transcode"));
   // And the opted-in one keeps the target the portal chose.
   REQUIRE(body["outputs"][1]["transcode"]["codec"] == "h265");
+}
+
+TEST_CASE("an existing standby object is switched on, never duplicated",
+          "[hosted][control]")
+{
+  // The portal may already send a partial standby object (brand image, caption,
+  // timeouts). The encoder's only decision is that the slate is ON; the rest is
+  // the portal's and must survive, and the object must not be replaced
+  // wholesale or appear twice in the document.
+  const char* portal = R"({
+    "schema_version": 2,
+    "session_id": "s_9f2c",
+    "source": {"codec": "h264"},
+    "standby": {"brand_image": "/usr/share/obr/brand.png",
+                "text": "studio standby", "bitrate_kbps": 1500},
+    "outputs": [{"id": "out1", "type": "rtmp", "url": "rtmp://a.example/live2"}]
+  })";
+  std::string out;
+  std::string err;
+  REQUIRE(control_client::prepare_hosted_body(
+      portal, codec::h264, out, err, 30, 0, 1280, 720));
+
+  const json body = json::parse(out);
+  REQUIRE(body["standby"].is_object());
+  REQUIRE(body["standby"].size() == 4);
+  REQUIRE(body["standby"]["enabled"] == true);
+  REQUIRE(body["standby"]["brand_image"] == "/usr/share/obr/brand.png");
+  REQUIRE(body["standby"]["text"] == "studio standby");
+  REQUIRE(body["standby"]["bitrate_kbps"] == 1500);
+
+  // The geometry is stated for the 720p ingest, so the slate is 720p too.
+  REQUIRE(body["source"]["width"] == 1280);
+  REQUIRE(body["source"]["height"] == 720);
 }
 
 TEST_CASE(
