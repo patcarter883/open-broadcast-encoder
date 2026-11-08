@@ -728,7 +728,16 @@ void user_interface::stop(void (*stop_funcptr)())
   btn_start_encode->activate();
   btn_stop_encode->deactivate();
   unlock();
+  // The event loop owns the lock permanently: init_ui() takes it once and
+  // Fl::run() only releases it while waiting, so the unlock() above removes
+  // this method's count while the UI thread still holds one. stop_funcptr()
+  // joins the sender and reader threads, and both report progress through
+  // setters that take this same lock -- joining while holding it deadlocks the
+  // application, which is the Stop Encode freeze. Release the loop's count for
+  // the teardown and reclaim it before returning to the event loop.
+  Fl::unlock();
   stop_funcptr();
+  Fl::lock();
 }
 
 void user_interface::save_settings(FuncPtr save_settings_funcptr)
