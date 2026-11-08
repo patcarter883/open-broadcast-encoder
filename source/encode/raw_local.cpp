@@ -421,14 +421,29 @@ auto raw_local_input::read_and_push(int fd) -> bool
 
   // Both streams are measured from the one base, so the offset between them
   // survives: this is the sync, and nothing here may re-derive it per stream.
-  GST_BUFFER_PTS(buf) = this->running_pts(fh.timestamp);
+  const std::uint64_t wire_pts = this->running_pts(fh.timestamp);
+  const std::uint64_t duration = is_video
+      ? gst_util_uint64_scale(GST_SECOND * this->fps_den, 1, this->fps_num)
+      : gst_util_uint64_scale(GST_SECOND, fh.units, this->audio_rate);
+  GST_BUFFER_DURATION(buf) = duration;
+
+  // Advance monotonically, one timeline per stream. A wire timestamp behind the
+  // running one keeps the previous step instead of repeating it: mpegtsmux
+  // discards buffers whose DTS does not advance, which starves the mux on the
+  // audio pad and stalls the whole encode.
+  std::uint64_t pts = wire_pts;
+  std::uint64_t& last = is_video ? this->last_video_pts : this->last_audio_pts;
+  bool& seen = is_video ? this->video_pts_set : this->audio_pts_set;
+  if (seen && pts <= last) {
+    pts = last + duration;
+  }
+  last = pts;
+  seen = true;
+  GST_BUFFER_PTS(buf) = pts;
+
   if (is_video) {
-    GST_BUFFER_DURATION(buf) =
-        gst_util_uint64_scale(GST_SECOND * this->fps_den, 1, this->fps_num);
     this->video_frames++;
   } else {
-    GST_BUFFER_DURATION(buf) =
-        gst_util_uint64_scale(GST_SECOND, fh.units, this->audio_rate);
     this->audio_chunks++;
   }
 
