@@ -201,22 +201,47 @@ static void rist_oob_cb(const uint8_t* data, size_t size)
 static bool run_transport();
 static void release_hosted_session();
 
-// Reflect the encode lifecycle in the UI. Called from the send thread, so it
-// takes the FLTK lock for the widget writes only -- never across anything that
-// can block (same discipline as the teardown notes in stop() / main()).
+// Reflect the encode lifecycle in the UI. This is called from the SEND thread,
+// and the UI thread holds the FLTK lock while it joins that thread on Stop --
+// so touching the lock here deadlocks the whole application (confirmed by a
+// backtrace: pthread_mutex_lock <- Fl_Posix_System_Driver::lock() <-
+// set_encode_state, on a thread the UI was joining). Fl::awake queues the
+// update instead: the callback runs on the UI thread, which already owns the
+// lock, and this thread never waits for it.
+namespace
+{
+struct encode_state_post
+{
+  std::string text;
+  bool failed;
+  bool calibrate_enabled;
+};
+
+void encode_state_apply(void* p)
+{
+  std::unique_ptr<encode_state_post> post(static_cast<encode_state_post*>(p));
+  if (ctx.ui == nullptr) {
+    return;
+  }
+  ctx.ui->set_encode_state(post->text, post->failed);
+  // DT-28: calibration is a PRE-START action, so the button is off while a
+  // stream is starting or up. The bridge refuses a mid-stream probe itself --
+  // the plugin's pre-start guard -- and this is the operator-facing half of the
+  // same rule, so the answer arrives before the press rather than after it.
+  ctx.ui->set_bridge_calibrate_enabled(post->calibrate_enabled);
+}
+}  // namespace
+
 static void publish_encode_state(encode_state state)
 {
   if (ctx.ui == nullptr) {
     return;
   }
-  ctx.ui->set_encode_state(encode_state_text(state),
-                           state == encode_state::failed);
-  // DT-28: calibration is a PRE-START action, so the button is off while a
-  // stream is starting or up. The bridge refuses a mid-stream probe itself --
-  // the plugin's pre-start guard -- and this is the operator-facing half of the
-  // same rule, so the answer arrives before the press rather than after it.
-  ctx.ui->set_bridge_calibrate_enabled(state == encode_state::idle
-                                       || state == encode_state::failed);
+  auto post = std::make_unique<encode_state_post>(encode_state_post {
+      encode_state_text(state),
+      state == encode_state::failed,
+      state == encode_state::idle || state == encode_state::failed});
+  Fl::awake(encode_state_apply, post.release());
 }
 
 static void run_loop()
