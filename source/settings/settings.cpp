@@ -279,7 +279,7 @@ bool save(const library& lib)
       {"bridge_uid", bc.bridge_uid},
       {"token", bc.token},
       {"listen_url", bc.listen_url},
-      {"listen_miface", bc.listen_miface},
+      {"listen_interface", bc.listen_interface},
       {"forward_to", bc.forward_to},
       {"interface", bc.interface_name},
       {"encrypt_wan_leg", bc.encrypt_wan_leg},
@@ -420,7 +420,7 @@ bool load(library& lib)
     get_to(j, "bridge_uid", bc.bridge_uid);
     get_to(j, "token", bc.token);
     get_to(j, "listen_url", bc.listen_url);
-    get_to(j, "listen_miface", bc.listen_miface);
+    get_to(j, "listen_interface", bc.listen_interface);
     get_to(j, "forward_to", bc.forward_to);
     get_to(j, "interface", bc.interface_name);
     get_to(j, "encrypt_wan_leg", bc.encrypt_wan_leg);

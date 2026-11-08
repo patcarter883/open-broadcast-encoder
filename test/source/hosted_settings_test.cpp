@@ -101,7 +101,7 @@ TEST_CASE("the bridge control settings survive a round-trip",
   saved.bridge_ctl.bridge_uid = "rist2rist-60:be:b4:24:f2:76";
   saved.bridge_ctl.token = "pair-token-abc";
   saved.bridge_ctl.listen_url = "rist://192.168.1.1:5000";
-  saved.bridge_ctl.listen_miface = "eth1";
+  saved.bridge_ctl.listen_interface = "eth1";
   saved.bridge_ctl.forward_to = "rist://relay.example.au:20000";
   saved.bridge_ctl.interface_name = "wwan0";
   saved.bridge_ctl.encrypt_wan_leg = true;
@@ -115,16 +115,16 @@ TEST_CASE("the bridge control settings survive a round-trip",
   CHECK(loaded.bridge_ctl.bridge_uid == "rist2rist-60:be:b4:24:f2:76");
   CHECK(loaded.bridge_ctl.token == "pair-token-abc");
   CHECK(loaded.bridge_ctl.listen_url == "rist://192.168.1.1:5000");
-  // The join interface is a device name on the ROUTER, so it cannot be derived
-  // when the settings are read back: a reload that dropped it would silently
-  // stop the bridge joining the group and the media path would go dark.
-  CHECK(loaded.bridge_ctl.listen_miface == "eth1");
+  // The join interface is a device name on the ROUTER: a reload that dropped it
+  // would silently stop the bridge joining the group and the media path would
+  // go dark.
+  CHECK(loaded.bridge_ctl.listen_interface == "eth1");
   CHECK(loaded.bridge_ctl.forward_to == "rist://relay.example.au:20000");
   CHECK(loaded.bridge_ctl.interface_name == "wwan0");
   CHECK(loaded.bridge_ctl.encrypt_wan_leg);
 }
 
-TEST_CASE("an unset join interface stays unset across a round-trip",
+TEST_CASE("an unset join interface falls back to the documented default",
           "[settings][bridge]")
 {
   const temp_config_home home;
@@ -137,9 +137,9 @@ TEST_CASE("an unset join interface stays unset across a round-trip",
   library loaded;
   REQUIRE(settings::load(loaded));
 
-  // Empty means "resolve it", so the resolved interface is never burnt into the
-  // settings file by a save.
-  CHECK(loaded.bridge_ctl.listen_miface.empty());
+  // eth1 is the router's LAN interface, which owns the multicast group; a
+  // settings file that never named one still yields a joinable URL.
+  CHECK(loaded.bridge_ctl.listen_interface == "eth1");
 }
 
 TEST_CASE("a persisted allocation can be read back and cleared",

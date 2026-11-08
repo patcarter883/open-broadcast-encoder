@@ -48,10 +48,9 @@ struct actuate_request
   std::string
       bridge_address;  // last reported LAN address; empty = browse for it
   std::string listen_url;  // what the bridge should listen on
-  // The interface the bridge joins a multicast listen group on. Empty means
-  // "resolve it": the interface already in `listen_url`, then this host's route
-  // to the group, then the bridge's uplink (see join_interface.h).
-  std::string listen_miface;
+  // The bridge's LAN interface that owns a multicast listen group. Applied to
+  // the listen URL as `miface=`; empty leaves the URL untouched.
+  std::string listen_interface;
   std::string interface_name;  // the bridge's egress interface; may be empty
   std::string fingerprint;  // recorded at fulfilment; empty when not known
   std::string known_token;  // the pair token we already hold, if any
@@ -89,10 +88,6 @@ struct actuate_outcome
   long bridge_id = 0;  // the backplane's row id, for a credential fetch
   std::string
       bridge_uid;  // the bridge this run actually drove (empty = direct)
-  // Set when the chain is live but something the operator has to know about
-  // could not be expressed -- today, a multicast listen leg that names no join
-  // interface, which binds the group without joining it.
-  std::string warning;
   std::string error_code;  // empty on full success
   std::string error;
 };

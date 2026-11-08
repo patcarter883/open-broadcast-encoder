@@ -32,13 +32,11 @@
 #include "bridge/actuate.h"
 #include "bridge/bridge_client.h"
 #include "bridge/discovery.h"
-#include "bridge/join_interface.h"
 #include "bridge/mdns.h"
 #include "bridge/reporting.h"
 #include "bridge/ubus.h"
 #include "control/control.h"
 #include "encode.h"
-#include "encode/appsrc_policy.h"
 #include "lib.h"
 #include "ndi_input.h"
 #include "raw_local.h"
@@ -376,8 +374,7 @@ auto bridge_desired(const bridge_control_config& cfg) -> nlohmann::json
 {
   bridge::actuate_request req;
   req.listen_url = cfg.listen_url;
-  req.listen_miface = cfg.listen_miface;
-  req.interface_name = cfg.interface_name;
+  req.listen_interface = cfg.listen_interface;
   req.encrypt_wan_leg = cfg.encrypt_wan_leg;
 
   hosted_session session;
@@ -631,12 +628,6 @@ static void bridge_apply()
           "Nothing to apply: set the listen url and a forwarding target", true);
     }
     return;
-  }
-  if (const std::string warning =
-          bridge::join_warning(desired.value("listen_url", std::string {}));
-      !warning.empty())
-  {
-    transport_log("Bridge: " + warning + "\n");
   }
   if (cfg.encrypt_wan_leg) {
     transport_log(
@@ -913,7 +904,7 @@ static void hosted_allocate()
         bridge::actuate_request request;
         // pop is left empty: the backplane places from the account's home POP.
         request.listen_url = bridge_cfg.listen_url;
-        request.listen_miface = bridge_cfg.listen_miface;
+        request.listen_interface = bridge_cfg.listen_interface;
         request.interface_name = bridge_cfg.interface_name;
         request.known_token = bridge_cfg.token;
         // Fallback only -- the portal's answer in the allocation is
@@ -1009,12 +1000,6 @@ static void hosted_allocate()
             outcome.session, source_codec, ingest_fps, video_kbps);
         if (!outcome.reported) {
           transport_log("Bridge report failed: " + outcome.error + "\n");
-        }
-        if (!outcome.warning.empty()) {
-          transport_log("Bridge: " + outcome.warning + "\n");
-          if (ctx.ui != nullptr) {
-            ctx.ui->set_bridge_message(outcome.warning, true);
-          }
         }
       }));
 }
@@ -1225,22 +1210,19 @@ static void run_raw_preview(std::uint16_t port)
   // A preview must never be able to stall the ingest. The reader pushes both
   // streams from one thread, so anything that blocks a push stops the socket
   // being drained -- and OBS gives up after 90 frames ("peer unreachable"),
-  // which reads as a frozen preview. So the preview's appsrcs do not block at
-  // all and drop their OLDEST frame instead (appsrc_policy::preview_*), their
-  // queues hold a handful of frames rather than two, and the sinks render as
-  // frames arrive (sync=false) instead of applying clock back-pressure.
-  //
-  // These appsrcs are NOT the encode path's: preview builds its own pipeline
-  // and its own reader, so the blocking, lossless, back-pressuring appsrcs that
-  // feed the encoder are never in this graph.
-  const std::string preview_pipeline =
-      appsrc_policy::preview_video_src()
-      + " ! queue max-size-buffers=8 max-size-bytes=0 max-size-time=0 "
-        "leaky=downstream ! videoconvert ! autovideosink sync=false "
-      + appsrc_policy::preview_audio_src()
-      + " ! queue max-size-buffers=64 max-size-bytes=0 max-size-time=0 "
-        "leaky=downstream ! audioconvert ! autoaudiosink sync=false";
-  auto* pipeline = gst_parse_launch(preview_pipeline.c_str(), &error);
+  // which reads as a frozen preview. Hence: a small queue that can DROP
+  // (leaky=downstream) and a sink that renders as frames arrive (sync=false),
+  // instead of a clock-synced sink applying back-pressure through the appsrc.
+  auto* pipeline = gst_parse_launch(
+      "appsrc name=rawvideo is-live=true format=time do-timestamp=false "
+      "max-bytes=16777216 ! queue max-size-buffers=4 max-size-bytes=0 "
+      "max-size-time=0 leaky=downstream ! videoconvert ! autovideosink "
+      "sync=false "
+      "appsrc name=rawaudio is-live=true format=time do-timestamp=false "
+      "max-bytes=1048576 ! queue max-size-buffers=16 max-size-bytes=0 "
+      "max-size-time=0 leaky=downstream ! audioconvert ! autoaudiosink "
+      "sync=false",
+      &error);
   if (pipeline == nullptr) {
     encode_log(std::format("Preview: could not build the pipeline: {}\n",
                            error != nullptr ? error->message : "unknown"));
@@ -1258,13 +1240,8 @@ static void run_raw_preview(std::uint16_t port)
   // what the selected codec and destinations could carry. That decision belongs
   // to the encode path, and passing it twice would be two policies to keep
   // true.
-  raw_local_input reader(video_src,
-                         audio_src,
-                         port,
-                         &encode_log,
-                         {},
-                         &input_status,
-                         push_mode::drop);
+  raw_local_input reader(
+      video_src, audio_src, port, &encode_log, {}, &input_status);
   reader.start();
 
   // preview_running is set true by the launcher on the main thread BEFORE this
