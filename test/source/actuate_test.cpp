@@ -12,6 +12,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "bridge/join_interface.h"
+
 using namespace bridge;
 
 namespace
@@ -460,4 +462,61 @@ TEST_CASE("bridge_desired_config maps the session to the bridge's upstream",
   // refuses the whole adopt on any other key ("unknown or disallowed field").
   // The encoder's own interface setting must therefore never reach the wire.
   CHECK(desired.at("outputs").at(0).size() == 1);
+}
+
+TEST_CASE(
+    "a multicast listen leg is actuated with its join interface inside the "
+    "url",
+    "[bridge][actuate][join]")
+{
+  actuate_request req;
+  req.listen_url = "rist://@239.1.1.10:5100";
+  req.listen_miface = "eth1";
+
+  const auto desired = bridge_desired_config(req, good_session());
+
+  // rpcd's whitelist takes `listen_url` as ONE string and rejects an unknown
+  // key, so the interface a multicast listener joins on has to travel inside
+  // it. Without it libRIST binds the group without joining and receives
+  // nothing.
+  CHECK(desired.at("listen_url") == "rist://@239.1.1.10:5100?miface=eth1");
+}
+
+TEST_CASE("a unicast listen leg is actuated without a join interface",
+          "[bridge][actuate][join]")
+{
+  actuate_request req;
+  req.listen_url = "rist://0.0.0.0:5000";
+  req.listen_miface = "eth1";  // set, but there is no group to join
+
+  const auto desired = bridge_desired_config(req, good_session());
+
+  CHECK(desired.at("listen_url") == "rist://0.0.0.0:5000");
+}
+
+TEST_CASE("the encoder's own send target never inherits the join interface",
+          "[bridge][actuate][join]")
+{
+  fakes f;
+  // `miface=` names a device on the BRIDGE. Reusing the reported listen url
+  // verbatim as the encoder's destination would make libRIST bind an interface
+  // that does not exist on this host.
+  f.reconciled_listen_url = "rist://239.1.1.10:5100?miface=eth1";
+  actuator a = f.make();
+
+  const actuate_outcome out =
+      a.run(bridged_request(), std::chrono::milliseconds {2000});
+
+  REQUIRE(out.ok);
+  CHECK(out.encoder_target == "rist://239.1.1.10:5100");
+}
+
+TEST_CASE(
+    "a multicast listen leg with no join interface is reported, not hidden",
+    "[bridge][actuate][join]")
+{
+  // Pinned at the pure level (join_interface_test) because whether a lookup
+  // yields a device depends on the host running the suite.
+  CHECK_FALSE(join_warning("rist://@239.1.1.10:5100").empty());
+  CHECK(join_warning("rist://@239.1.1.10:5100?miface=eth1").empty());
 }

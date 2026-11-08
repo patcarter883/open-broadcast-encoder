@@ -265,3 +265,31 @@ code falls back to `CLOCK_REALTIME` (not MONOTONIC) and says so loudly, naming w
 
 **Rejected.** Keeping `GstPtpClock` and "fixing" it (EN-5: impossible here without a router or upstream change);
 hardcoding the router IP with no override (a box moved off the video LAN would silently fail to lock).
+
+
+## EN-7 — The encoder owns the bridge's multicast join interface, carried as `?miface=` inside the listen URL (2026-11-08)
+
+**Choice.** `bridge_desired_config()` builds the bridge's `listen_url` with the interface the bridge
+must join the multicast group on appended as `?miface=<iface>` (`source/bridge/join_interface.cpp`).
+The interface comes from a setting — `bridge_control_config::listen_miface`, editable in the Bridge
+(LAN) panel and persisted under `bridge.listen_miface` — and when the setting is empty it is resolved,
+in order, from an interface already present in the URL, a kernel route lookup for the group, then the
+bridge's configured uplink. The encoder's own send target drops the parameter.
+
+**Why.** A RIST listener that names a multicast group without naming an interface binds the group
+address but never joins it: `ip maddr show` reports no group, the receiver's own state says it is
+listening, and the link carries nothing. `miface=` is the only way libRIST joins, and rpcd's field
+whitelist accepts `listen_url` as ONE string — a sibling field would be rejected with
+`unknown or disallowed field` and the whole adopt refused. Expressing the join inside the URL keeps
+the daemon contract untouched and is read correctly by the init script, which strips the query when
+deriving the mDNS port and appends its recovery parameters with `&`.
+
+**Not hardcoded, and not guessed silently.** `eth1` is one router's name. The setting is a device name
+on the ROUTER, so the encoder can only resolve a default: the lookup names an interface of the host the
+encoder runs on, which is the right answer only when the two boxes share a naming scheme. The fallback
+is the bridge's configured uplink. If neither yields a name the URL is actuated exactly as written and
+the run reports that the group will not be joined, rather than asserting a join that did not happen.
+
+**Rejected.** A router-side init-script patch supplying the interface (a config push can drop it and
+silently darken the media path); a sibling `listen_iface` field in the desired state (rejected by the
+whitelist); hardcoding `eth1`.

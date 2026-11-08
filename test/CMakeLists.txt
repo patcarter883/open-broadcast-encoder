@@ -35,6 +35,28 @@ target_link_libraries(raw_local_port_test PRIVATE Catch2::Catch2WithMain)
 
 catch_discover_tests(raw_local_port_test)
 
+# The multicast join interface the encoder puts into a bridge's listen URL.
+# join_interface.cpp carries no other dependency, so it is compiled directly: the
+# URL it builds must be pinnable without linking the bridge's HTTP stack.
+add_executable(join_interface_test
+    source/join_interface_test.cpp
+    ${CMAKE_SOURCE_DIR}/source/bridge/join_interface.cpp
+)
+target_include_directories(join_interface_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(join_interface_test PRIVATE cxx_std_20)
+target_link_libraries(join_interface_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(join_interface_test)
+
+# The preview/encode appsrc policies: header-only by design, so the numbers and
+# the pipeline properties are pinned without a GStreamer pipeline.
+add_executable(appsrc_policy_test source/appsrc_policy_test.cpp)
+target_include_directories(appsrc_policy_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(appsrc_policy_test PRIVATE cxx_std_20)
+target_link_libraries(appsrc_policy_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(appsrc_policy_test)
+
 add_executable(backplane_test source/backplane_test.cpp)
 target_link_libraries(
     backplane_test PRIVATE

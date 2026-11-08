@@ -84,13 +84,15 @@ raw_local_input::raw_local_input(
     std::uint16_t port,
     std::function<void(const std::string&)> log_func,
     format_verdict_fn format_verdict,
-    std::function<void(const std::string&)> status_func)
+    std::function<void(const std::string&)> status_func,
+    push_mode mode)
     : video_src {video_src}
     , audio_src {audio_src}
     , port {port}
     , log_func {std::move(log_func)}
     , format_verdict_slot {std::move(format_verdict)}
     , status_func {std::move(status_func)}
+    , mode {mode}
 {
 }
 
@@ -451,6 +453,16 @@ auto raw_local_input::read_and_push(int fd) -> bool
   const GstFlowReturn ret = gst_app_src_push_buffer(
       GST_APP_SRC(is_video ? this->video_src : this->audio_src), buf);
   if (ret != GST_FLOW_OK) {
+    if (this->mode == push_mode::drop) {
+      // A stalled preview sink costs frames, never the socket: the frame is
+      // already the element's and the next one may fit.
+      this->dropped_frames++;
+      if (this->dropped_frames % 600 == 0) {
+        this->log(std::format("[raw] preview dropped {} frame(s)\n",
+                              this->dropped_frames));
+      }
+      return true;
+    }
     log(std::format("[raw] appsrc push failed: {}\n", gst_flow_get_name(ret)));
     return false;
   }

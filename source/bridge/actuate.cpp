@@ -5,6 +5,7 @@
 
 #include "bridge/actuate.h"
 
+#include "bridge/join_interface.h"
 #include "lib/lib.h"
 
 using json = nlohmann::json;
@@ -39,7 +40,14 @@ json bridge_desired_config(const actuate_request& req,
 {
   json desired;
   if (!req.listen_url.empty()) {
-    desired["listen_url"] = req.listen_url;
+    // A multicast listener must name the interface it joins the group on, or
+    // libRIST binds the address without joining and receives nothing. rpcd's
+    // whitelist takes `listen_url` as one string and nothing beside it, so the
+    // join travels as `?miface=` inside that URL.
+    desired["listen_url"] = with_multicast_interface(
+        req.listen_url,
+        resolve_join_interface(
+            req.listen_url, req.listen_miface, req.interface_name));
   }
 
   json outputs = json::array();
@@ -61,21 +69,26 @@ namespace
 // A bridge binds its media port to a wildcard so it accepts RIST on every
 // interface. That is a BIND address, not a destination: sending to it loops
 // back to this host. Keep the bridge's port, use the host we reached it on.
+//
+// The join interface is dropped from the result: `miface=` names a device on
+// the BRIDGE, and a sender carrying it would try to bind an interface this host
+// does not have.
 std::string sendable_target(const std::string& listen_url,
                             const std::string& host_hint)
 {
-  if (listen_url.rfind("rist://", 0) != 0) {
-    return listen_url;
+  const std::string url = without_multicast_interface(listen_url);
+  if (url.rfind("rist://", 0) != 0) {
+    return url;
   }
-  const auto colon = listen_url.rfind(':');
+  const auto colon = url.rfind(':');
   if (colon == std::string::npos || colon <= 6) {
-    return listen_url;
+    return url;
   }
-  const std::string host = listen_url.substr(7, colon - 7);
+  const std::string host = url.substr(7, colon - 7);
   const bool wildcard =
       host.empty() || host == "0.0.0.0" || host == "::" || host == "[::]";
   if (!wildcard) {
-    return listen_url;
+    return url;
   }
   std::string hint = host_hint;
   const auto hint_colon = hint.rfind(':');
@@ -83,9 +96,9 @@ std::string sendable_target(const std::string& listen_url,
     hint = hint.substr(0, hint_colon);  // the hint carries an API port
   }
   if (hint.empty()) {
-    return listen_url;
+    return url;
   }
-  return "rist://" + hint + listen_url.substr(colon);
+  return "rist://" + hint + url.substr(colon);
 }
 }  // namespace
 
@@ -182,6 +195,12 @@ actuate_outcome actuator::run(const actuate_request& req,
     return out;
   }
   out.bridged = true;
+
+  // A multicast listen leg that carries no join interface binds the group
+  // address without joining it, so the bridge receives nothing while its own
+  // state says it is listening. Nothing here can name a device on that router,
+  // so it is raised rather than guessed at.
+  out.warning = join_warning(rr.desired.value("listen_url", std::string {}));
 
   // Send to the BRIDGE, not to the node. Take the listen URL from what the
   // bridge reported back rather than from what we asked for: if it refused or
