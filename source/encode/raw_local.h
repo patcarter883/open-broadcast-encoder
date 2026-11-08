@@ -109,4 +109,10 @@ private:
 
   std::uint64_t video_frames {0};
   std::uint64_t audio_chunks {0};
+  // Per-stream last PTS, so a timestamp at or behind the base can never
+  // collapse to the same value twice (mpegtsmux drops non-advancing DTS).
+  std::uint64_t last_video_pts {0};
+  std::uint64_t last_audio_pts {0};
+  bool video_pts_set {false};
+  bool audio_pts_set {false};
 };

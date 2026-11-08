@@ -37,6 +37,20 @@ const char* codec_str(codec c) noexcept
   return "h264";
 }
 
+// '@' is libRIST's LISTEN form. An output address is a destination, so the
+// prefix never belongs in the stored configuration -- strip it on load so a
+// value written by an earlier build (or pasted by hand) cannot come back.
+static void strip_listen_prefix(std::string& host, std::string& address)
+{
+  if (!host.empty() && host.front() == '@') {
+    host.erase(0, 1);
+  }
+  const auto at = address.find("://@");
+  if (at != std::string::npos) {
+    address.erase(at + 3, 1);
+  }
+}
+
 bool parse_codec(const std::string& s, codec& out) noexcept
 {
   if (s == "h264") {
@@ -269,9 +283,14 @@ bool save(const library& lib)
        enc.mpegts_alignment.load(std::memory_order_relaxed)},
   };
 
+  // Written back clean: the widget can hold the LISTEN form, and persisting it
+  // would restore a sender that binds its own destination on the next start.
+  std::string out_address = out.address;
+  std::string out_host = out.host;
+  strip_listen_prefix(out_host, out_address);
   root["output"] = {
-      {"address", out.address},
-      {"host", out.host},
+      {"address", out_address},
+      {"host", out_host},
       {"port", out.port},
       {"streams", out.streams},
       {"buffer_min", out.buffer_min},
@@ -418,6 +437,7 @@ bool load(library& lib)
     output_config& out = lib.output_cfg;
     get_to(j, "address", out.address);
     get_to(j, "host", out.host);
+    strip_listen_prefix(out.host, out.address);
     get_to(j, "port", out.port);
     get_to(j, "streams", out.streams);
     get_to(j, "buffer_min", out.buffer_min);
