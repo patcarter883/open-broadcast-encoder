@@ -1,48 +1,42 @@
 # Receiver control (encoder side)
 
-This documents the changes that let **open-broadcast-encoder** drive the partner
+This documents how **open-broadcast-encoder** drives the partner
 **open-broadcast-receiver** (`../open-broadcast-receiver`). The receiver is the
 ground-up redevelopment of the original `ndi-rist-server`. The authoritative
 wire contract and the full design rationale live in the receiver repo:
 `open-broadcast-receiver/docs/CONTRACT.md` and `.../DECISIONS.md`.
 
-## What the encoder now does
+## What the encoder does
 
 1. **Media path — unchanged.** The encoder still encodes its input
    (NDI/SDP/MPEG-TS/test) and sends it as RIST (caller, `RIST_PROFILE_ADVANCED`)
    to `output_cfg.host:port`. The receiver listens there.
-2. **Control plane — new.** On **Start**, the encoder POSTs a configuration to
-   the receiver's REST API (`POST /start`) describing one or more restream
-   destinations and how to treat the stream (copy vs reencode). On **Stop** it
-   POSTs `/stop`. This is implemented by `source/control/control_client`
-   (`httplib::Client` + `nlohmann/json`), invoked from `main.cpp`
-   (`provision_receiver()` / `release_receiver()`) on detached threads so the
-   FLTK UI never blocks on receiver network I/O.
+2. **Control plane.** When the backplane allocates a hosted session, the encoder
+   POSTs the allocation's start body to the receiver's REST API (`POST /start`)
+   describing the restream destinations and how to treat the stream (copy vs
+   reencode); ending the session POSTs `/stop`. This is implemented by
+   `source/control/control_client` (`httplib::Client` + `nlohmann/json`) and
+   invoked from `main.cpp` (`apply_allocation_to_receiver()`) on the allocation
+   worker thread, never the FLTK thread.
 3. **Telemetry — unchanged path, now actually answered.** The receiver sends the
    encoder's existing 5-byte `wan_telemetry` (link quality + worst-case RTT)
    back over the RIST OOB channel; `rist_oob_cb` already consumes it to drive
    `remote_oob` adaptive bitrate. The original receiver never sent it.
 
-## The new UI section ("Receiver / Restream")
+## Where the control values come from
 
-A full-width strip below the Input/Encode/Output/Stats row:
+The encoder has no receiver panel and takes no operator-entered control address,
+token or destination list. Everything comes from the hosted allocation:
 
-| Control | Writes to | Notes |
-|---------|-----------|-------|
-| **Enable receiver** | `receiver_ctl.enabled` | when off, Start/Stop do not contact a receiver |
-| **Receiver host:port** | `control_host` / `control_port` | the receiver's HTTP control endpoint (default `127.0.0.1:8080`) — distinct from the RIST media address |
-| **Token** | `token` | Bearer token; must match the receiver's `--token` |
-| **Reencode** | `reencode` | off ⇒ copy/passthrough; on ⇒ transcode (applies to all destinations in v1) |
-| **Codec / Encoder / Bitrate kbps / Upscale 1440p** | `video.*` | reencode settings (the receiver may use different hardware than the encoder) |
-| **Destinations** (multiline) | `destinations` | one per line: `rtmp\|rtmps\|srt\|rist  <url>  [key]` |
+| Value | Source |
+|-------|--------|
+| `control_url`, `control_token` | the `hosted_session` record the backplane returns and the node persists (`settings::load_hosted_session()`) |
+| `start_body_json` | the same allocation record: session id, ingest, source, and one entry per destination |
+| destination URLs and stream keys | inside `start_body_json`, one `{type, url, key_or_streamid}` per output |
 
-Example destinations:
-
-```
-rtmp  rtmp://a.rtmp.youtube.com/live2  abcd-efgh-ijkl
-srt   srt://203.0.113.9:9000
-rist  rist://203.0.113.9:7000
-```
+The encoder adds only what it alone knows to that body: the measured source
+codec, geometry/fps and the available link budget. Without a start body the
+session is left unconfigured and the transport log says so.
 
 ## Key decisions (encoder side)
 
@@ -57,10 +51,10 @@ rist  rist://203.0.113.9:7000
   codec mirrors it (the receiver rejects a mismatch).
 - **RTMP carries H.264 only.** If you target RTMP with H.265/AV1 the receiver
   returns `400 rtmp_codec_unsupported`; the encoder logs it to the transport log.
-- **v1 simplification:** reencode disposition is global (applies to every
-  destination) in the UI, even though the contract supports per-output
-  disposition. Per-destination reencode is a straightforward follow-up.
-- **Provisioning is best-effort and detached.** Start/Stop POST on a detached
+- **Per-output disposition is the allocation's choice.** The receiver contract
+  supports copy and transcode per output and the start body carries it per
+  output; the encoder does not flatten it to one global setting.
+- **Provisioning is best-effort.** Start/Stop POST on the allocation worker
   thread; failures are logged to the transport log and do not block encoding.
   The encoder still streams RIST regardless (a receiver that is already
   listening will restream once provisioned).
