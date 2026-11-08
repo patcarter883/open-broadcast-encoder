@@ -466,22 +466,19 @@ auto raw_local_input::read_and_push(int fd) -> bool
     this->audio_chunks++;
   }
 
-  // push_buffer takes ownership of the buffer, including on failure.
-  const GstFlowReturn ret = gst_app_src_push_buffer(
-      GST_APP_SRC(is_video ? this->video_src : this->audio_src), buf);
-  if (ret != GST_FLOW_OK) {
-    if (this->mode == push_mode::drop) {
-      // A stalled preview sink costs frames, never the socket: the frame is
-      // already the element's and the next one may fit.
-      this->dropped_frames++;
-      if (this->dropped_frames % 600 == 0) {
-        this->log(std::format("[raw] preview dropped {} frame(s)\n",
-                              this->dropped_frames));
-      }
-      return true;
+  // The preview pushes through its own path: it may drop a frame, the encode
+  // path may not, and that difference is the whole reason the two policies
+  // exist. push_buffer takes ownership of the buffer, including on failure.
+  GstElement* const src = is_video ? this->video_src : this->audio_src;
+  if (this->mode == push_mode::drop) {
+    this->push_preview(src, buf, fh.payload_bytes);
+  } else {
+    const GstFlowReturn ret = gst_app_src_push_buffer(GST_APP_SRC(src), buf);
+    if (ret != GST_FLOW_OK) {
+      log(std::format("[raw] appsrc push failed: {}\n",
+                      gst_flow_get_name(ret)));
+      return false;
     }
-    log(std::format("[raw] appsrc push failed: {}\n", gst_flow_get_name(ret)));
-    return false;
   }
 
   const std::uint64_t total = this->video_frames + this->audio_chunks;
@@ -494,6 +491,51 @@ auto raw_local_input::read_and_push(int fd) -> bool
                     this->audio_chunks));
   }
   return true;
+}
+
+// The preview must never park this reader. A push that blocks stops the socket
+// being drained, and OBS gives up on a peer that stops reading -- so a stalled
+// preview window would take the live ingest down with it. The element is
+// block=false and leaky, so a full queue would drop the frame inside the
+// element; checking the level first makes the drop happen here, where it can be
+// counted and reported, and keeps push_buffer from being called at all.
+void raw_local_input::push_preview(GstElement* src,
+                                   GstBuffer* buf,
+                                   std::uint32_t payload_bytes)
+{
+  guint64 level = 0;
+  guint64 max_bytes = 0;
+  g_object_get(
+      src, "current-level-bytes", &level, "max-bytes", &max_bytes, nullptr);
+  if (!appsrc_policy::preview_accepts(level, payload_bytes, max_bytes)) {
+    gst_buffer_unref(buf);
+    this->note_preview_drop();
+    return;
+  }
+  // Takes ownership of the buffer either way.
+  if (gst_app_src_push_buffer(GST_APP_SRC(src), buf) != GST_FLOW_OK) {
+    this->note_preview_drop();
+  }
+}
+
+// A stalled preview drops every frame, so the line is rate-limited to one a
+// second with the count since the previous one: the operator learns the preview
+// is behind without the log becoming the stall.
+void raw_local_input::note_preview_drop()
+{
+  this->dropped_frames++;
+  this->dropped_since_log++;
+  const auto now = std::chrono::steady_clock::now();
+  const bool first = this->last_drop_log.time_since_epoch().count() == 0;
+  if (!first && now - this->last_drop_log < std::chrono::seconds(1)) {
+    return;
+  }
+  this->last_drop_log = now;
+  this->log(std::format(
+      "[raw] preview queue full: dropped {} frame(s), {} in total\n",
+      this->dropped_since_log,
+      this->dropped_frames));
+  this->dropped_since_log = 0;
 }
 
 // Wire audio is channel-planar: channel 0's samples, then channel 1's, and so

@@ -131,3 +131,25 @@ TEST_CASE("the two policies are distinct appsrc elements", "[encode][preview]")
   CHECK(appsrc_policy::preview_video_src()
         != appsrc_policy::encode_video_src());
 }
+
+TEST_CASE("a full preview queue drops the frame instead of pushing it",
+          "[encode][preview]")
+{
+  constexpr std::uint64_t frame = 8ull * 1024ull * 1024ull;
+  constexpr std::uint64_t cap = 4 * frame;
+
+  // Room for the frame: push.
+  CHECK(appsrc_policy::preview_accepts(0, frame, cap));
+  CHECK(appsrc_policy::preview_accepts(frame, frame, cap));
+  // Exactly full is still within the cap, so this frame fits and is pushed.
+  CHECK(appsrc_policy::preview_accepts(cap - frame, frame, cap));
+  // The sink has stopped: pushing would either block or be dropped inside the
+  // element, so the reader drops it here where it can count it.
+  CHECK_FALSE(appsrc_policy::preview_accepts(cap, frame, cap));
+  CHECK_FALSE(appsrc_policy::preview_accepts(cap - frame + 1, frame, cap));
+
+  // An empty queue always admits one frame, however small the cap: a cap below
+  // one frame would otherwise drop every frame for ever and show a preview that
+  // never updates.
+  CHECK(appsrc_policy::preview_accepts(0, frame, frame / 4));
+}
