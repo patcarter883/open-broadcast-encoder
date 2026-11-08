@@ -30,6 +30,12 @@ struct hosted_session
   int psk_aes = 256;
   std::string start_body_json;  // receiver schema-2 /start body, verbatim
 
+  // The portal's view of the session (E3): "allocated", "running", "ended"...
+  // Persisted with the rest so a reattach after a restart can say what it found
+  // without depending on the fetch that produced it. Empty means this file
+  // predates the field -- not a state of its own.
+  std::string state;
+
   // DT-20.1: the bridge the portal chose for this encoder, if any. Identity
   // ONLY -- the pair token is released separately (POST
   // /v1/bridges/:id/credential), so an allocation never carries a media-plane
@@ -58,6 +64,65 @@ struct alloc_result
   std::string error;  // human-readable on failure
   int http_status = 0;
 };
+
+// What a GET /sessions/<id> actually told us. These are the four cases that
+// demand different behaviour, not the HTTP statuses that produce them -- 500,
+// 502 and a connect timeout are one case (try again), 401 is another (a retry
+// will not fix it).
+enum class session_probe
+{
+  found,        // 2xx with a session document
+  gone,         // 404: the portal does not have this session any more
+  unavailable,  // no answer, 5xx, or a document we cannot read: try again
+  unauthorised  // 401/403: the device token was refused
+};
+
+// Result of reading a session back by id (E3). `ok` means a usable session
+// document was returned; every other case is described by `probe`, so the
+// caller's decision is made by the pure table below rather than by re-reading
+// an HTTP status at the call site.
+struct session_fetch_result
+{
+  bool ok = false;
+  int http_status = 0;
+  session_probe probe = session_probe::unavailable;
+  std::string state;      // the portal's state word, when it said one
+  hosted_session session;  // populated when ok
+  std::string error;
+};
+
+// What the encoder does about a persisted session when it launches (E3).
+enum class reattach_action
+{
+  reattach,       // restore the target and re-post the stored /start body
+  clear_session,  // the session is over: drop the file and say so
+  retry,          // keep the file and try again in 15 s
+  keep_report     // keep the file; this needs the operator, not another try
+};
+
+// Classify a fetch by its HTTP status and whether the body parsed into a
+// session. Pure, so the mapping is testable without a server.
+session_probe classify_probe(int http_status, bool body_usable);
+
+// The E3 decision table: (what the fetch produced, the state the portal
+// reported) -> what the encoder does. Pure, so every branch is unit-tested.
+//
+// The asymmetry is deliberate: only a session the portal calls running or
+// allocated -- or one it returns without any state word at all -- is reattached
+// to (a re-posted /start into anything else would resurrect a session that is
+// being torn down), only a session the portal calls ended -- or does not have
+// at all -- is deleted (deleting a session we merely failed to understand would
+// orphan nothing and lose a billable one), and a state this build does not
+// recognise keeps the file for the operator.
+reattach_action decide_reattach(session_probe probe, const std::string& state);
+
+// Fold a fresh read of the session over the persisted copy (E3). The portal
+// restates URLs and state, but the control token and PSK are show-once: a
+// later read legitimately omits them, so an absent field must never blank the
+// one on disk -- that would leave the encoder unable to talk to a receiver it
+// still holds. The persisted value wins wherever the fresh document is silent.
+hosted_session merge_session(const hosted_session& persisted,
+                             const hosted_session& fresh);
 
 // The media-plane inputs the backplane's destination-bitrate rule needs. The
 // rule is min(90% of the link, min(source x codec factor, output ceiling)),
@@ -120,6 +185,12 @@ public:
   // Deallocate (the kill switch / abandon step). The device token authorises
   // it. Returns true on success (or if already gone).
   bool deallocate(const std::string& session_id, std::string& err);
+
+  // Read a session back by id (E3). Used at launch, against the session id
+  // persisted at allocation time, to decide whether this encoder still has a
+  // live allocation to reattach to. Never allocates: a new allocation would be
+  // a new session id and therefore a different video.
+  session_fetch_result get_session(const std::string& session_id);
 
   // Abandon-and-reallocate (M2.7): DELETE the lost/orphaned session, then
   // allocate a fresh one with the same request. One user action.

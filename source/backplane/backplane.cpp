@@ -19,6 +19,9 @@ std::string hosted_session::to_json() const
   j["control_token"] = control_token;
   j["psk"] = psk;
   j["psk_aes"] = psk_aes;
+  if (!state.empty()) {
+    j["state"] = state;
+  }
   // start_body is stored as parsed JSON so the file stays readable.
   if (!start_body_json.empty()) {
     j["start_body"] = json::parse(start_body_json, nullptr, false);
@@ -47,6 +50,7 @@ hosted_session hosted_session::from_json(const std::string& text)
   s.control_token = j.value("control_token", "");
   s.psk = j.value("psk", "");
   s.psk_aes = j.value("psk_aes", 256);
+  s.state = j.value("state", "");
   if (j.contains("start_body")) {
     s.start_body_json = j.at("start_body").dump();
   }
@@ -59,6 +63,18 @@ hosted_session hosted_session::from_json(const std::string& text)
 
 namespace
 {
+std::string state_of(const json& sess)
+{
+  // The portal's state word, defensively read: a non-string (an enum object, a
+  // null) must not become the literal text "null" and then be classified.
+  if (auto it = sess.find("state");
+      it != sess.end() && it->is_string())
+  {
+    return it->get<std::string>();
+  }
+  return {};
+}
+
 hosted_session parse_session(const json& body)
 {
   hosted_session s;
@@ -72,6 +88,7 @@ hosted_session parse_session(const json& body)
   s.control_token = sess.value("control_token", "");
   s.psk = sess.value("psk", "");
   s.psk_aes = sess.value("psk_aes", 256);
+  s.state = state_of(sess);
   if (sess.contains("start_body")) {
     s.start_body_json = sess.at("start_body").dump();
   }
@@ -263,4 +280,169 @@ alloc_result backplane_client::abandon_and_reallocate(
   // reaped) must not block getting a working session.
   deallocate(lost_session_id, err);
   return allocate(pop, encoder_name, bitrates);
+}
+
+namespace
+{
+// The portal's state words in lower case with surrounding space removed, so a
+// "Running" and a "running " still classify. Classification must never depend
+// on the portal's capitalisation.
+std::string normalise_state(const std::string& state)
+{
+  std::string out;
+  out.reserve(state.size());
+  for (const char c : state) {
+    if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+      continue;
+    }
+    out.push_back(static_cast<char>(
+        c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c));
+  }
+  return out;
+}
+}  // namespace
+
+session_probe classify_probe(int http_status, bool body_usable)
+{
+  if (http_status == 0) {
+    return session_probe::unavailable;  // never reached the portal
+  }
+  if (http_status == 401 || http_status == 403) {
+    return session_probe::unauthorised;
+  }
+  if (http_status == 404) {
+    return session_probe::gone;
+  }
+  if (http_status / 100 == 2) {
+    // A 2xx we cannot read is not a session we can act on. Treating it as
+    // "gone" would delete a live allocation, so it is retried instead.
+    return body_usable ? session_probe::found : session_probe::unavailable;
+  }
+  return session_probe::unavailable;
+}
+
+reattach_action decide_reattach(session_probe probe, const std::string& state)
+{
+  switch (probe) {
+    case session_probe::gone:
+      // The portal does not have it: nothing exists to reattach to, and holding
+      // the file would only make the next launch ask again.
+      return reattach_action::clear_session;
+    case session_probe::unavailable:
+      return reattach_action::retry;
+    case session_probe::unauthorised:
+      // A refused device token is not a transient failure: retrying for five
+      // minutes would just be five minutes of 401s. Keep the file -- the
+      // session may well be live -- and tell the operator to sign in.
+      return reattach_action::keep_report;
+    case session_probe::found:
+      break;
+  }
+
+  const std::string s = normalise_state(state);
+  // Only a session that is meant to be up is reattached to. Re-posting /start
+  // into anything else would resurrect a session that is being torn down.
+  if (s == "allocated" || s == "running" || s == "live") {
+    return reattach_action::reattach;
+  }
+  if (s == "ended" || s == "released" || s == "terminated" || s == "completed"
+      || s == "expired" || s == "closed")
+  {
+    return reattach_action::clear_session;
+  }
+  // A document with no state word at all: the portal found the session we hold
+  // and said nothing about it being over, so the session is reattached to.
+  // Refusing here would cost the operator the destination for the whole of a
+  // long session just because the response omitted a field.
+  if (s.empty()) {
+    return reattach_action::reattach;
+  }
+  // A state this build does not know is not worth guessing about: the session
+  // may still be billable, so the file is kept and the operator told.
+  return reattach_action::keep_report;
+}
+
+session_fetch_result backplane_client::get_session(
+    const std::string& session_id)
+{
+  session_fetch_result r;
+  if (!m_transport) {
+    r.error = "no transport configured";
+    return r;
+  }
+  if (session_id.empty()) {
+    r.probe = session_probe::gone;
+    r.error = "no session id to look up";
+    return r;
+  }
+
+  const auto [status, body] = m_transport(
+      "GET", "/api/v1/sessions/" + session_id, m_device_token, "");
+  r.http_status = status;
+  const json resp = json::parse(body, nullptr, false);
+  const bool has_session =
+      resp.is_object() && resp.contains("session") && resp.at("session").is_object();
+  r.probe = classify_probe(status, has_session);
+
+  if (r.probe == session_probe::found) {
+    // Only what the portal chose to restate. control_token is a show-once
+    // secret, so a later read legitimately omits it: the caller merges this
+    // over the persisted copy rather than treating an absent field as empty.
+    r.session = parse_session(resp);
+    r.state = r.session.state;
+    r.ok = true;
+    return r;
+  }
+  if (r.probe == session_probe::gone) {
+    r.error = "session " + session_id + " is not on the backplane";
+  } else if (r.probe == session_probe::unauthorised) {
+    r.error = "backplane refused the device token (HTTP "
+        + std::to_string(status) + ")";
+  } else {
+    r.error = status == 0
+        ? "no response from backplane"
+        : "could not read session " + session_id + " (HTTP "
+            + std::to_string(status) + ")";
+  }
+  return r;
+}
+
+hosted_session merge_session(const hosted_session& persisted,
+                             const hosted_session& fresh)
+{
+  hosted_session s = persisted;
+  if (!fresh.session_id.empty()) {
+    s.session_id = fresh.session_id;
+  }
+  if (!fresh.rist_url.empty()) {
+    s.rist_url = fresh.rist_url;
+  }
+  if (!fresh.control_url.empty()) {
+    s.control_url = fresh.control_url;
+  }
+  // Show-once secrets: only ever replaced by a value, never by silence.
+  if (!fresh.control_token.empty()) {
+    s.control_token = fresh.control_token;
+  }
+  if (!fresh.psk.empty()) {
+    s.psk = fresh.psk;
+  }
+  if (fresh.psk_aes > 0) {
+    s.psk_aes = fresh.psk_aes;
+  }
+  if (!fresh.start_body_json.empty()) {
+    s.start_body_json = fresh.start_body_json;
+  }
+  if (!fresh.state.empty()) {
+    s.state = fresh.state;
+  }
+  // The bridge identity was decided at allocation and is not restated by a
+  // session read.
+  if (fresh.bridge_present) {
+    s.bridge_present = true;
+    s.bridge_id = fresh.bridge_id;
+    s.bridge_uid = fresh.bridge_uid;
+    s.bridge_lan_host = fresh.bridge_lan_host;
+  }
+  return s;
 }

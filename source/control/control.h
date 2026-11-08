@@ -80,4 +80,44 @@ public:
                            int ingest_kbps = 0,
                            std::uint32_t ingest_width = 0,
                            std::uint32_t ingest_height = 0);
+
+  // The receiver's GET /status, reduced to the one fact the encoder acts on
+  // (E4). While a session is held and this encoder is not sending, a receiver
+  // that is not running means the node lost its config -- a reboot, an
+  // OOM-killed container -- and the stored /start body has to be re-posted.
+  //
+  // `ok` is deliberately separate from `is_running`: "the receiver says it is
+  // idle" and "the receiver did not answer" demand opposite responses (re-post
+  // the body vs. back off and try again), and collapsing them would make a
+  // node that is merely unreachable look like a node that needs rebuilding on
+  // every poll.
+  struct receiver_status
+  {
+    bool ok = false;          // the receiver answered with a usable document
+    bool is_running = false;  // it is receiving a live feed
+    int http_status = 0;
+    std::string error;  // human-readable when ok is false
+  };
+
+  static receiver_status status(const std::string& control_url,
+                                const std::string& control_token);
 };
+
+// What one iteration of the held-session poll should do (E4), as a pure
+// decision so every branch is testable without a receiver.
+//
+// Two rules are load-bearing:
+//   - a receiver that is idle is re-posted to; a receiver that did not answer
+//     is NOT (re-posting into an unknown state is how a poll loop turns into a
+//     permanent retry storm against a node that is rebooting).
+//   - repeated failures lengthen the interval (5, 10, 20, 40, then 60 s)
+//     instead of hammering every 5 s forever.
+struct hold_poll_decision
+{
+  bool repost_start = false;
+  int next_poll_seconds = 5;
+};
+
+hold_poll_decision decide_hold_poll(bool status_ok,
+                                    bool is_running,
+                                    int consecutive_failures);
