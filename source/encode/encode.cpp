@@ -1026,44 +1026,67 @@ auto encode::pull_audio_buffer() -> buffer_data
 
 std::uint32_t encode::source_fps_snapped()
 {
+  return this->source_geometry_now().fps;
+}
+
+auto encode::source_geometry_now() -> source_geometry
+{
   // Measure from the video encoder's own sink caps: negotiated for every input
   // type alike (raw/OBS, capture, SDP, MPEG-TS, NDI, test), and without
-  // reaching into a reader's private state. Snapped to a standard rate, then
-  // cached -- zero means nothing has been measured, and the caller leaves the
-  // portal's value alone rather than guessing at one.
+  // reaching into a reader's private state. The rate is snapped to a standard
+  // one; every member is cached, so a later Allocate still sees what a previous
+  // Start measured. Zero means nothing has been measured.
   std::lock_guard<std::mutex> guard(this->pipeline_mutex);
+  source_geometry result {
+      .width = this->cached_width.load(std::memory_order_relaxed),
+      .height = this->cached_height.load(std::memory_order_relaxed),
+      .fps = this->cached_snapped_fps.load(std::memory_order_relaxed)};
   if (this->video_encoder == nullptr) {
-    return this->cached_snapped_fps.load(std::memory_order_relaxed);
+    return result;
   }
   GstPad* pad = gst_element_get_static_pad(this->video_encoder, "sink");
   if (pad == nullptr) {
-    return this->cached_snapped_fps.load(std::memory_order_relaxed);
+    return result;
   }
   GstCaps* caps = gst_pad_get_current_caps(pad);
   gst_object_unref(pad);
   if (caps == nullptr) {
-    return this->cached_snapped_fps.load(std::memory_order_relaxed);
+    return result;
   }
-  std::uint32_t snapped = 0;
   if (gst_caps_get_size(caps) > 0) {
     const GstStructure* structure = gst_caps_get_structure(caps, 0);
-    gint cap_num = 0;
-    gint cap_den = 1;
-    if (structure != nullptr
-        && gst_structure_get_fraction(
-            structure, "framerate", &cap_num, &cap_den)
-        && cap_num > 0 && cap_den > 0)
-    {
-      snapped = fps_snap::standard_rate(static_cast<std::uint32_t>(cap_num),
-                                        static_cast<std::uint32_t>(cap_den));
+    if (structure != nullptr) {
+      gint cap_num = 0;
+      gint cap_den = 1;
+      if (gst_structure_get_fraction(structure, "framerate", &cap_num, &cap_den)
+          && cap_num > 0 && cap_den > 0)
+      {
+        const std::uint32_t snapped =
+            fps_snap::standard_rate(static_cast<std::uint32_t>(cap_num),
+                                    static_cast<std::uint32_t>(cap_den));
+        if (snapped > 0) {
+          this->cached_snapped_fps.store(snapped, std::memory_order_relaxed);
+          result.fps = snapped;
+        }
+      }
+      // width/height are ints in the caps; a non-positive value is "not
+      // present", never a picture.
+      gint width = 0;
+      gint height = 0;
+      if (gst_structure_get_int(structure, "width", &width) && width > 0
+          && gst_structure_get_int(structure, "height", &height) && height > 0)
+      {
+        this->cached_width.store(static_cast<std::uint32_t>(width),
+                                 std::memory_order_relaxed);
+        this->cached_height.store(static_cast<std::uint32_t>(height),
+                                  std::memory_order_relaxed);
+        result.width = static_cast<std::uint32_t>(width);
+        result.height = static_cast<std::uint32_t>(height);
+      }
     }
   }
   gst_caps_unref(caps);
-  if (snapped > 0) {
-    this->cached_snapped_fps.store(snapped, std::memory_order_relaxed);
-    return snapped;
-  }
-  return this->cached_snapped_fps.load(std::memory_order_relaxed);
+  return result;
 }
 
 void encode::set_encode_bitrate(int new_bitrate)

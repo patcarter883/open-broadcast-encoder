@@ -117,6 +117,7 @@ void user_interface::set_encode_state(const std::string& text, bool is_failed)
   if (is_failed) {
     btn_start_encode->activate();
     btn_stop_encode->deactivate();
+    refresh_end_session();
   }
   unlock();
   Fl::awake();
@@ -595,19 +596,96 @@ void user_interface::hosted_allocate(FuncPtr allocate_funcptr)
   allocate_funcptr();
 }
 
+// End Session is destructive and billable, so it is a two-step action: the
+// first click only arms it, and a 5 s timer reverts the label. That is the
+// whole guard -- there is no modal: the operator has already been told the
+// session is held by the status line and the log. The deallocate itself runs
+// on a tracked worker in main.cpp, because it blocks on HTTP.
+void user_interface::hosted_end_session(FuncPtr end_session_funcptr)
+{
+  lock();
+  if (!end_session_armed) {
+    end_session_armed = true;
+    btn_hosted_end_session->label("End Session?");
+    btn_hosted_end_session->redraw();
+    Fl::add_timeout(5.0, end_session_timeout_cb, this);
+    unlock();
+    Fl::awake();
+    return;
+  }
+  // Second click inside the window: run it.
+  end_session_armed = false;
+  Fl::remove_timeout(end_session_timeout_cb, this);
+  btn_hosted_end_session->label("End Session");
+  btn_hosted_end_session->deactivate();
+  btn_hosted_end_session->redraw();
+  unlock();
+  Fl::awake();
+  if (end_session_funcptr != nullptr) {
+    end_session_funcptr();
+  }
+}
+
+void user_interface::end_session_timeout_cb(void* data)
+{
+  auto* self = static_cast<user_interface*>(data);
+  if (self == nullptr) {
+    return;
+  }
+  self->lock();
+  self->end_session_armed = false;
+  self->btn_hosted_end_session->label("End Session");
+  self->btn_hosted_end_session->redraw();
+  self->refresh_end_session();
+  self->unlock();
+  Fl::awake();
+}
+
+void user_interface::refresh_end_session()
+{
+  // A held session is the precondition; a live feed forbids ending it, because
+  // that would tear the receiver down under the operator's stream.
+  if (hosted_session_held && !btn_stop_encode->active()) {
+    btn_hosted_end_session->activate();
+    return;
+  }
+  btn_hosted_end_session->deactivate();
+  if (end_session_armed) {
+    // The timer stays queued and no-ops; removing it here would mean touching
+    // FLTK's timer list from a worker thread, which set_hosted_session_held()
+    // may be on.
+    end_session_armed = false;
+    btn_hosted_end_session->label("End Session");
+    btn_hosted_end_session->redraw();
+  }
+}
+
+void user_interface::set_hosted_session_held(bool held)
+{
+  lock();
+  hosted_session_held = held;
+  refresh_end_session();
+  unlock();
+  Fl::awake();
+}
+
 void user_interface::start(void (*start_funcptr)())
 {
   lock();
   btn_start_encode->deactivate();
   btn_stop_encode->activate();
+  // Ending the session under a live feed is refused: the button only comes
+  // alive again once Stop has taken the stream down.
+  refresh_end_session();
   unlock();
-  // Same discipline as stop() below. The event loop owns the lock permanently --
-  // init_ui() takes it once and Fl::run() only releases it while waiting -- so
-  // the unlock() above removes this method's count while the UI thread still
+  // Same discipline as stop() below. The event loop owns the lock permanently
+  // -- init_ui() takes it once and Fl::run() only releases it while waiting --
+  // so the unlock() above removes this method's count while the UI thread still
   // holds one. start_funcptr() tears the preview down and joins its worker, and
   // that worker reports through encode_log(), which takes this same lock;
   // joining while the UI thread holds it deadlocks the application. Release the
-  // loop's count for the call and reclaim it before returning to the event loop.
+  // loop's count for the call and reclaim it before returning to the event
+  // loop.
   Fl::unlock();
   start_funcptr();
   Fl::lock();
@@ -618,6 +696,9 @@ void user_interface::stop(void (*stop_funcptr)())
   lock();
   btn_start_encode->activate();
   btn_stop_encode->deactivate();
+  // A held session makes End Session actionable again: Stop ends the feed, not
+  // the session (main.cpp's stop() states that in the log and the status line).
+  refresh_end_session();
   unlock();
   // The event loop owns the lock permanently: init_ui() takes it once and
   // Fl::run() only releases it while waiting, so the unlock() above removes
@@ -922,6 +1003,7 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                                        FuncPtr hosted_allocate_funcptr,
                                        FuncPtr hosted_signin_funcptr,
                                        FuncPtr hosted_signout_funcptr,
+                                       FuncPtr hosted_end_session_funcptr,
                                        FuncPtr refresh_capture_funcptr)
 {
   main_window->callback([](Fl_Widget* w, void*) { w->hide(); });
@@ -1181,4 +1263,11 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        hosted_allocate,
                        FuncPtr,
                        hosted_allocate_funcptr);
+
+  FL_METHOD_CALLBACK_1(btn_hosted_end_session,
+                       user_interface,
+                       this,
+                       hosted_end_session,
+                       FuncPtr,
+                       hosted_end_session_funcptr);
 }

@@ -40,6 +40,17 @@ enum class encode_state
 
 auto encode_state_text(encode_state state) -> const char*;
 
+// The picture the encoder is sending, measured from its video encoder's
+// negotiated sink caps. Zero in any member means "not measured yet", and a
+// caller states zero rather than guessing at a resolution -- the receiver's
+// contract treats 0 as unknown on purpose.
+struct source_geometry
+{
+  std::uint32_t width {0};
+  std::uint32_t height {0};
+  std::uint32_t fps {0};
+};
+
 class encode
 {
 public:
@@ -63,6 +74,11 @@ public:
   // result is cached, because Allocate and Start Encode are independent UI
   // actions -- the measurement and its use are different moments.
   std::uint32_t source_fps_snapped();
+  // The width, height and snapped rate of the picture this encoder is sending,
+  // measured from the same caps. Cached like the rate: Allocate and Start
+  // Encode are independent UI actions, and the allocation worker needs the
+  // geometry after the measurement has happened.
+  source_geometry source_geometry_now();
   explicit encode(
       const input_config& input_config,
       const encode_config& encode_config,
@@ -88,6 +104,10 @@ private:
   // invalidated by a later pipeline stop, and the rate of a live input does not
   // change.
   std::atomic<std::uint32_t> cached_snapped_fps {0};
+  // The measured picture size, cached for the same reason and read by the same
+  // allocation worker.
+  std::atomic<std::uint32_t> cached_width {0};
+  std::atomic<std::uint32_t> cached_height {0};
   std::function<void(const std::string&)> log_func;
   // The input reader's state, for the UI's input-status line. Separate from
   // log_func: the log is history, this is the current state.

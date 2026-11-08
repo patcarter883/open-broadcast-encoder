@@ -35,7 +35,9 @@ bool control_client::prepare_hosted_body(const std::string& start_body_json,
                                          std::string& out_body,
                                          std::string& err,
                                          std::uint32_t ingest_fps,
-                                         int ingest_kbps)
+                                         int ingest_kbps,
+                                         std::uint32_t ingest_width,
+                                         std::uint32_t ingest_height)
 {
   json body = json::parse(start_body_json, nullptr, false);
   if (body.is_discarded() || !body.is_object()) {
@@ -43,9 +45,10 @@ bool control_client::prepare_hosted_body(const std::string& start_body_json,
     return false;
   }
   // The portal's document, with only the fields it cannot know corrected: the
-  // receiver's schema version, the ingest codec, and every transcode gop. The
-  // outputs -- ids, urls, keys, and the opt-in transcode target with its scale
-  // and bitrate -- are the portal's decision and go through untouched (DT-22).
+  // receiver's schema version, the ingest codec and geometry, the standby
+  // slate, and every transcode gop. The outputs -- ids, urls, keys, and the
+  // opt-in transcode target with its scale and bitrate -- are the portal's
+  // decision and go through untouched (DT-22).
   //
   // The gop is not a decision, it is a duration: the portal states it as two
   // seconds at an assumed 60 fps because the allocate request carries only the
@@ -56,6 +59,23 @@ bool control_client::prepare_hosted_body(const std::string& start_body_json,
   // bitrate stand.
   body["schema_version"] = k_receiver_schema_version;
   body["source"]["codec"] = codec_str(source_codec);
+
+  // The geometry is the encoder's for the same reason the rate is: the portal
+  // has never seen the picture. Written as ints because the receiver rejects a
+  // non-integer, and zero is the contract's "unknown" -- the receiver then
+  // holds a slate at the feed's size rather than guessing at 1080p.
+  body["source"]["width"] = static_cast<int>(ingest_width);
+  body["source"]["height"] = static_cast<int>(ingest_height);
+  body["source"]["fps"] = static_cast<int>(ingest_fps);
+
+  // Every hosted session runs the slate: Stop Encode leaves the session
+  // allocated and the node on standby (main.cpp's stop()). A body that already
+  // carries a standby object keeps its other members (brand image, text,
+  // timeouts) -- only `enabled` is the encoder's to state.
+  if (!body["standby"].is_object()) {
+    body["standby"] = json::object();
+  }
+  body["standby"]["enabled"] = true;
 
   // The ingest rate is the encoder's: it is the only side that knows what it is
   // actually sending, and the portal cannot state it (the allocate request
@@ -83,7 +103,9 @@ bool control_client::start_hosted(const std::string& control_url,
                                   codec source_codec,
                                   std::string& err,
                                   std::uint32_t ingest_fps,
-                                  int ingest_kbps)
+                                  int ingest_kbps,
+                                  std::uint32_t ingest_width,
+                                  std::uint32_t ingest_height)
 {
   // Split the allocation's control_url into the origin httplib wants and the
   // path /start hangs off. The URL carries the per-session path (e.g.
@@ -105,8 +127,14 @@ bool control_client::start_hosted(const std::string& control_url,
   }
 
   std::string body;
-  if (!prepare_hosted_body(
-          start_body_json, source_codec, body, err, ingest_fps, ingest_kbps))
+  if (!prepare_hosted_body(start_body_json,
+                           source_codec,
+                           body,
+                           err,
+                           ingest_fps,
+                           ingest_kbps,
+                           ingest_width,
+                           ingest_height))
   {
     return false;
   }
