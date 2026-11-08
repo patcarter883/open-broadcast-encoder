@@ -23,6 +23,8 @@ target_sources(bridge_lib ${warning_guard}
     reporting_httplib.cpp
     actuate.h
     actuate.cpp
+    join_interface.h
+    join_interface.cpp
 )
 
 target_include_directories(bridge_lib PUBLIC

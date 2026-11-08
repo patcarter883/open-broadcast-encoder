@@ -473,8 +473,13 @@ class ui_widgets {open
           } {
             Fl_Input input_bridge_listen {
               label {Bridge listens on}
-              xywh {25 489 230 25} align 5
+              xywh {25 489 205 25} align 5
               code0 {input_bridge_listen->value("rist://0.0.0.0:5000");}
+            }
+            Fl_Input input_bridge_miface {
+              label {Join iface}
+              tooltip {Interface on the bridge that joins a multicast listen group. Empty resolves it from the route to the group, then the uplink above.}
+              xywh {245 489 105 25} align 5
             }
             Fl_Input input_bridge_forward {
               label {Bridge forwards to}

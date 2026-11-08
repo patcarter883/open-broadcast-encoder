@@ -158,6 +158,7 @@ private:
   void bridge_address_cb(bridge_control_config* bridge_config);
   void wan_encryption_cb(bridge_control_config* bridge_config);
   void bridge_listen_cb(bridge_control_config* bridge_config);
+  void bridge_miface_cb(bridge_control_config* bridge_config);
   void bridge_forward_cb(bridge_control_config* bridge_config);
   void bridge_interface_cb(bridge_control_config* bridge_config);
   void bridge_find(FuncPtr find_funcptr);

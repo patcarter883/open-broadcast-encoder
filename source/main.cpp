@@ -32,6 +32,7 @@
 #include "bridge/actuate.h"
 #include "bridge/bridge_client.h"
 #include "bridge/discovery.h"
+#include "bridge/join_interface.h"
 #include "bridge/mdns.h"
 #include "bridge/reporting.h"
 #include "bridge/ubus.h"
@@ -374,6 +375,8 @@ auto bridge_desired(const bridge_control_config& cfg) -> nlohmann::json
 {
   bridge::actuate_request req;
   req.listen_url = cfg.listen_url;
+  req.listen_miface = cfg.listen_miface;
+  req.interface_name = cfg.interface_name;
   req.encrypt_wan_leg = cfg.encrypt_wan_leg;
 
   hosted_session session;
@@ -627,6 +630,12 @@ static void bridge_apply()
           "Nothing to apply: set the listen url and a forwarding target", true);
     }
     return;
+  }
+  if (const std::string warning =
+          bridge::join_warning(desired.value("listen_url", std::string {}));
+      !warning.empty())
+  {
+    transport_log("Bridge: " + warning + "\n");
   }
   if (cfg.encrypt_wan_leg) {
     transport_log(
@@ -903,6 +912,7 @@ static void hosted_allocate()
         bridge::actuate_request request;
         // pop is left empty: the backplane places from the account's home POP.
         request.listen_url = bridge_cfg.listen_url;
+        request.listen_miface = bridge_cfg.listen_miface;
         request.interface_name = bridge_cfg.interface_name;
         request.known_token = bridge_cfg.token;
         // Fallback only -- the portal's answer in the allocation is
@@ -998,6 +1008,12 @@ static void hosted_allocate()
             outcome.session, source_codec, ingest_fps, video_kbps);
         if (!outcome.reported) {
           transport_log("Bridge report failed: " + outcome.error + "\n");
+        }
+        if (!outcome.warning.empty()) {
+          transport_log("Bridge: " + outcome.warning + "\n");
+          if (ctx.ui != nullptr) {
+            ctx.ui->set_bridge_message(outcome.warning, true);
+          }
         }
       }));
 }
@@ -1238,8 +1254,12 @@ static void run_raw_preview(std::uint16_t port)
   // what the selected codec and destinations could carry. That decision belongs
   // to the encode path, and passing it twice would be two policies to keep
   // true.
-  raw_local_input reader(
-      video_src, audio_src, port, &encode_log, {}, &input_status);
+  raw_local_input reader(video_src,
+                         audio_src,
+                         port,
+                         &encode_log,
+                         {},
+                         &input_status);
   reader.start();
 
   // preview_running is set true by the launcher on the main thread BEFORE this
