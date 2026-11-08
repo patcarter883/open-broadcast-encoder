@@ -12,6 +12,7 @@ add_library(control_lib STATIC)
 target_sources(control_lib ${warning_guard}
   PUBLIC
     control.h
+    transcode_rate.h
     control.cpp
 )
 

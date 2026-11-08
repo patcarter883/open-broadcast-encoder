@@ -42,6 +42,8 @@ inline constexpr std::uint64_t k_encode_audio_max_bytes =
 
 // ---- Preview: a handful of frames -- enough to ride out one scheduling gap,
 // small enough that a stalled sink costs at most that much latency and memory.
+// Six frames is 200 ms at 30 fps and 100 ms at 60 fps, longer than a preview
+// sink's pipeline turnaround, and 50 MiB at 1080p BGRA.
 //
 // The depth is a COUNT of the negotiated frames, so the byte cap it implies has
 // to follow the caps: the 16 MiB this element used to carry is about two frames

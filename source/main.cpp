@@ -844,7 +844,8 @@ static void hosted_sign_out()
 static void apply_allocation_to_receiver(const hosted_session& session,
                                          codec source_codec,
                                          const source_geometry& geometry,
-                                         int ingest_kbps)
+                                         int ingest_kbps,
+                                         int source_kbps)
 {
   if (session.start_body_json.empty()) {
     transport_log("Allocated " + session.session_id
@@ -861,7 +862,8 @@ static void apply_allocation_to_receiver(const hosted_session& session,
                                    geometry.fps,
                                    ingest_kbps,
                                    geometry.width,
-                                   geometry.height))
+                                   geometry.height,
+                                   source_kbps))
   {
     transport_log("Receiver configured for session " + session.session_id
                   + ".\n");
@@ -926,10 +928,12 @@ static void repost_stored_start(const hosted_session& session)
   }
   transport_log("Receiver was not running; re-posting the stored start body "
                 "for " + session.session_id + ".\n");
-  apply_allocation_to_receiver(session,
-                               ctx.lib.encode_cfg.selected_codec,
-                               geometry,
-                               rist_bandwidth_ceiling_kbps);
+  apply_allocation_to_receiver(
+      session,
+      ctx.lib.encode_cfg.selected_codec,
+      geometry,
+      rist_bandwidth_ceiling_kbps,
+      ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed));
 }
 
 static void hosted_watchdog_loop()
@@ -1066,7 +1070,8 @@ static void hosted_allocate()
   }
 
   track_control_thread(std::thread(
-      [hosted, bridge_cfg, encoder_name, source_codec, video_kbps, bitrates]
+      [hosted, bridge_cfg, encoder_name, source_codec, video_kbps, encode_kbps,
+       bitrates]
       {
         backplane_client backplane(
             hosted.backplane_url,
@@ -1186,7 +1191,7 @@ static void hosted_allocate()
           geometry = encoder->source_geometry_now();
         }
         apply_allocation_to_receiver(
-            outcome.session, source_codec, geometry, video_kbps);
+            outcome.session, source_codec, geometry, video_kbps, encode_kbps);
         // E4: from now on the session is held, so a node that restarts must get
         // its configuration back without the operator doing anything.
         ensure_hosted_watchdog();

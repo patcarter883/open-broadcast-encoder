@@ -23,11 +23,13 @@ public:
   // verbatim to <control_url>/start", so the URL is absolute and may be https
   // (the node proxies it). The fields the portal cannot know are corrected
   // here: schema_version, which the receiver refuses when stale; source.codec,
-  // the codec this encoder will actually send; and each transcode gop, which
-  // the portal states as two seconds at an assumed 60 fps. Everything else
-  // passes through untouched -- including the transcode target, its scale and
-  // its bitrate -- and the portal stays the single configuration location
-  // (DT-22).
+  // the codec this encoder will actually send; each transcode gop, which the
+  // portal states as two seconds at an assumed 60 fps; and a transcode bitrate
+  // that asks for more than this encoder sends at or than its transport ceiling
+  // carries, which is lowered to the encoder's own cap (transcode_rate.h).
+  // Everything else passes through untouched -- including the transcode scale
+  // and any bitrate that already fits -- and the portal stays the single
+  // configuration location (DT-22).
   //
   // The receiver accepts ONLY an exact match on its own schema version, so this
   // must track the receiver, not the portal: when the receiver's contract moved
@@ -62,6 +64,14 @@ public:
   // because Stop Encode now leaves the session allocated and the node on
   // standby (see main.cpp's stop()). Any other standby members the portal sent
   // are preserved.
+  //
+  // source_kbps is the rate this encoder's video encoder is configured to send
+  // at. It, with ingest_kbps (the transport ceiling the encoder declares and
+  // sizes its RIST ring from), bounds every transcode target in the body: a
+  // transcode cannot carry more detail than its input and may occupy at most
+  // 90% of the transport ceiling. A target inside that bound is the portal's
+  // and stands. Zero means unknown, and then the body is left alone rather than
+  // guessed at.
   static bool prepare_hosted_body(const std::string& start_body_json,
                                   codec source_codec,
                                   std::string& out_body,
@@ -69,7 +79,8 @@ public:
                                   std::uint32_t ingest_fps = 0,
                                   int ingest_kbps = 0,
                                   std::uint32_t ingest_width = 0,
-                                  std::uint32_t ingest_height = 0);
+                                  std::uint32_t ingest_height = 0,
+                                  int source_kbps = 0);
 
   static bool start_hosted(const std::string& control_url,
                            const std::string& control_token,
@@ -79,7 +90,8 @@ public:
                            std::uint32_t ingest_fps = 0,
                            int ingest_kbps = 0,
                            std::uint32_t ingest_width = 0,
-                           std::uint32_t ingest_height = 0);
+                           std::uint32_t ingest_height = 0,
+                           int source_kbps = 0);
 
   // The receiver's GET /status, reduced to the one fact the encoder acts on
   // (E4). While a session is held and this encoder is not sending, a receiver

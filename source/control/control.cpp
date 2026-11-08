@@ -10,6 +10,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "control/transcode_rate.h"
 #include "lib/httplib_tls.h"
 
 using json = nlohmann::json;
@@ -61,7 +62,8 @@ bool control_client::prepare_hosted_body(const std::string& start_body_json,
                                          std::uint32_t ingest_fps,
                                          int ingest_kbps,
                                          std::uint32_t ingest_width,
-                                         std::uint32_t ingest_height)
+                                         std::uint32_t ingest_height,
+                                         int source_kbps)
 {
   json body = json::parse(start_body_json, nullptr, false);
   if (body.is_discarded() || !body.is_object()) {
@@ -70,17 +72,17 @@ bool control_client::prepare_hosted_body(const std::string& start_body_json,
   }
   // The portal's document, with only the fields it cannot know corrected: the
   // receiver's schema version, the ingest codec and geometry, the standby
-  // slate, and every transcode gop. The outputs -- ids, urls, keys, and the
-  // opt-in transcode target with its scale and bitrate -- are the portal's
-  // decision and go through untouched (DT-22).
+  // slate, every transcode gop, and a transcode target that asks for more than
+  // this encoder sends. The outputs -- ids, urls, keys, and the opt-in
+  // transcode target with its scale and bitrate, as far as it fits -- are the
+  // portal's decision and go through untouched (DT-22).
   //
   // The gop is not a decision, it is a duration: the portal states it as two
   // seconds at an assumed 60 fps because the allocate request carries only the
   // POP (DT-22), and it cannot know the ingest rate. Two seconds at 60 is four
   // at the 30 fps this deployment runs -- the ceiling the destination's own
   // guidance says not to exceed -- so it is restated here in frames at the
-  // snapped rate this encoder is actually running. The target, scale and
-  // bitrate stand.
+  // snapped rate this encoder is actually running. The scale stands.
   body["schema_version"] = k_receiver_schema_version;
   body["source"]["codec"] = codec_str(source_codec);
 
@@ -117,6 +119,32 @@ bool control_client::prepare_hosted_body(const std::string& start_body_json,
     }
   }
 
+  // The transcode target is derived from what this encoder sends: the portal
+  // sizes it from the plan (or from an explicit destination bitrate, which wins
+  // there outright), and has never seen the rate this pipeline runs at or the
+  // transport ceiling it declares. A target above either cannot add detail and
+  // would spend uplink the source never needed, so it is lowered to the
+  // encoder's cap; one that already fits is left exactly as the portal stated
+  // it. Unknown inputs leave the document untouched. The derivation lives in
+  // transcode_rate.h.
+  const int transcode_cap = transcode_rate::cap_kbps(source_kbps, ingest_kbps);
+  if (transcode_cap > 0) {
+    for (auto& output : body["outputs"]) {
+      if (!output.contains("transcode") || !output["transcode"].is_object()) {
+        continue;
+      }
+      auto& transcode = output["transcode"];
+      int stated = 0;
+      if (auto it = transcode.find("bitrate_kbps");
+          it != transcode.end() && it->is_number())
+      {
+        stated = it->get<int>();
+      }
+      transcode["bitrate_kbps"] =
+          transcode_rate::body_kbps(stated, source_kbps, ingest_kbps);
+    }
+  }
+
   out_body = body.dump();
   return true;
 }
@@ -129,7 +157,8 @@ bool control_client::start_hosted(const std::string& control_url,
                                   std::uint32_t ingest_fps,
                                   int ingest_kbps,
                                   std::uint32_t ingest_width,
-                                  std::uint32_t ingest_height)
+                                  std::uint32_t ingest_height,
+                                  int source_kbps)
 {
   // Split the allocation's control_url into the origin httplib wants and the
   // path /start hangs off.
@@ -149,7 +178,8 @@ bool control_client::start_hosted(const std::string& control_url,
                            ingest_fps,
                            ingest_kbps,
                            ingest_width,
-                           ingest_height))
+                           ingest_height,
+                           source_kbps))
   {
     return false;
   }
