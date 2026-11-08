@@ -32,6 +32,7 @@
 #include "bridge/actuate.h"
 #include "bridge/bridge_client.h"
 #include "bridge/discovery.h"
+#include "bridge/join_interface.h"
 #include "bridge/mdns.h"
 #include "bridge/reporting.h"
 #include "bridge/ubus.h"
@@ -375,7 +376,8 @@ auto bridge_desired(const bridge_control_config& cfg) -> nlohmann::json
 {
   bridge::actuate_request req;
   req.listen_url = cfg.listen_url;
-  req.listen_interface = cfg.listen_interface;
+  req.listen_miface = cfg.listen_miface;
+  req.interface_name = cfg.interface_name;
   req.encrypt_wan_leg = cfg.encrypt_wan_leg;
 
   hosted_session session;
@@ -629,6 +631,12 @@ static void bridge_apply()
           "Nothing to apply: set the listen url and a forwarding target", true);
     }
     return;
+  }
+  if (const std::string warning =
+          bridge::join_warning(desired.value("listen_url", std::string {}));
+      !warning.empty())
+  {
+    transport_log("Bridge: " + warning + "\n");
   }
   if (cfg.encrypt_wan_leg) {
     transport_log(
@@ -917,7 +925,7 @@ static void hosted_allocate()
         bridge::actuate_request request;
         // pop is left empty: the backplane places from the account's home POP.
         request.listen_url = bridge_cfg.listen_url;
-        request.listen_interface = bridge_cfg.listen_interface;
+        request.listen_miface = bridge_cfg.listen_miface;
         request.interface_name = bridge_cfg.interface_name;
         request.known_token = bridge_cfg.token;
         // Fallback only -- the portal's answer in the allocation is
@@ -1014,6 +1022,12 @@ static void hosted_allocate()
             outcome.session, source_codec, ingest_fps, video_kbps);
         if (!outcome.reported) {
           transport_log("Bridge report failed: " + outcome.error + "\n");
+        }
+        if (!outcome.warning.empty()) {
+          transport_log("Bridge: " + outcome.warning + "\n");
+          if (ctx.ui != nullptr) {
+            ctx.ui->set_bridge_message(outcome.warning, true);
+          }
         }
       }));
 }

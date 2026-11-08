@@ -493,10 +493,9 @@ void user_interface::bridge_listen_cb(bridge_control_config* bridge_config)
   bridge_config->listen_url = input_bridge_listen->value();
 }
 
-void user_interface::bridge_listen_interface_cb(
-    bridge_control_config* bridge_config)
+void user_interface::bridge_miface_cb(bridge_control_config* bridge_config)
 {
-  bridge_config->listen_interface = input_bridge_listen_interface->value();
+  bridge_config->listen_miface = input_bridge_listen_interface->value();
 }
 
 void user_interface::bridge_forward_cb(bridge_control_config* bridge_config)
@@ -730,7 +729,7 @@ void user_interface::apply_settings(const input_config& input_c,
   // main thread before show(), and the setters take the FLTK lock.
   input_bridge_address->value(bridge_c.address.c_str());
   input_bridge_listen->value(bridge_c.listen_url.c_str());
-  input_bridge_listen_interface->value(bridge_c.listen_interface.c_str());
+  input_bridge_listen_interface->value(bridge_c.listen_miface.c_str());
   input_bridge_forward->value(bridge_c.forward_to.c_str());
   input_bridge_interface->value(bridge_c.interface_name.c_str());
   check_wan_encryption->value(bridge_c.encrypt_wan_leg ? 1 : 0);
@@ -1086,7 +1085,7 @@ void user_interface::init_ui_callbacks(input_config* input_c,
   FL_METHOD_CALLBACK_1(input_bridge_listen_interface,
                        user_interface,
                        this,
-                       bridge_listen_interface_cb,
+                       bridge_miface_cb,
                        bridge_control_config*,
                        bridge_c);
 
