@@ -22,6 +22,7 @@
 // then reads as undeclared while gst_ntp_clock_new() still resolves.
 #include <gst/net/gstnetclientclock.h>
 
+#include "encode/appsrc_policy.h"
 #include "encode/capture_input.h"
 #include "encode/capture_source.h"
 #include "encode/raw_format.h"
@@ -332,13 +333,11 @@ void encode::pipeline_build_source()
       // stream header has been read, so raw_local_input sets them then. Both
       // appsrcs are live and time-stamped by us (do-timestamp=false), because
       // OBS's own timestamps are the A/V sync and must survive untouched.
-      // max-bytes bounds each queue, which is what applies back-pressure to
-      // OBS instead of growing this process without limit.
-      this->pipeline_str =
-          "appsrc name=rawvideo is-live=true format=time do-timestamp=false "
-          "max-bytes=16777216 "
-          "appsrc name=rawaudio is-live=true format=time do-timestamp=false "
-          "max-bytes=1048576 ";
+      // These BLOCK when full, which is what applies back-pressure to OBS
+      // instead of growing this process without limit: the encode path may not
+      // drop a frame (see encode/appsrc_policy.h).
+      this->pipeline_str = appsrc_policy::encode_video_src() + " "
+          + appsrc_policy::encode_audio_src() + " ";
       break;
     case input_mode::jpegxs_capture:
       // MC4: the JPEG XS camera link over the LAN. The node muxes JPEG XS into

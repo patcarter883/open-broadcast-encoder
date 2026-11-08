@@ -42,6 +42,21 @@
 // reason to refuse it.
 using format_verdict_fn = std::function<std::string(std::uint32_t)>;
 
+// How the reader treats a push the appsrc will not take.
+//
+//   backpressure -- the queue is full because its consumer is behind, and that
+//                   consumer is the encoder: end the stream rather than invent
+//                   a lossless one. OBS reconnects and the encoder catches up.
+//   drop         -- the queue is full because a preview sink stalled, and the
+//                   socket MATTERS MORE than the frame: count it, keep reading.
+//                   Ending the stream here is what made OBS report "peer
+//                   unreachable for 90 consecutive frames".
+enum class push_mode
+{
+  backpressure,
+  drop
+};
+
 class raw_local_input
 {
 public:
@@ -52,7 +67,8 @@ public:
                   std::uint16_t port,
                   std::function<void(const std::string&)> log_func,
                   format_verdict_fn format_verdict = {},
-                  std::function<void(const std::string&)> status_func = {});
+                  std::function<void(const std::string&)> status_func = {},
+                  push_mode mode = push_mode::backpressure);
   ~raw_local_input();
 
   raw_local_input(const raw_local_input&) = delete;
@@ -89,6 +105,7 @@ private:
   std::function<void(const std::string&)> log_func;
   std::function<std::string(std::uint32_t)> format_verdict_slot;
   std::function<void(const std::string&)> status_func;
+  push_mode mode {push_mode::backpressure};
 
   std::thread reader;
   std::atomic<bool> stop_requested {false};
@@ -109,6 +126,9 @@ private:
 
   std::uint64_t video_frames {0};
   std::uint64_t audio_chunks {0};
+  // Frames a preview sink refused; always 0 in backpressure mode, which ends
+  // the stream instead of skipping.
+  std::uint64_t dropped_frames {0};
   // Per-stream last PTS, so a timestamp at or behind the base can never
   // collapse to the same value twice (mpegtsmux drops non-advancing DTS).
   std::uint64_t last_video_pts {0};
