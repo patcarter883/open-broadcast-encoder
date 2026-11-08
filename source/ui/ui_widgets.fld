@@ -476,6 +476,12 @@ class ui_widgets {open
               xywh {25 489 230 25} align 5
               code0 {input_bridge_listen->value("rist://0.0.0.0:5000");}
             }
+            Fl_Input input_bridge_listen_interface {
+              label {Listen interface}
+              tooltip {The bridge interface that carries the listen group; sent as miface=.}
+              xywh {265 489 150 25} align 5
+              code0 {input_bridge_listen_interface->value("eth1");}
+            }
             Fl_Input input_bridge_forward {
               label {Bridge forwards to}
               xywh {265 489 230 25} align 5

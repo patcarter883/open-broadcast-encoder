@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 
+#include <string>
 #include <utility>
 
 #include "bridge/actuate.h"
@@ -11,6 +12,51 @@ using json = nlohmann::json;
 
 namespace bridge
 {
+
+namespace
+{
+// The listen host, with the RIST `@` listen marker and any IPv6 brackets
+// removed.
+std::string listen_host(const std::string& url)
+{
+  if (url.rfind("rist://", 0) != 0) {
+    return {};
+  }
+  std::string host = url.substr(7);
+  if (!host.empty() && host.front() == '@') {
+    host.erase(0, 1);
+  }
+  if (!host.empty() && host.front() == '[') {
+    const auto close = host.find(']');
+    return close == std::string::npos ? std::string {}
+                                      : host.substr(1, close - 1);
+  }
+  return host.substr(0, host.find_first_of(":?/"));
+}
+
+bool is_multicast_listen(const std::string& url)
+{
+  const std::string host = listen_host(url);
+  if (host.empty()) {
+    return false;
+  }
+  if (host.find(':') != std::string::npos) {
+    // IPv6 multicast is ff00::/8.
+    return host.size() >= 2 && host[0] == 'f' && host[1] == 'f';
+  }
+  const auto dot = host.find('.');
+  if (dot == std::string::npos) {
+    return false;
+  }
+  const std::string first = host.substr(0, dot);
+  if (first.empty() || first.size() > 3 ||
+      first.find_first_not_of("0123456789") != std::string::npos) {
+    return false;
+  }
+  const int octet = std::stoi(first);
+  return octet >= 224 && octet <= 239;  // 224.0.0.0/4
+}
+}  // namespace
 
 namespace
 {
@@ -39,7 +85,16 @@ json bridge_desired_config(const actuate_request& req,
 {
   json desired;
   if (!req.listen_url.empty()) {
-    desired["listen_url"] = req.listen_url;
+    // A multicast listen URL carries the interface that owns the group, so the
+    // group join happens when rpcd adopts this config.
+    std::string listen = req.listen_url;
+    if (!req.listen_interface.empty() && is_multicast_listen(listen)
+        && listen.find("miface=") == std::string::npos) {
+      listen += listen.find('?') == std::string::npos ? '?' : '&';
+      listen += "miface=";
+      listen += req.listen_interface;
+    }
+    desired["listen_url"] = std::move(listen);
   }
 
   json outputs = json::array();

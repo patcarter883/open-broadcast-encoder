@@ -48,6 +48,9 @@ struct actuate_request
   std::string
       bridge_address;  // last reported LAN address; empty = browse for it
   std::string listen_url;  // what the bridge should listen on
+  // The bridge's LAN interface that owns a multicast listen group. Applied to
+  // the listen URL as `miface=`; empty leaves the URL untouched.
+  std::string listen_interface;
   std::string interface_name;  // the bridge's egress interface; may be empty
   std::string fingerprint;  // recorded at fulfilment; empty when not known
   std::string known_token;  // the pair token we already hold, if any

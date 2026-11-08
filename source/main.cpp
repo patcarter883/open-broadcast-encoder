@@ -374,6 +374,7 @@ auto bridge_desired(const bridge_control_config& cfg) -> nlohmann::json
 {
   bridge::actuate_request req;
   req.listen_url = cfg.listen_url;
+  req.listen_interface = cfg.listen_interface;
   req.encrypt_wan_leg = cfg.encrypt_wan_leg;
 
   hosted_session session;
@@ -903,6 +904,7 @@ static void hosted_allocate()
         bridge::actuate_request request;
         // pop is left empty: the backplane places from the account's home POP.
         request.listen_url = bridge_cfg.listen_url;
+        request.listen_interface = bridge_cfg.listen_interface;
         request.interface_name = bridge_cfg.interface_name;
         request.known_token = bridge_cfg.token;
         // Fallback only -- the portal's answer in the allocation is

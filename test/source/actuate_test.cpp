@@ -461,3 +461,59 @@ TEST_CASE("bridge_desired_config maps the session to the bridge's upstream",
   // The encoder's own interface setting must therefore never reach the wire.
   CHECK(desired.at("outputs").at(0).size() == 1);
 }
+
+TEST_CASE("a multicast listen URL carries the configured interface",
+          "[bridge][actuate]")
+{
+  actuate_request req;
+  req.listen_url = "rist://@239.1.1.10:5100";
+  req.listen_interface = "eth1";
+
+  const auto desired = bridge_desired_config(req, good_session());
+
+  // A group join with no interface receives nothing, so the URL that actuates
+  // the bridge already names the interface that owns the group.
+  CHECK(desired.at("listen_url") == "rist://@239.1.1.10:5100?miface=eth1");
+  // The destination stays a destination.
+  CHECK(desired.at("outputs").at(0).at("address")
+        == "rist://syd1-a.example.au:5000");
+  CHECK(desired.at("outputs").at(0).at("address").get<std::string>().find(
+            "miface=")
+        == std::string::npos);
+}
+
+TEST_CASE("a unicast listen URL is left without an interface parameter",
+          "[bridge][actuate]")
+{
+  actuate_request req;
+  req.listen_url = "rist://0.0.0.0:5000";
+  req.listen_interface = "eth1";
+
+  const auto desired = bridge_desired_config(req, good_session());
+
+  CHECK(desired.at("listen_url") == "rist://0.0.0.0:5000");
+}
+
+TEST_CASE("an empty listen interface leaves the URL untouched",
+          "[bridge][actuate]")
+{
+  actuate_request req;
+  req.listen_url = "rist://@239.1.1.10:5100";
+
+  const auto desired = bridge_desired_config(req, good_session());
+
+  CHECK(desired.at("listen_url") == "rist://@239.1.1.10:5100");
+}
+
+TEST_CASE("the interface parameter survives an existing query string",
+          "[bridge][actuate]")
+{
+  actuate_request req;
+  req.listen_url = "rist://@239.1.1.10:5100?buffer=2000";
+  req.listen_interface = "eth1";
+
+  const auto desired = bridge_desired_config(req, good_session());
+
+  CHECK(desired.at("listen_url")
+        == "rist://@239.1.1.10:5100?buffer=2000&miface=eth1");
+}
