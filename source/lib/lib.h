@@ -145,17 +145,14 @@ struct output_config
   int bandwidth = 6000;
 };
 
-// RIST's bandwidth is a CEILING for the whole stream, not the video rate: it has
-// to cover the mux, audio and retransmissions. A ceiling at or below the payload
-// leaves no retransmission budget at all, which is what a link complains about
-// when it says "payload alone is N kbps against a 6000 kbps ceiling".
-inline int rist_bandwidth_kbps(int video_kbps)
-{
-  if (video_kbps < 100) {
-    return 100;
-  }
-  return video_kbps + video_kbps / 3;
-}
+// RIST's bandwidth is a CEILING used to size the recovery ring, not a statement
+// about the link: the encoder reaches the bridge over Ethernet, and the WAN
+// budget belongs to the bridge's own leg (derived there from the shaper). A flat
+// ceiling above the payload gives the ring retransmission headroom without
+// overrunning the receiver's NACK window -- at the 5000 ms buffer the ring holds
+// ~bandwidth*0.475 packets and the window addresses 32768, so 20000 kbps keeps
+// ~9500 packets in range while leaving several Mbit/s of budget over the payload.
+inline constexpr int rist_bandwidth_ceiling_kbps = 20000;
 
 // ---------------------------------------------------------------------------
 // Receiver control: where the partner open-broadcast-receiver should restream
