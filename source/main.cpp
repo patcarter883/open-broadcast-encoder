@@ -1137,11 +1137,18 @@ static bool run_transport()
   // The ceiling follows the bitrate the encoder is actually asked to produce.
   // Left below the payload, RIST has no retransmission budget and the link
   // reports "payload alone is N kbps against a M kbps ceiling".
-  const int ceiling = rist_bandwidth_kbps(
-      ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed));
+  const int video_kbps = ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
+  const int ceiling = rist_bandwidth_kbps(video_kbps);
   if (ctx.lib.output_cfg.bandwidth < ceiling) {
     ctx.lib.output_cfg.bandwidth = ceiling;
   }
+  // State the figure on screen: the ceiling is otherwise invisible, and the only
+  // 6000 in the chain is the saved default, so an operator seeing RIST complain
+  // about it has no way to tell which side set it.
+  transport_log(std::format(
+      "[rist] ceiling {} kbps for {} kbps video ({} kbps retransmission budget)\n",
+      ctx.lib.output_cfg.bandwidth, video_kbps,
+      ctx.lib.output_cfg.bandwidth - video_kbps));
   ctx.transporter = std::make_unique<transport>();
   ctx.transporter->set_log_callback(&rist_log_cb);
   ctx.transporter->set_statistics_callback(&rist_stats_cb);
