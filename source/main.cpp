@@ -1034,13 +1034,17 @@ static void hosted_allocate()
 
 static void run()
 {
-  // Stop the NDI preview before opening the encode pipeline. Preview and encode
-  // each create their own ndisrc on the same NDI source; running both contends
-  // for the receiver and the encode pipeline's ndisrc gets no video frames — so
-  // mpegtsmux emits only PSI (PAT/PMT) and the encoder appears to send nothing,
-  // while the preview keeps working (separate pipeline). Tear preview down
-  // first to free the source. (No Fl::lock() in preview teardown, so this join
-  // is safe on the UI thread — same pattern as start_preview_thread.)
+  // No join while the UI thread holds the FLTK lock: the preview worker reports
+  // through encode_log(), which takes Fl::lock(), so a join taken under the lock
+  // deadlocks the application. ui.cpp's start() releases the event loop's lock
+  // around this call and reclaims it afterwards, so the join below runs unlocked.
+  //
+  // The teardown itself is required, not cosmetic: preview and encode each create
+  // their own ndisrc on the same NDI source; running both contends for the
+  // receiver and the encode pipeline's ndisrc gets no video frames -- mpegtsmux
+  // then emits only PSI (PAT/PMT) and the encoder appears to send nothing while
+  // the preview keeps working. Free the source before opening the encode
+  // pipeline.
   ctx.lib.preview_running = false;
   if (ctx.lib.preview_thread.joinable()) {
     ctx.lib.preview_thread.join();
