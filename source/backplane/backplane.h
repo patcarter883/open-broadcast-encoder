@@ -4,7 +4,9 @@
 #ifndef OPEN_BROADCAST_ENCODER_SOURCE_BACKPLANE_BACKPLANE_H
 #define OPEN_BROADCAST_ENCODER_SOURCE_BACKPLANE_BACKPLANE_H
 
+#include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -57,6 +59,29 @@ struct alloc_result
   int http_status = 0;
 };
 
+// The media-plane inputs the backplane's destination-bitrate rule needs. The
+// rule is min(90% of the link, min(source x codec factor, output ceiling)),
+// floored and capped, so it can only size a transcode from the real source rate
+// -- without it the portal falls back to the session's plan-clamped
+// reservation, which describes the plan and not the stream.
+//
+// Every field is optional, and "absent" is a meaningful value: an encoder that
+// does not know a figure omits it rather than sending an estimate the backplane
+// would treat as a measurement.
+struct bitrate_inputs
+{
+  // The encode bitrate this encoder will send at, in kbps: the ceiling of its
+  // own adaptive controller, which is the rate the stream was configured for.
+  std::optional<std::uint32_t> source_bitrate_kbps;
+
+  // The usable WAN budget the encoder has actually measured end to end, in
+  // kbps. The bridge does not yet relay link statistics back over OOB, so no
+  // such measurement reaches this client; the field stays empty until one does.
+  // Filling it with a derived or assumed figure would turn a guess into a
+  // stated fact in the portal's accounting.
+  std::optional<std::uint32_t> measured_budget_kbps;
+};
+
 // backplane_client drives the hosted control plane (BACKPLANE §4): device
 // authorization (RFC 8628) then session allocation. HTTP is injected as a
 // transport function so the logic is unit-testable without a live backplane;
@@ -82,13 +107,15 @@ public:
 
   void set_persist(persist_fn persist) { m_persist = std::move(persist); }
 
-  // Allocate a session (DT-22). The request carries ONLY the POP: the fan-out,
-  // recording and ingest overrides come from the transport row the operator
-  // configured in the portal, and the caller cannot override them. An encoder
-  // with no transport row is refused with 409 `no_transport` — so this fails
-  // loudly rather than opening a session with no outputs.
+  // Allocate a session (DT-22). The request carries the POP, this encoder's
+  // name and the bitrate inputs the portal's transcode sizing needs: the
+  // fan-out, recording and ingest overrides come from the transport row the
+  // operator configured in the portal, and the caller cannot override them. An
+  // encoder with no transport row is refused with 409 `no_transport` — so this
+  // fails loudly rather than opening a session with no outputs.
   alloc_result allocate(const std::string& pop,
-                        const std::string& encoder_name = {});
+                        const std::string& encoder_name = {},
+                        const bitrate_inputs& bitrates = {});
 
   // Deallocate (the kill switch / abandon step). The device token authorises
   // it. Returns true on success (or if already gone).
@@ -98,7 +125,8 @@ public:
   // allocate a fresh one with the same request. One user action.
   alloc_result abandon_and_reallocate(const std::string& lost_session_id,
                                       const std::string& pop,
-                                      const std::string& encoder_name = {});
+                                      const std::string& encoder_name = {},
+                                      const bitrate_inputs& bitrates = {});
 
   // One saved destination as the portal sees it (§4). `transcode` is the
   // portal's opt-in target for that output -- empty means copy. DISPLAY ONLY:

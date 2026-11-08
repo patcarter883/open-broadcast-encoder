@@ -37,6 +37,7 @@
 #include "bridge/ubus.h"
 #include "control/control.h"
 #include "encode.h"
+#include "encode/appsrc_policy.h"
 #include "lib.h"
 #include "ndi_input.h"
 #include "raw_local.h"
@@ -871,6 +872,18 @@ static void hosted_allocate()
   // recovery rings alike.
   const int video_kbps = rist_bandwidth_ceiling_kbps;
 
+  // What the portal's transcode sizing needs and only this encoder can state:
+  // its own encode bitrate. `measured_budget_kbps` is left empty on purpose --
+  // the bridge does not relay WAN link statistics back to the encoder yet, so
+  // there is no end-to-end measurement to send, and an estimate arriving under
+  // that name would be read by the portal as one.
+  bitrate_inputs bitrates;
+  const int encode_kbps =
+      ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
+  if (encode_kbps > 0) {
+    bitrates.source_bitrate_kbps = static_cast<std::uint32_t>(encode_kbps);
+  }
+
   if (hosted.backplane_url.empty() || hosted.device_token.empty()) {
     if (ctx.ui != nullptr) {
       ctx.ui->set_hosted_state(
@@ -883,7 +896,7 @@ static void hosted_allocate()
   }
 
   track_control_thread(std::thread(
-      [hosted, bridge_cfg, encoder_name, source_codec, video_kbps]
+      [hosted, bridge_cfg, encoder_name, source_codec, video_kbps, bitrates]
       {
         backplane_client backplane(
             hosted.backplane_url,
@@ -918,8 +931,9 @@ static void hosted_allocate()
 
         auto client = make_bridge_client(bridge_cfg);
         bridge::actuator actuator(
-            [&backplane](const std::string& pop, const std::string& name)
-            { return backplane.allocate(pop, name); },
+            [&backplane, bitrates](const std::string& pop,
+                                   const std::string& name)
+            { return backplane.allocate(pop, name, bitrates); },
             [&client](const bridge::reconcile_request& req,
                       std::chrono::milliseconds window)
             { return client.reconcile(req, window); },
@@ -1210,19 +1224,21 @@ static void run_raw_preview(std::uint16_t port)
   // A preview must never be able to stall the ingest. The reader pushes both
   // streams from one thread, so anything that blocks a push stops the socket
   // being drained -- and OBS gives up after 90 frames ("peer unreachable"),
-  // which reads as a frozen preview. Hence: a small queue that can DROP
-  // (leaky=downstream) and a sink that renders as frames arrive (sync=false),
-  // instead of a clock-synced sink applying back-pressure through the appsrc.
-  auto* pipeline = gst_parse_launch(
-      "appsrc name=rawvideo is-live=true format=time do-timestamp=false "
-      "max-bytes=16777216 ! queue max-size-buffers=4 max-size-bytes=0 "
-      "max-size-time=0 leaky=downstream ! videoconvert ! autovideosink "
-      "sync=false "
-      "appsrc name=rawaudio is-live=true format=time do-timestamp=false "
-      "max-bytes=1048576 ! queue max-size-buffers=16 max-size-bytes=0 "
-      "max-size-time=0 leaky=downstream ! audioconvert ! autoaudiosink "
-      "sync=false",
-      &error);
+  // which reads as a frozen preview. Hence: a queue that can DROP
+  // (leaky=downstream, and the reader in push_mode::drop so a refused push is
+  // counted rather than ending the connection) and a sink that renders as
+  // frames arrive (sync=false), instead of a clock-synced sink applying
+  // back-pressure through the appsrc. The video queue's byte cap is only a
+  // placeholder until the caps arrive: the reader restates it as a frame count
+  // of the negotiated size (raw_local_input::read_stream_header).
+  const std::string preview_pipeline =
+      appsrc_policy::preview_video_src()
+      + " ! queue max-size-buffers=4 max-size-bytes=0 max-size-time=0 "
+        "leaky=downstream ! videoconvert ! autovideosink sync=false "
+      + appsrc_policy::preview_audio_src()
+      + " ! queue max-size-buffers=16 max-size-bytes=0 max-size-time=0 "
+        "leaky=downstream ! audioconvert ! autoaudiosink sync=false";
+  auto* pipeline = gst_parse_launch(preview_pipeline.c_str(), &error);
   if (pipeline == nullptr) {
     encode_log(std::format("Preview: could not build the pipeline: {}\n",
                            error != nullptr ? error->message : "unknown"));
@@ -1240,8 +1256,17 @@ static void run_raw_preview(std::uint16_t port)
   // what the selected codec and destinations could carry. That decision belongs
   // to the encode path, and passing it twice would be two policies to keep
   // true.
-  raw_local_input reader(
-      video_src, audio_src, port, &encode_log, {}, &input_status);
+  //
+  // push_mode::drop: a full preview queue costs the frame, never the socket.
+  // Under backpressure the push would block the reader -- which is the thread
+  // draining the OBS connection -- and OBS treats that stall as a dead peer.
+  raw_local_input reader(video_src,
+                         audio_src,
+                         port,
+                         &encode_log,
+                         {},
+                         &input_status,
+                         push_mode::drop);
   reader.start();
 
   // preview_running is set true by the launcher on the main thread BEFORE this

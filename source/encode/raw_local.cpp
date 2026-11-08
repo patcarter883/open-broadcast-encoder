@@ -16,6 +16,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "encode/appsrc_policy.h"
 #include "encode/raw_format.h"
 
 namespace
@@ -313,6 +314,22 @@ auto raw_local_input::read_stream_header(int fd) -> bool
                                        nullptr);
   gst_app_src_set_caps(GST_APP_SRC(this->video_src), vcaps);
   gst_caps_unref(vcaps);
+
+  // A preview queue is a COUNT of frames of this stream's real size, so its
+  // byte cap follows the caps: one fixed byte count is the right depth at
+  // exactly one resolution and too shallow above it, and a queue that fills
+  // early drops frames the operator was watching. The element still never
+  // blocks (block=false, leaky-type=downstream in the pipeline), so this only
+  // changes how deep the queue is -- dropping a preview frame stays preferable
+  // to stalling the ingest.
+  if (this->mode == push_mode::drop) {
+    const std::uint64_t preview_max_bytes =
+        appsrc_policy::preview_video_max_bytes(fmt, hdr.width, hdr.height);
+    g_object_set(this->video_src,
+                 "max-bytes",
+                 static_cast<guint64>(preview_max_bytes),
+                 nullptr);
+  }
 
   this->audio_present = hdr.audio_rate > 0 && hdr.audio_channels > 0
       && hdr.audio_format == kAudioF32Planar;
