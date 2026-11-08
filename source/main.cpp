@@ -913,11 +913,10 @@ static void hosted_allocate()
   // Copied on the UI thread: the worker below must never read ctx itself.
   const codec source_codec = ctx.lib.encode_cfg.selected_codec;
   // The encoder is authoritative on the ingest rate: the portal's transport row
-  // states a placeholder it cannot know (DT-22 sends only the POP). RIST's
-  // ceiling covers the whole stream, so the receiver's ingest budget is derived
-  // from the video rate the same way the sender's is.
-  const int video_kbps = rist_bandwidth_kbps(
-      ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed));
+  // states a placeholder it cannot know (DT-22 sends only the POP). The receiver
+  // gets the same ceiling the sender uses, so the two ends size their recovery
+  // rings alike.
+  const int video_kbps = rist_bandwidth_ceiling_kbps;
 
   if (hosted.backplane_url.empty() || hosted.device_token.empty()) {
     if (ctx.ui != nullptr) {
@@ -1134,21 +1133,18 @@ static bool run_transport()
   if (host.empty() || host == "0.0.0.0" || host == "::" || host == "[::]") {
     return false;
   }
-  // The ceiling follows the bitrate the encoder is actually asked to produce.
-  // Left below the payload, RIST has no retransmission budget and the link
-  // reports "payload alone is N kbps against a M kbps ceiling".
-  const int video_kbps = ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
-  const int ceiling = rist_bandwidth_kbps(video_kbps);
-  if (ctx.lib.output_cfg.bandwidth < ceiling) {
-    ctx.lib.output_cfg.bandwidth = ceiling;
-  }
+  // The ceiling sizes the recovery ring; it is not a link budget (the encoder's
+  // leg is Ethernet, the WAN budget lives on the bridge's leg). Flat, so a saved
+  // 6000 default can never leave the ring with no retransmission budget.
+  const int payload_kbps = ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
+  ctx.lib.output_cfg.bandwidth = rist_bandwidth_ceiling_kbps;
   // State the figure on screen: the ceiling is otherwise invisible, and the only
   // 6000 in the chain is the saved default, so an operator seeing RIST complain
   // about it has no way to tell which side set it.
   transport_log(std::format(
       "[rist] ceiling {} kbps for {} kbps video ({} kbps retransmission budget)\n",
-      ctx.lib.output_cfg.bandwidth, video_kbps,
-      ctx.lib.output_cfg.bandwidth - video_kbps));
+      ctx.lib.output_cfg.bandwidth, payload_kbps,
+      ctx.lib.output_cfg.bandwidth - payload_kbps));
   ctx.transporter = std::make_unique<transport>();
   ctx.transporter->set_log_callback(&rist_log_cb);
   ctx.transporter->set_statistics_callback(&rist_stats_cb);
