@@ -601,7 +601,16 @@ void user_interface::start(void (*start_funcptr)())
   btn_start_encode->deactivate();
   btn_stop_encode->activate();
   unlock();
+  // Same discipline as stop() below. The event loop owns the lock permanently --
+  // init_ui() takes it once and Fl::run() only releases it while waiting -- so
+  // the unlock() above removes this method's count while the UI thread still
+  // holds one. start_funcptr() tears the preview down and joins its worker, and
+  // that worker reports through encode_log(), which takes this same lock;
+  // joining while the UI thread holds it deadlocks the application. Release the
+  // loop's count for the call and reclaim it before returning to the event loop.
+  Fl::unlock();
   start_funcptr();
+  Fl::lock();
 }
 
 void user_interface::stop(void (*stop_funcptr)())
