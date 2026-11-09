@@ -187,7 +187,8 @@ backplane_client::destinations_result backplane_client::list_destinations()
 
 alloc_result backplane_client::allocate(const std::string& pop,
                                         const std::string& encoder_name,
-                                        const bitrate_inputs& bitrates)
+                                        const bitrate_inputs& bitrates,
+                                        const std::string& encoder_hostname)
 {
   alloc_result r;
   if (!m_transport) {
@@ -210,6 +211,9 @@ alloc_result backplane_client::allocate(const std::string& pop,
   }
   if (!encoder_name.empty()) {
     req["encoder_name"] = encoder_name;
+  }
+  if (!encoder_hostname.empty()) {
+    req["encoder_hostname"] = encoder_hostname;
   }
   if (bitrates.source_bitrate_kbps.has_value()) {
     req["source_bitrate_kbps"] = *bitrates.source_bitrate_kbps;
@@ -273,13 +277,14 @@ alloc_result backplane_client::abandon_and_reallocate(
     const std::string& lost_session_id,
     const std::string& pop,
     const std::string& encoder_name,
-    const bitrate_inputs& bitrates)
+    const bitrate_inputs& bitrates,
+    const std::string& encoder_hostname)
 {
   std::string err;
   // Best-effort release of the orphan; a failure here (e.g. it was already
   // reaped) must not block getting a working session.
   deallocate(lost_session_id, err);
-  return allocate(pop, encoder_name, bitrates);
+  return allocate(pop, encoder_name, bitrates, encoder_hostname);
 }
 
 namespace
