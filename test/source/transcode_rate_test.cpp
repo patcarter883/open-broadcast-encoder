@@ -18,14 +18,17 @@ constexpr int kCeiling = 20000;
 constexpr int kSource = 7000;
 }  // namespace
 
-TEST_CASE("a transcode target above the source is lowered to it",
+TEST_CASE("a target the recipe states is run as stated",
           "[control][transcode]")
 {
-  // The body that reached the encoder asked for 29 860 kbit/s of transcode from
-  // a 7 Mbit/s source over a cellular uplink. A re-encode cannot carry more
-  // detail than its input, so the source rate bounds it.
+  // A destination bitrate is the operator's decision for that link in the
+  // chain. It is run even when it exceeds what the encoder is sending: the
+  // recipe is where a chain is described, and rewriting it mid-stream would
+  // make the published rate disagree with the configuration that was reviewed.
+  CHECK(transcode_rate::body_kbps(29860, kSource, 0, kCeiling) == 29860);
+  CHECK(transcode_rate::body_kbps(89860, kSource, 4200, kCeiling) == 89860);
+  // The derivation still bounds the rate the encoder would pick itself.
   CHECK(transcode_rate::resolve(kSource, 0, kCeiling) == kSource);
-  CHECK(transcode_rate::body_kbps(29860, kSource, 0, kCeiling) == kSource);
 }
 
 TEST_CASE("a target that already fits stays the portal's decision",
@@ -43,7 +46,8 @@ TEST_CASE("a source above the transport ceiling is capped at 90% of it",
   // The ceiling is what the chain is configured to carry, and the transcode
   // shares it with RIST overhead and retransmissions.
   CHECK(transcode_rate::resolve(40000, 0, kCeiling) == 18000);
-  CHECK(transcode_rate::body_kbps(29860, 40000, 0, kCeiling) == 18000);
+  // A stated target is not clamped to the ceiling either.
+  CHECK(transcode_rate::body_kbps(29860, 40000, 0, kCeiling) == 29860);
 }
 
 TEST_CASE("a measured link outranks the plan and the sending rate",
@@ -52,7 +56,8 @@ TEST_CASE("a measured link outranks the plan and the sending rate",
   // 4 200 measured on the WAN against an 8 000 source: the link wins, because a
   // rate it cannot carry is the failure this derivation exists to stop.
   CHECK(transcode_rate::resolve(8000, 4200, kCeiling) == 4200);
-  CHECK(transcode_rate::body_kbps(29860, 8000, 4200, kCeiling) == 4200);
+  // ... and outranks neither a stated target, which the recipe still owns.
+  CHECK(transcode_rate::body_kbps(29860, 8000, 4200, kCeiling) == 29860);
   // A measurement above what is being sent cannot lift the target past the
   // source, and one above the ceiling's usable share cannot reach it either.
   CHECK(transcode_rate::resolve(8000, 12000, kCeiling) == 8000);
@@ -65,11 +70,11 @@ TEST_CASE("no measurement is deterministic from the source and ceiling",
   // Zero budget means no link has been measured since launch; the answer is
   // still a bounded rate rather than the portal's plan-sized figure.
   CHECK(transcode_rate::resolve(8000, 0, kCeiling) == 8000);
-  CHECK(transcode_rate::body_kbps(29860, 8000, 0, kCeiling) == 8000);
   CHECK(transcode_rate::resolve(8000, 0, 6000) == 5400);
   // An unknown source rate does not license exceeding the ceiling either.
   CHECK(transcode_rate::resolve(0, 0, kCeiling) == 18000);
-  CHECK(transcode_rate::body_kbps(29860, 0, 0, kCeiling) == 18000);
+  // A stated target is untouched by any of it.
+  CHECK(transcode_rate::body_kbps(29860, 8000, 0, kCeiling) == 29860);
 }
 
 TEST_CASE("the floor keeps a small picture publishable", "[control][transcode]")
@@ -78,7 +83,7 @@ TEST_CASE("the floor keeps a small picture publishable", "[control][transcode]")
   // floor, so the floor stands while it is still under every known bound.
   CHECK(transcode_rate::resolve(8000, 180, kCeiling)
         == transcode_rate::k_floor_kbps);
-  CHECK(transcode_rate::body_kbps(29860, 8000, 180, kCeiling)
+  CHECK(transcode_rate::body_kbps(0, 8000, 180, kCeiling)
         == transcode_rate::k_floor_kbps);
   // A floor-sized source is unchanged.
   CHECK(transcode_rate::resolve(transcode_rate::k_floor_kbps, 0, kCeiling)
