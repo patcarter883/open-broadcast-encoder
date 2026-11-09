@@ -89,6 +89,7 @@ public:
   // valid(); the returned code is never logged.
   device_code start(const std::string& name,
                     const std::string& platform,
+                    const std::string& hostname,
                     std::string& error);
 
   // POST /v1/auth/device/token, once. `code` is taken by reference because a

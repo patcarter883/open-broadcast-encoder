@@ -36,6 +36,7 @@ device_auth::device_auth(std::string base_url, transport_fn transport)
 
 device_code device_auth::start(const std::string& name,
                                const std::string& platform,
+                               const std::string& hostname,
                                std::string& error)
 {
   device_code out;
@@ -50,6 +51,9 @@ device_code device_auth::start(const std::string& name,
   }
   if (!platform.empty()) {
     body["platform"] = platform;
+  }
+  if (!hostname.empty()) {
+    body["hostname"] = hostname;
   }
 
   const auto [status, response] =

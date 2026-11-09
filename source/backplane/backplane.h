@@ -180,7 +180,8 @@ public:
   // fails loudly rather than opening a session with no outputs.
   alloc_result allocate(const std::string& pop,
                         const std::string& encoder_name = {},
-                        const bitrate_inputs& bitrates = {});
+                        const bitrate_inputs& bitrates = {},
+                        const std::string& encoder_hostname = {});
 
   // Deallocate (the kill switch / abandon step). The device token authorises
   // it. Returns true on success (or if already gone).
@@ -197,7 +198,8 @@ public:
   alloc_result abandon_and_reallocate(const std::string& lost_session_id,
                                       const std::string& pop,
                                       const std::string& encoder_name = {},
-                                      const bitrate_inputs& bitrates = {});
+                                      const bitrate_inputs& bitrates = {},
+                                      const std::string& encoder_hostname = {});
 
   // One saved destination as the portal sees it (§4). `transcode` is the
   // portal's opt-in target for that output -- empty means copy. DISPLAY ONLY:

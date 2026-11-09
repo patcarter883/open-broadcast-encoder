@@ -73,7 +73,7 @@ TEST_CASE("start parses the code and the polling hints the server chose",
   backplane::device_auth auth("https://api.example.au", t.fn());
 
   std::string error;
-  const auto code = auth.start("editor-01", "linux", error);
+  const auto code = auth.start("editor-01", "linux", "studio-imac", error);
 
   REQUIRE(error.empty());
   REQUIRE(code.valid());
@@ -84,6 +84,12 @@ TEST_CASE("start parses the code and the polling hints the server chose",
   // must respect, so it is taken from the response, not hardcoded.
   REQUIRE(code.interval == 5);
   REQUIRE(t.paths.at(0) == "/api/v1/auth/device/code");
+  // The machine names itself so two encoders of the same build stay
+  // distinguishable in the portal; the label the operator typed travels
+  // beside it, never instead of it.
+  const auto sent = nlohmann::json::parse(t.bodies.at(0));
+  REQUIRE(sent.at("name") == "editor-01");
+  REQUIRE(sent.at("hostname") == "studio-imac");
 }
 
 TEST_CASE("start sends name and platform so the panel can show the operator",
@@ -94,7 +100,7 @@ TEST_CASE("start sends name and platform so the panel can show the operator",
   backplane::device_auth auth("https://api.example.au", t.fn());
 
   std::string error;
-  (void)auth.start("editor-01", "linux", error);
+  (void)auth.start("editor-01", "linux", "studio-imac", error);
 
   const auto body = nlohmann::json::parse(t.bodies.at(0));
   REQUIRE(body.at("name") == "editor-01");
@@ -110,7 +116,7 @@ TEST_CASE(
   backplane::device_auth auth("https://api.example.au", t.fn());
 
   std::string error;
-  const auto code = auth.start("editor-01", "linux", error);
+  const auto code = auth.start("editor-01", "linux", "studio-imac", error);
   REQUIRE(code.valid());
 
   // A log line carrying the code must not print it (H2).
@@ -131,7 +137,7 @@ TEST_CASE("start reports a transport failure instead of an empty code",
   backplane::device_auth auth("https://api.example.au", t.fn());
 
   std::string error;
-  const auto code = auth.start("editor-01", "linux", error);
+  const auto code = auth.start("editor-01", "linux", "studio-imac", error);
 
   REQUIRE_FALSE(code.valid());
   REQUIRE_FALSE(error.empty());
@@ -144,7 +150,7 @@ TEST_CASE("start refuses a code that is missing its parts", "[device_auth]")
   backplane::device_auth auth("https://api.example.au", t.fn());
 
   std::string error;
-  const auto code = auth.start("editor-01", "linux", error);
+  const auto code = auth.start("editor-01", "linux", "studio-imac", error);
 
   REQUIRE_FALSE(code.valid());
   // The half-populated code must not be handed back as if it were usable.
@@ -156,7 +162,7 @@ TEST_CASE("start requires a configured backplane", "[device_auth]")
 {
   backplane::device_auth auth("");
   std::string error;
-  const auto code = auth.start("editor-01", "linux", error);
+  const auto code = auth.start("editor-01", "linux", "studio-imac", error);
   REQUIRE_FALSE(code.valid());
   REQUIRE_FALSE(error.empty());
 }

@@ -19,6 +19,7 @@
 #  include <winsock2.h>
 #else
 #  include <arpa/inet.h>
+#  include <unistd.h>
 #endif
 #include <atomic>
 
@@ -52,6 +53,19 @@ app_context ctx;
 
 namespace
 {
+// The machine's own name, so several encoders of the same build stay
+// distinguishable in the portal. Empty on failure: an unnamed box must not
+// present a made-up one.
+std::string machine_hostname()
+{
+  char buf[256] {};
+  if (::gethostname(buf, sizeof(buf) - 1) != 0) {
+    return {};
+  }
+  buf[sizeof(buf) - 1] = '\0';
+  return std::string {buf};
+}
+
 // Written only by the signal handler, which may touch nothing but a
 // sig_atomic_t. The FLTK timeout below reads it on the UI thread and closes the
 // window, so a signal takes the normal shutdown path and the settings still get
@@ -758,7 +772,7 @@ static void hosted_sign_in()
             cfg.backplane_url, make_device_auth_transport(cfg.backplane_url));
 
         std::string error;
-        auto code = auth.start(encoder_name, "linux", error);
+        auto code = auth.start(encoder_name, "linux", machine_hostname(), error);
         if (!code.valid()) {
           transport_log("Hosted sign-in failed: " + error + "\n");
           if (ctx.ui != nullptr) {
@@ -1121,9 +1135,9 @@ static void hosted_allocate()
 
         auto client = make_bridge_client(bridge_cfg);
         bridge::actuator actuator(
-            [&backplane, bitrates](const std::string& pop,
-                                   const std::string& name)
-            { return backplane.allocate(pop, name, bitrates); },
+            [&backplane, bitrates, host = machine_hostname()](
+                const std::string& pop, const std::string& name)
+            { return backplane.allocate(pop, name, bitrates, host); },
             [&client](const bridge::reconcile_request& req,
                       std::chrono::milliseconds window)
             { return client.reconcile(req, window); },
