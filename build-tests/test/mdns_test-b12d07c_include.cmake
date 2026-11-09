@@ -1,0 +1,5 @@
+if(EXISTS "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/test/mdns_test-b12d07c_tests.cmake")
+  include("/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/test/mdns_test-b12d07c_tests.cmake")
+else()
+  add_test(mdns_test_NOT_BUILT-b12d07c mdns_test_NOT_BUILT-b12d07c)
+endif()

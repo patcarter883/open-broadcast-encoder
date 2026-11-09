@@ -1,0 +1,9 @@
+{
+  "revision": 0,
+  "rules": [
+    {
+      "primary-output": "test/CMakeFiles/actuate_test.dir/__/source/bridge/discovery.cpp.o"
+    }
+  ],
+  "version": 1
+}

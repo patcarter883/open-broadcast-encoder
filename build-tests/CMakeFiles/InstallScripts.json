@@ -1,0 +1,20 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/cmake_install.cmake",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/lib/cmake_install.cmake",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/ui/cmake_install.cmake",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/ndi_input/cmake_install.cmake",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/transport/cmake_install.cmake",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/encode/cmake_install.cmake",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/stats/cmake_install.cmake",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/url/cmake_install.cmake",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/control/cmake_install.cmake",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/backplane/cmake_install.cmake",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/bridge/cmake_install.cmake",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/settings/cmake_install.cmake",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/tools/cmake_install.cmake",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/test/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

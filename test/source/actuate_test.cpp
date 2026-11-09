@@ -197,7 +197,9 @@ TEST_CASE("a bridged allocation points the bridge at the allocated node",
   const auto& outputs = f.seen_request.desired.at("outputs");
   REQUIRE(outputs.size() == 1);
   CHECK(outputs.at(0).at("address") == "rist://syd1-a.example.au:5000");
-  CHECK(f.seen_request.desired.at("listen_url") == "rist://192.168.8.1:6000");
+  // The stored address is marker-free; the bind request carries the marker,
+  // because `@` is what tells libRIST to listen rather than connect.
+  CHECK(f.seen_request.desired.at("listen_url") == "rist://@192.168.8.1:6000");
   CHECK(f.seen_request.bridge_uid == "rist2rist-aa:bb:cc:dd:ee:ff");
 
   // The ENCODER sends to the bridge. If it kept dialling the node, the bridge
@@ -389,7 +391,9 @@ TEST_CASE("WAN encryption is off by default, so the output URL stays clear",
   REQUIRE(out.ok);
   const auto& outputs = f.seen_request.desired.at("outputs");
   CHECK(outputs.at(0).at("address") == "rist://syd1-a.example.au:5000");
-  CHECK(f.seen_request.desired.at("listen_url") == "rist://192.168.8.1:6000");
+  // The stored address is marker-free; the bind request carries the marker,
+  // because `@` is what tells libRIST to listen rather than connect.
+  CHECK(f.seen_request.desired.at("listen_url") == "rist://@192.168.8.1:6000");
 }
 
 TEST_CASE("WAN encryption puts the secret on the output leg only",
@@ -408,7 +412,9 @@ TEST_CASE("WAN encryption puts the secret on the output leg only",
   const auto& outputs = f.seen_request.desired.at("outputs");
   CHECK(outputs.at(0).at("address")
         == "rist://syd1-a.example.au:5000?secret=deadbeef&aes-type=256");
-  CHECK(f.seen_request.desired.at("listen_url") == "rist://192.168.8.1:6000");
+  // The stored address is marker-free; the bind request carries the marker,
+  // because `@` is what tells libRIST to listen rather than connect.
+  CHECK(f.seen_request.desired.at("listen_url") == "rist://@192.168.8.1:6000");
 }
 
 TEST_CASE("WAN encryption without a key fails instead of going out clear",
@@ -451,7 +457,7 @@ TEST_CASE("bridge_desired_config maps the session to the bridge's upstream",
 
   const auto desired = bridge_desired_config(req, good_session());
 
-  CHECK(desired.at("listen_url") == "rist://192.168.8.1:6000");
+  CHECK(desired.at("listen_url") == "rist://@192.168.8.1:6000");
   REQUIRE(desired.at("outputs").size() == 1);
   CHECK(desired.at("outputs").at(0).at("address")
         == "rist://syd1-a.example.au:5000");
@@ -491,7 +497,7 @@ TEST_CASE("a unicast listen URL is left without an interface parameter",
 
   const auto desired = bridge_desired_config(req, good_session());
 
-  CHECK(desired.at("listen_url") == "rist://0.0.0.0:5000");
+  CHECK(desired.at("listen_url") == "rist://@0.0.0.0:5000");
 }
 
 TEST_CASE("the interface parameter survives an existing query string",

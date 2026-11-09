@@ -1,0 +1,9 @@
+{
+  "revision": 0,
+  "rules": [
+    {
+      "primary-output": "source/bridge/CMakeFiles/bridge_lib.dir/ubus.cpp.o"
+    }
+  ],
+  "version": 1
+}

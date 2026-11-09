@@ -1,0 +1,53 @@
+Detecting compiler hash for triplet x64-linux...
+Compiler found: /usr/sbin/c++
+The following packages will be built and installed:
+    catch2:x64-linux@3.15.0
+    nlohmann-json:x64-linux@3.12.0#2
+  * vcpkg-cmake:x64-linux@2024-04-23
+  * vcpkg-cmake-config:x64-linux@2024-05-23
+Additional packages (*) will be modified to complete this operation.
+Restored 4 package(s) from /home/pat/.cache/vcpkg/archives in 122 ms. Use --debug to see more details.
+Installing 1/4 vcpkg-cmake-config:x64-linux@2024-05-23...
+vcpkg-cmake-config:x64-linux@2024-05-23 package ABI: cdd5f848644599f53e11ca7bbf72146016f2525a3ab0d07d1698f2ba3f35552b
+Elapsed time to handle vcpkg-cmake-config:x64-linux: 806 us
+Installing 2/4 vcpkg-cmake:x64-linux@2024-04-23...
+vcpkg-cmake:x64-linux@2024-04-23 package ABI: 86a24a44077196c92d5978fd5983d71f0044b2c6014f8f7c7260951199097fe4
+Elapsed time to handle vcpkg-cmake:x64-linux: 608 us
+Installing 3/4 nlohmann-json:x64-linux@3.12.0#2...
+nlohmann-json:x64-linux@3.12.0#2 package ABI: 8fc8b83497f777dc6f31d3a009f64888b01afd9c59ccdf7c2322fc9e2fb443a3
+Elapsed time to handle nlohmann-json:x64-linux: 1.26 ms
+Installing 4/4 catch2:x64-linux@3.15.0...
+catch2:x64-linux@3.15.0 package ABI: 4f733760c85b8b31018bae7572778e4472262cb4f566d14856690ebb1fdf8157
+Elapsed time to handle catch2:x64-linux: 2.7 ms
+Installed contents are licensed to you by owners. Microsoft is not responsible for, nor does it grant any licenses to, third-party packages.
+Packages installed in this vcpkg installation declare the following licenses:
+BSL-1.0
+MIT
+The package nlohmann-json provides CMake targets:
+
+    find_package(nlohmann_json CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE nlohmann_json::nlohmann_json)
+
+The package nlohmann-json can be configured to not provide implicit conversions via a custom triplet file:
+
+    set(nlohmann-json_IMPLICIT_CONVERSIONS OFF)
+
+For more information, see the docs here:
+    
+    https://json.nlohmann.me/api/macros/json_use_implicit_conversions/
+
+catch2 provides CMake targets:
+
+  # this is heuristically generated, and may not be correct
+  find_package(Catch2 CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE Catch2::Catch2 Catch2::Catch2WithMain)
+
+catch2 provides pkg-config modules:
+
+  # A modern, C++-native test framework for C++14 and above (links in default main)
+  catch2-with-main
+
+  # A modern, C++-native, test framework for C++14 and above
+  catch2
+
+All requested installations completed successfully in: 5.76 ms

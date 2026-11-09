@@ -1,0 +1,82 @@
+{
+	"bmi-installation" : null,
+	"compiler-frontend-variant" : "GNU",
+	"compiler-id" : "Clang",
+	"compiler-simulate-id" : "",
+	"config" : "Release",
+	"cxx-modules" : {},
+	"database-info" : null,
+	"dir-cur-bld" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/test",
+	"dir-cur-src" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/test",
+	"dir-top-bld" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests",
+	"dir-top-src" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen",
+	"exports" : [],
+	"forward-modules-from-target-dirs" : [],
+	"include-dirs" : 
+	[
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/external",
+		"vcpkg_installed/x64-linux/include"
+	],
+	"language" : "CXX",
+	"linked-target-dirs" : [],
+	"module-dir" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/test/CMakeFiles/ubus_test.dir",
+	"sources" : 
+	{
+		"test/CMakeFiles/ubus_test.dir/__/source/bridge/actuate.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/bridge/actuate.cpp"
+		},
+		"test/CMakeFiles/ubus_test.dir/__/source/bridge/bridge_client.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/bridge/bridge_client.cpp"
+		},
+		"test/CMakeFiles/ubus_test.dir/__/source/bridge/discovery.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/bridge/discovery.cpp"
+		},
+		"test/CMakeFiles/ubus_test.dir/__/source/bridge/join_interface.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/bridge/join_interface.cpp"
+		},
+		"test/CMakeFiles/ubus_test.dir/__/source/bridge/mdns.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/bridge/mdns.cpp"
+		},
+		"test/CMakeFiles/ubus_test.dir/__/source/bridge/reporting.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/bridge/reporting.cpp"
+		},
+		"test/CMakeFiles/ubus_test.dir/__/source/bridge/reporting_httplib.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/bridge/reporting_httplib.cpp"
+		},
+		"test/CMakeFiles/ubus_test.dir/__/source/bridge/ubus.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/bridge/ubus.cpp"
+		},
+		"test/CMakeFiles/ubus_test.dir/__/source/bridge/ubus_httplib.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/bridge/ubus_httplib.cpp"
+		},
+		"test/CMakeFiles/ubus_test.dir/__/source/lib/lib.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/lib/lib.cpp"
+		},
+		"test/CMakeFiles/ubus_test.dir/source/ubus_test.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/test/source/ubus_test.cpp"
+		}
+	}
+}
