@@ -37,6 +37,50 @@ std::string hosted_session::to_json() const
   return j.dump(2);
 }
 
+namespace
+{
+// nlohmann's value() returns the default only when the key is ABSENT; a key
+// present as JSON null throws a type_error. An allocation carries null for
+// whatever does not apply to the session (no PSK, no bridge), so every read
+// tolerates null explicitly.
+std::string str_or(const json& j, const char* key, std::string fallback)
+{
+  if (!j.is_object()) {
+    return fallback;
+  }
+  const auto it = j.find(key);
+  if (it == j.end() || !it->is_string()) {
+    return fallback;
+  }
+  return it->get<std::string>();
+}
+
+long long_or(const json& j, const char* key, long fallback)
+{
+  if (!j.is_object()) {
+    return fallback;
+  }
+  const auto it = j.find(key);
+  if (it == j.end() || !it->is_number_integer()) {
+    return fallback;
+  }
+  return it->get<long>();
+}
+
+bool bool_or(const json& j, const char* key, bool fallback)
+{
+  if (!j.is_object()) {
+    return fallback;
+  }
+  const auto it = j.find(key);
+  if (it == j.end() || !it->is_boolean()) {
+    return fallback;
+  }
+  return it->get<bool>();
+}
+}  // namespace
+
+
 hosted_session hosted_session::from_json(const std::string& text)
 {
   hosted_session s;
@@ -44,20 +88,21 @@ hosted_session hosted_session::from_json(const std::string& text)
   if (j.is_discarded() || !j.is_object()) {
     return s;
   }
-  s.session_id = j.value("session_id", "");
-  s.rist_url = j.value("rist_url", "");
-  s.control_url = j.value("control_url", "");
-  s.control_token = j.value("control_token", "");
-  s.psk = j.value("psk", "");
-  s.psk_aes = j.value("psk_aes", 256);
-  s.state = j.value("state", "");
+  s.session_id = str_or(j, "session_id", "");
+  s.rist_url = str_or(j, "rist_url", "");
+  s.encoder_target = str_or(j, "encoder_target", "");
+  s.control_url = str_or(j, "control_url", "");
+  s.control_token = str_or(j, "control_token", "");
+  s.psk = str_or(j, "psk", "");
+  s.psk_aes = static_cast<int>(long_or(j, "psk_aes", 256));
+  s.state = str_or(j, "state", "");
   if (j.contains("start_body")) {
     s.start_body_json = j.at("start_body").dump();
   }
-  s.bridge_present = j.value("bridge_present", false);
-  s.bridge_id = j.value("bridge_id", 0L);
-  s.bridge_uid = j.value("bridge_uid", "");
-  s.bridge_lan_host = j.value("bridge_lan_host", "");
+  s.bridge_present = bool_or(j, "bridge_present", false);
+  s.bridge_id = long_or(j, "bridge_id", 0);
+  s.bridge_uid = str_or(j, "bridge_uid", "");
+  s.bridge_lan_host = str_or(j, "bridge_lan_host", "");
   return s;
 }
 
@@ -82,12 +127,13 @@ hosted_session parse_session(const json& body)
     return s;
   }
   const json& sess = body.at("session");
-  s.session_id = sess.value("id", "");
-  s.rist_url = sess.value("rist_url", "");
-  s.control_url = sess.value("control_url", "");
-  s.control_token = sess.value("control_token", "");
-  s.psk = sess.value("psk", "");
-  s.psk_aes = sess.value("psk_aes", 256);
+  s.session_id = str_or(sess, "id", "");
+  s.rist_url = str_or(sess, "rist_url", "");
+  s.encoder_target = str_or(sess, "encoder_target", "");
+  s.control_url = str_or(sess, "control_url", "");
+  s.control_token = str_or(sess, "control_token", "");
+  s.psk = str_or(sess, "psk", "");
+  s.psk_aes = static_cast<int>(long_or(sess, "psk_aes", 256));
   s.state = state_of(sess);
   if (sess.contains("start_body")) {
     s.start_body_json = sess.at("start_body").dump();
@@ -174,8 +220,8 @@ backplane_client::destinations_result backplane_client::list_destinations()
       continue;
     }
     destination_view v;
-    v.label = d.value("label", std::string {});
-    v.type = d.value("type", std::string {});
+    v.label = str_or(d, "label", "");
+    v.type = str_or(d, "type", "");
     if (auto t = d.find("transcode"); t != d.end() && t->is_string()) {
       v.transcode = t->get<std::string>();
     }

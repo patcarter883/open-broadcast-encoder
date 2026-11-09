@@ -166,15 +166,20 @@ actuate_outcome actuator::run(const actuate_request& req,
   //    states the chain the operator configured. The request's bridge_uid is
   //    only a fallback, for the self-host and manual paths where nothing states
   //    it.
+  // A portal that ANSWERED with no bridge chose the direct chain: the request's
+  // bridge_uid is only a fallback for a backplane that predates the field,
+  // otherwise a locally configured bridge overrides the operator's choice.
   const std::string bridge_uid = !alloc.session.bridge_uid.empty()
       ? alloc.session.bridge_uid
-      : req.bridge_uid;
+      : (alloc.session.bridge_present ? std::string {} : req.bridge_uid);
 
   // Direct. Nothing to apply, nothing to report, and this is a SUCCESS -- "no
   // bridge" is a decision the operator made, not a step that went missing.
   if (bridge_uid.empty()) {
     out.ok = true;
-    out.encoder_target = alloc.session.rist_url;
+    out.encoder_target = alloc.session.encoder_target.empty()
+        ? alloc.session.rist_url
+        : alloc.session.encoder_target;
     return out;
   }
   out.bridge_uid = bridge_uid;
