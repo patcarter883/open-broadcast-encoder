@@ -1,0 +1,31 @@
+{
+	"bmi-installation" : null,
+	"compiler-frontend-variant" : "GNU",
+	"compiler-id" : "Clang",
+	"compiler-simulate-id" : "",
+	"config" : "Release",
+	"cxx-modules" : {},
+	"database-info" : null,
+	"dir-cur-bld" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/test",
+	"dir-cur-src" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/test",
+	"dir-top-bld" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests",
+	"dir-top-src" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen",
+	"exports" : [],
+	"forward-modules-from-target-dirs" : [],
+	"include-dirs" : 
+	[
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source",
+		"vcpkg_installed/x64-linux/include"
+	],
+	"language" : "CXX",
+	"linked-target-dirs" : [],
+	"module-dir" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/test/CMakeFiles/appsrc_policy_test.dir",
+	"sources" : 
+	{
+		"test/CMakeFiles/appsrc_policy_test.dir/source/appsrc_policy_test.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/test/source/appsrc_policy_test.cpp"
+		}
+	}
+}

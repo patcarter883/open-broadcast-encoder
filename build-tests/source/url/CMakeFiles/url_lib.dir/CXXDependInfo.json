@@ -1,0 +1,30 @@
+{
+	"bmi-installation" : null,
+	"compiler-frontend-variant" : "GNU",
+	"compiler-id" : "Clang",
+	"compiler-simulate-id" : "",
+	"config" : "Release",
+	"cxx-modules" : {},
+	"database-info" : null,
+	"dir-cur-bld" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/url",
+	"dir-cur-src" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/url",
+	"dir-top-bld" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests",
+	"dir-top-src" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen",
+	"exports" : [],
+	"forward-modules-from-target-dirs" : [],
+	"include-dirs" : 
+	[
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/url"
+	],
+	"language" : "CXX",
+	"linked-target-dirs" : [],
+	"module-dir" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/url/CMakeFiles/url_lib.dir",
+	"sources" : 
+	{
+		"source/url/CMakeFiles/url_lib.dir/url.cc.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/url/url.cc"
+		}
+	}
+}

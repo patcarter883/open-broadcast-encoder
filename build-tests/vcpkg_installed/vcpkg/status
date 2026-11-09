@@ -1,0 +1,33 @@
+Package: vcpkg-cmake-config
+Version: 2024-05-23
+Architecture: x64-linux
+Multi-Arch: same
+Abi: cdd5f848644599f53e11ca7bbf72146016f2525a3ab0d07d1698f2ba3f35552b
+Status: install ok installed
+
+Package: vcpkg-cmake
+Version: 2024-04-23
+Architecture: x64-linux
+Multi-Arch: same
+Abi: 86a24a44077196c92d5978fd5983d71f0044b2c6014f8f7c7260951199097fe4
+Status: install ok installed
+
+Package: nlohmann-json
+Version: 3.12.0
+Port-Version: 2
+Depends: vcpkg-cmake, vcpkg-cmake-config
+Architecture: x64-linux
+Multi-Arch: same
+Abi: 8fc8b83497f777dc6f31d3a009f64888b01afd9c59ccdf7c2322fc9e2fb443a3
+Description: JSON for Modern C++
+Status: install ok installed
+
+Package: catch2
+Version: 3.15.0
+Depends: vcpkg-cmake, vcpkg-cmake-config
+Architecture: x64-linux
+Multi-Arch: same
+Abi: 4f733760c85b8b31018bae7572778e4472262cb4f566d14856690ebb1fdf8157
+Description: A modern, C++-native, test framework for unit-tests, TDD and BDD.
+Status: install ok installed
+

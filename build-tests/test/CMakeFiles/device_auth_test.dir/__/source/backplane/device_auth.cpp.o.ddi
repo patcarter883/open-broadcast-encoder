@@ -1,0 +1,9 @@
+{
+  "revision": 0,
+  "rules": [
+    {
+      "primary-output": "test/CMakeFiles/device_auth_test.dir/__/source/backplane/device_auth.cpp.o"
+    }
+  ],
+  "version": 1
+}

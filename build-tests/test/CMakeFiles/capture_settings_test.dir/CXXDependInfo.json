@@ -1,0 +1,41 @@
+{
+	"bmi-installation" : null,
+	"compiler-frontend-variant" : "GNU",
+	"compiler-id" : "Clang",
+	"compiler-simulate-id" : "",
+	"config" : "Release",
+	"cxx-modules" : {},
+	"database-info" : null,
+	"dir-cur-bld" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/test",
+	"dir-cur-src" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/test",
+	"dir-top-bld" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests",
+	"dir-top-src" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen",
+	"exports" : [],
+	"forward-modules-from-target-dirs" : [],
+	"include-dirs" : 
+	[
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source",
+		"vcpkg_installed/x64-linux/include"
+	],
+	"language" : "CXX",
+	"linked-target-dirs" : [],
+	"module-dir" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/test/CMakeFiles/capture_settings_test.dir",
+	"sources" : 
+	{
+		"test/CMakeFiles/capture_settings_test.dir/__/source/lib/lib.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/lib/lib.cpp"
+		},
+		"test/CMakeFiles/capture_settings_test.dir/__/source/settings/settings.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/settings/settings.cpp"
+		},
+		"test/CMakeFiles/capture_settings_test.dir/source/capture_settings_test.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/test/source/capture_settings_test.cpp"
+		}
+	}
+}

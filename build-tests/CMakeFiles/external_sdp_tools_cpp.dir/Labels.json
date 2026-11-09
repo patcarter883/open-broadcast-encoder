@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/CMakeFiles/external_sdp_tools_cpp"
+		},
+		{
+			"file" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/CMakeFiles/external_sdp_tools_cpp.rule"
+		},
+		{
+			"file" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/CMakeFiles/external_sdp_tools_cpp-complete.rule"
+		},
+		{
+			"file" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-external/sdp-tools-cpp/src/external_sdp_tools_cpp-stamp/external_sdp_tools_cpp-build.rule"
+		},
+		{
+			"file" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-external/sdp-tools-cpp/src/external_sdp_tools_cpp-stamp/external_sdp_tools_cpp-configure.rule"
+		},
+		{
+			"file" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-external/sdp-tools-cpp/src/external_sdp_tools_cpp-stamp/external_sdp_tools_cpp-download.rule"
+		},
+		{
+			"file" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-external/sdp-tools-cpp/src/external_sdp_tools_cpp-stamp/external_sdp_tools_cpp-install.rule"
+		},
+		{
+			"file" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-external/sdp-tools-cpp/src/external_sdp_tools_cpp-stamp/external_sdp_tools_cpp-mkdir.rule"
+		},
+		{
+			"file" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-external/sdp-tools-cpp/src/external_sdp_tools_cpp-stamp/external_sdp_tools_cpp-patch.rule"
+		},
+		{
+			"file" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-external/sdp-tools-cpp/src/external_sdp_tools_cpp-stamp/external_sdp_tools_cpp-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"external_sdp_tools_cpp"
+		],
+		"name" : "external_sdp_tools_cpp"
+	}
+}

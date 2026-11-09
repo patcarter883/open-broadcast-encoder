@@ -1,0 +1,5 @@
+if(EXISTS "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/test/backplane_test-b12d07c_tests.cmake")
+  include("/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/test/backplane_test-b12d07c_tests.cmake")
+else()
+  add_test(backplane_test_NOT_BUILT-b12d07c backplane_test_NOT_BUILT-b12d07c)
+endif()

@@ -1,0 +1,55 @@
+{
+	"bmi-installation" : null,
+	"compiler-frontend-variant" : "GNU",
+	"compiler-id" : "Clang",
+	"compiler-simulate-id" : "",
+	"config" : "Release",
+	"cxx-modules" : {},
+	"database-info" : null,
+	"dir-cur-bld" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/stats",
+	"dir-cur-src" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/stats",
+	"dir-top-bld" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests",
+	"dir-top-src" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen",
+	"exports" : [],
+	"forward-modules-from-target-dirs" : [],
+	"include-dirs" : 
+	[
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/stats/SYSTEM",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-external/fltk/install/include",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-external/rist-cpp/install/include",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-external/rist-cpp/install/include/rist-cpp",
+		"/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-external/rist-cpp/install/include/librist"
+	],
+	"language" : "CXX",
+	"linked-target-dirs" : [],
+	"module-dir" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/build-tests/source/stats/CMakeFiles/stats_lib.dir",
+	"sources" : 
+	{
+		"source/stats/CMakeFiles/stats_lib.dir/__/lib/lib.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/lib/lib.cpp"
+		},
+		"source/stats/CMakeFiles/stats_lib.dir/__/ui/ui.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/ui/ui.cpp"
+		},
+		"source/stats/CMakeFiles/stats_lib.dir/__/ui/ui_widgets.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/ui/ui_widgets.cpp"
+		},
+		"source/stats/CMakeFiles/stats_lib.dir/bitrate_scale.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/stats/bitrate_scale.cpp"
+		},
+		"source/stats/CMakeFiles/stats_lib.dir/stats.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/pat/workspace/open-broadcast/open-broadcast-encoder-listen/source/stats/stats.cpp"
+		}
+	}
+}

@@ -1,0 +1,21 @@
+ninja_dyndep_version = 1.0
+build source/bridge/CMakeFiles/bridge_lib.dir/ubus.cpp.o: dyndep
+
+build source/bridge/CMakeFiles/bridge_lib.dir/ubus_httplib.cpp.o: dyndep
+
+build source/bridge/CMakeFiles/bridge_lib.dir/mdns.cpp.o: dyndep
+
+build source/bridge/CMakeFiles/bridge_lib.dir/discovery.cpp.o: dyndep
+
+build source/bridge/CMakeFiles/bridge_lib.dir/bridge_client.cpp.o: dyndep
+
+build source/bridge/CMakeFiles/bridge_lib.dir/reporting.cpp.o: dyndep
+
+build source/bridge/CMakeFiles/bridge_lib.dir/reporting_httplib.cpp.o: dyndep
+
+build source/bridge/CMakeFiles/bridge_lib.dir/actuate.cpp.o: dyndep
+
+build source/bridge/CMakeFiles/bridge_lib.dir/join_interface.cpp.o: dyndep
+
+build source/bridge/CMakeFiles/bridge_lib.dir/__/lib/lib.cpp.o: dyndep
+

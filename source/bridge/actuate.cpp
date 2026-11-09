@@ -34,6 +34,24 @@ std::string with_leg_secret(std::string url, const std::string& secret, int aes)
   }
   return url;
 }
+// `rist://@host:port` asks libRIST to BIND; the `@` is a property of opening
+// the socket, never of the address. Everything stored or reported is marker-
+// free, and the marker is added here -- the single place a listen socket is
+// requested on the bridge's behalf.
+std::string with_listen_marker(std::string url)
+{
+  if (url.rfind("rist://@", 0) == 0 || url.rfind("rist://", 0) != 0) {
+    return url;
+  }
+  return "rist://@" + url.substr(std::string {"rist://"}.size());
+}
+
+std::string without_listen_marker(std::string url)
+{
+  return url.rfind("rist://@", 0) == 0
+      ? "rist://" + url.substr(std::string {"rist://@"}.size())
+      : url;
+}
 }  // namespace
 
 json bridge_desired_config(const actuate_request& req,
@@ -45,10 +63,10 @@ json bridge_desired_config(const actuate_request& req,
     // libRIST binds the address without joining and receives nothing. rpcd's
     // whitelist takes `listen_url` as one string and nothing beside it, so the
     // join travels as `?miface=` inside that URL.
-    desired["listen_url"] = with_multicast_interface(
+    desired["listen_url"] = with_listen_marker(with_multicast_interface(
         req.listen_url,
         resolve_join_interface(
-            req.listen_url, req.listen_miface, req.interface_name));
+            req.listen_url, req.listen_miface, req.interface_name)));
   }
 
   json outputs = json::array();
@@ -77,7 +95,10 @@ namespace
 std::string sendable_target(const std::string& listen_url,
                             const std::string& host_hint)
 {
-  const std::string url = without_multicast_interface(listen_url);
+  // A stored address has no marker, but a reported one may still carry it, and
+  // `@0.0.0.0` would defeat the wildcard test below.
+  const std::string url =
+      without_listen_marker(without_multicast_interface(listen_url));
   if (url.rfind("rist://", 0) != 0) {
     return url;
   }

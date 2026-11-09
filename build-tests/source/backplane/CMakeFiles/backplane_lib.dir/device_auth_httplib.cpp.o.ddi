@@ -1,0 +1,9 @@
+{
+  "revision": 0,
+  "rules": [
+    {
+      "primary-output": "source/backplane/CMakeFiles/backplane_lib.dir/device_auth_httplib.cpp.o"
+    }
+  ],
+  "version": 1
+}
