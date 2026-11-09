@@ -1,9 +1,0 @@
-{
-  "revision": 0,
-  "rules": [
-    {
-      "primary-output": "source/bridge/CMakeFiles/bridge_lib.dir/bridge_client.cpp.o"
-    }
-  ],
-  "version": 1
-}

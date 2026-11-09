@@ -1,3 +1,0 @@
-ninja_dyndep_version = 1.0
-build source/lib/CMakeFiles/open-broadcast-encoder_lib.dir/lib.cpp.o: dyndep
-

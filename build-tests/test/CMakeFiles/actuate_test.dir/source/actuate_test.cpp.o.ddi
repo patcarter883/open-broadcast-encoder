@@ -1,9 +1,0 @@
-{
-  "revision": 0,
-  "rules": [
-    {
-      "primary-output": "test/CMakeFiles/actuate_test.dir/source/actuate_test.cpp.o"
-    }
-  ],
-  "version": 1
-}

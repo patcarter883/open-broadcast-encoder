@@ -1,9 +1,0 @@
-{
-  "revision": 0,
-  "rules": [
-    {
-      "primary-output": "source/lib/CMakeFiles/open-broadcast-encoder_lib.dir/lib.cpp.o"
-    }
-  ],
-  "version": 1
-}

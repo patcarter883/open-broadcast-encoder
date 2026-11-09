@@ -1,9 +1,0 @@
-{
-  "revision": 0,
-  "rules": [
-    {
-      "primary-output": "test/CMakeFiles/backplane_test.dir/source/backplane_test.cpp.o"
-    }
-  ],
-  "version": 1
-}
