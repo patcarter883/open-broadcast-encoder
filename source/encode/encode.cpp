@@ -385,8 +385,13 @@ void encode::pipeline_build_video_demux()
 {
   switch (input_c.selected_input_mode) {
     case input_mode::testsrc:
+      // A test source stands in for a camera, so it renders the production
+      // picture rather than videotestsrc's 320x240 default: the encoder's rate
+      // control, the receiver's slate and the destination's ladder all size
+      // themselves from the frames this produces.
       this->pipeline_str +=
-          " videotestsrc is-live=true pattern=smpte ! videoconvert !";
+          " videotestsrc is-live=true pattern=smpte "
+          "! video/x-raw,width=1920,height=1080,framerate=30/1 ! videoconvert !";
       break;
     case input_mode::ndi:
       this->pipeline_str += " demux.video ! queue silent=true ! videoconvert !";

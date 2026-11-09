@@ -24,6 +24,11 @@ struct hosted_session
 {
   std::string session_id;
   std::string rist_url;
+  // Where this encoder must actually send. The portal resolves it per session:
+  // a bridge's ingest when the transport uses one, otherwise the relay ingest
+  // the session was allocated on. Empty only when an older backplane omits it,
+  // in which case rist_url is the same target.
+  std::string encoder_target;
   std::string control_url;
   std::string control_token;  // shown once; secret
   std::string psk;  // shown once; secret
