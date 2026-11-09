@@ -607,6 +607,13 @@ static void bridge_calibrate()
         auto client = make_bridge_client(cfg);
         const auto outcome = client.calibrate(
             bridge_request(cfg, /*allow_claim=*/false), k_bridge_window);
+        if (outcome.ok && outcome.aggregate_kbps > 0) {
+          // The measured aggregate is the link budget a hosted session sizes
+          // its transcode target from. A refused or empty run measured nothing,
+          // so an earlier figure stands.
+          ctx.lib.bridge_link_budget_kbps.store(outcome.aggregate_kbps,
+                                                std::memory_order_relaxed);
+        }
         const std::string text = bridge::format_calibration(outcome);
         transport_log("Bridge calibration: " + text + "\n");
         if (ctx.ui != nullptr) {
@@ -845,7 +852,8 @@ static void apply_allocation_to_receiver(const hosted_session& session,
                                          codec source_codec,
                                          const source_geometry& geometry,
                                          int ingest_kbps,
-                                         int source_kbps)
+                                         int source_kbps,
+                                         int link_budget_kbps)
 {
   if (session.start_body_json.empty()) {
     transport_log("Allocated " + session.session_id
@@ -863,7 +871,8 @@ static void apply_allocation_to_receiver(const hosted_session& session,
                                    ingest_kbps,
                                    geometry.width,
                                    geometry.height,
-                                   source_kbps))
+                                   source_kbps,
+                                   link_budget_kbps))
   {
     transport_log("Receiver configured for session " + session.session_id
                   + ".\n");
@@ -933,7 +942,8 @@ static void repost_stored_start(const hosted_session& session)
       ctx.lib.encode_cfg.selected_codec,
       geometry,
       rist_bandwidth_ceiling_kbps,
-      ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed));
+      ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed),
+      ctx.lib.bridge_link_budget_kbps.load(std::memory_order_relaxed));
 }
 
 static void hosted_watchdog_loop()
@@ -1057,6 +1067,11 @@ static void hosted_allocate()
   if (encode_kbps > 0) {
     bitrates.source_bitrate_kbps = static_cast<std::uint32_t>(encode_kbps);
   }
+  // What the bridge last measured the WAN at. 0 until Calibrate has run, and
+  // the transcode target then falls back to the sending rate bounded by the
+  // transport ceiling.
+  const int link_budget_kbps =
+      ctx.lib.bridge_link_budget_kbps.load(std::memory_order_relaxed);
 
   if (hosted.backplane_url.empty() || hosted.device_token.empty()) {
     if (ctx.ui != nullptr) {
@@ -1071,7 +1086,7 @@ static void hosted_allocate()
 
   track_control_thread(std::thread(
       [hosted, bridge_cfg, encoder_name, source_codec, video_kbps, encode_kbps,
-       bitrates]
+       link_budget_kbps, bitrates]
       {
         backplane_client backplane(
             hosted.backplane_url,
@@ -1190,8 +1205,12 @@ static void hosted_allocate()
         if (auto encoder = ctx.lib.encoder_ptr.load()) {
           geometry = encoder->source_geometry_now();
         }
-        apply_allocation_to_receiver(
-            outcome.session, source_codec, geometry, video_kbps, encode_kbps);
+        apply_allocation_to_receiver(outcome.session,
+                                     source_codec,
+                                     geometry,
+                                     video_kbps,
+                                     encode_kbps,
+                                     link_budget_kbps);
         // E4: from now on the session is held, so a node that restarts must get
         // its configuration back without the operator doing anything.
         ensure_hosted_watchdog();

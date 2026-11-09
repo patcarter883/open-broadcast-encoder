@@ -521,6 +521,28 @@ TEST_CASE("re-applying does not duplicate an interface already in the URL",
         == "rist://@239.1.1.10:5100?miface=br-lan&buffer=2000");
 }
 
+TEST_CASE("the interface the bridge joins on is not handed back as a send "
+          "address",
+          "[bridge][actuate]")
+{
+  fakes f;
+  // The bridge reports back exactly what it stored, which carries the
+  // group-join interface. miface is the LISTENER's: a sender given it would try
+  // to bind a device that exists on the router, not on this host.
+  f.reconciled_listen_url = "rist://239.1.1.10:5100?miface=eth1";
+  actuate_request req = bridged_request();
+  req.listen_url = "rist://@239.1.1.10:5100";
+  req.listen_miface = "eth1";
+  actuator a = f.make();
+
+  const actuate_outcome out = a.run(req, std::chrono::milliseconds {2000});
+
+  REQUIRE(out.ok);
+  CHECK(f.seen_request.desired.at("listen_url")
+        == "rist://@239.1.1.10:5100?miface=eth1");
+  CHECK(out.encoder_target == "rist://239.1.1.10:5100");
+}
+
 TEST_CASE("an unset join interface is resolved, never left off a group",
           "[bridge][actuate]")
 {

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Pat Carter
 
 // The transcode target a hosted start body may carry, derived from what this
-// encoder actually sends.
+// encoder actually sends and from what the link carries.
 //
 // The portal sizes a destination's transcode from the plan and from the bitrate
 // inputs on the allocate request, and an explicit destination bitrate wins
@@ -11,31 +11,39 @@
 // arrived asking for ~30 Mbit/s of transcode from a 7 Mbit/s source over a
 // cellular uplink.
 //
-// The encoder has no WAN measurement to offer either -- the bridge's link stats
-// do not travel back to it -- so the budget it can state is the transport
-// ceiling it declares to the receiver and sizes its RIST recovery ring from
-// (lib.h's rist_bandwidth_ceiling_kbps). That is an upper bound on the media
-// the configured chain is meant to carry, and it is deterministic, unlike any
-// figure sampled from a link that is not yet carrying frames.
+// The rates that bound a target live on this side of the chain:
+//   video_kbps        what this encoder is configured to send. The transcode
+//                     re-encodes that source, so a target above it asks for
+//                     detail the source never carried.
+//   link_budget_kbps  the aggregate rate the bridge measured on its WAN legs at
+//                     the last successful calibration. Zero when no link has
+//                     been measured since this launch.
+//   ceiling_kbps      the bandwidth the RIST leg declares and sizes its
+//                     recovery ring from (lib.h's rist_bandwidth_ceiling_kbps).
+//                     libRIST spends it on retransmissions as well as the
+//                     payload, so it is never fully available to a target.
 //
 // Rule, and its reasons:
-//   - a re-encode cannot carry more detail than its input, so the video rate is
-//     the natural ceiling for its transcode;
-//   - the transcode shares the uplink with RIST overhead and retransmissions,
-//     so it may occupy at most 90% of the transport ceiling (the same headroom
-//     the portal's own derivation applies);
-//   - the floor keeps a picture worth publishing, unless the ceiling is below
-//     the floor -- there the link wins, because a rate above the link is the
-//     failure this exists to stop.
+//   - the target is the smallest rate that is known, so a measurement of a
+//     trickle outranks a plan-sized number and a measurement of plenty cannot
+//     exceed what is being sent;
+//   - with no measurement the sending rate and the ceiling still bound it,
+//     which makes the result deterministic rather than link-dependent;
+//   - the ceiling contributes at most 90%, the same headroom the portal's own
+//     derivation applies, because the remainder is retransmission budget on the
+//     same leg;
+//   - the floor keeps a picture worth publishing, unless every known bound is
+//     below the floor -- there the link wins, because a rate above the link is
+//     the failure this exists to stop.
 //
-// The body correction only ever LOWERS a target the portal stated: a value that
+// Zero means nothing is known and the caller leaves the portal's figure alone.
+// The correction only ever LOWERS a target the portal stated: a value that
 // already fits is the portal's decision (DT-22) and stands. A target the portal
 // could not derive at all is filled in.
 
 #pragma once
 
 #include <algorithm>
-#include <cstdint>
 
 namespace transcode_rate
 {
@@ -45,38 +53,53 @@ namespace transcode_rate
 inline constexpr int k_floor_kbps = 500;
 
 // Share of the transport ceiling one transcode may occupy. The remainder is
-// RIST overhead, retransmissions, and any sibling output on the same leg.
-inline constexpr int k_transport_headroom_pct = 90;
+// RIST overhead and retransmissions on the same leg.
+inline constexpr int k_ceiling_headroom_pct = 90;
 
-// The highest transcode target this encoder can justify. Zero when either input
-// is unknown, which is the caller's signal to leave the portal's number alone.
-inline auto cap_kbps(int video_kbps, int transport_ceiling_kbps) -> int
+// The rate every transcode target in the body is bounded by. Zero when nothing
+// is known, which is the caller's signal to leave the portal's numbers alone.
+inline int resolve(int video_kbps, int link_budget_kbps, int ceiling_kbps)
 {
-  if (video_kbps <= 0 || transport_ceiling_kbps <= 0) {
+  int upper = 0;
+  const auto tighten = [&upper](int rate)
+  {
+    if (rate > 0 && (upper == 0 || rate < upper))
+    {
+      upper = rate;
+    }
+  };
+  tighten(video_kbps);
+  if (ceiling_kbps > 0)
+  {
+    tighten(ceiling_kbps * k_ceiling_headroom_pct / 100);
+  }
+  if (upper == 0)
+  {
     return 0;
   }
-  const auto budget =
-      static_cast<int>(static_cast<std::int64_t>(transport_ceiling_kbps)
-                       * k_transport_headroom_pct / 100);
-  const int floor = std::min(k_floor_kbps, budget);
-  return std::max(std::min(video_kbps, budget), floor);
+  const int target =
+      link_budget_kbps > 0 ? std::min(link_budget_kbps, upper) : upper;
+  return target < k_floor_kbps && upper >= k_floor_kbps ? k_floor_kbps : target;
 }
 
 // The value to write into `transcode.bitrate_kbps`: the portal's target when it
-// fits under the cap, otherwise the cap. A target the portal left out or stated
-// as non-positive is replaced by the cap.
-inline auto body_kbps(int portal_kbps,
-                      int video_kbps,
-                      int transport_ceiling_kbps) -> int
+// fits under the resolved rate, otherwise that rate. A target the portal left
+// out or stated as non-positive is replaced by the resolved rate.
+inline int body_kbps(int portal_kbps,
+                     int video_kbps,
+                     int link_budget_kbps,
+                     int ceiling_kbps)
 {
-  const int cap = cap_kbps(video_kbps, transport_ceiling_kbps);
-  if (cap <= 0) {
+  const int target = resolve(video_kbps, link_budget_kbps, ceiling_kbps);
+  if (target <= 0)
+  {
     return portal_kbps;
   }
-  if (portal_kbps <= 0) {
-    return cap;
+  if (portal_kbps <= 0)
+  {
+    return target;
   }
-  return std::min(portal_kbps, cap);
+  return std::min(portal_kbps, target);
 }
 
 }  // namespace transcode_rate

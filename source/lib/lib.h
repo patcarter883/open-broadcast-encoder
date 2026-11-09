@@ -263,6 +263,12 @@ struct library
   std::string encoder_name;
   bridge_control_config bridge_ctl;
   hosted_config hosted;
+  // The aggregate WAN rate the bridge measured at its last successful
+  // calibration, in kbit/s. A measurement rather than a setting: it is not
+  // persisted, and 0 means no link has been measured since this launch. Written
+  // by the calibration worker, read when a hosted session sizes its transcode
+  // target (transcode_rate.h).
+  std::atomic<int> bridge_link_budget_kbps {0};
 
   cumulative_stats stats;
 

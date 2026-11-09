@@ -63,7 +63,8 @@ bool control_client::prepare_hosted_body(const std::string& start_body_json,
                                          int ingest_kbps,
                                          std::uint32_t ingest_width,
                                          std::uint32_t ingest_height,
-                                         int source_kbps)
+                                         int source_kbps,
+                                         int link_budget_kbps)
 {
   json body = json::parse(start_body_json, nullptr, false);
   if (body.is_discarded() || !body.is_object()) {
@@ -119,16 +120,18 @@ bool control_client::prepare_hosted_body(const std::string& start_body_json,
     }
   }
 
-  // The transcode target is derived from what this encoder sends: the portal
-  // sizes it from the plan (or from an explicit destination bitrate, which wins
-  // there outright), and has never seen the rate this pipeline runs at or the
-  // transport ceiling it declares. A target above either cannot add detail and
-  // would spend uplink the source never needed, so it is lowered to the
-  // encoder's cap; one that already fits is left exactly as the portal stated
-  // it. Unknown inputs leave the document untouched. The derivation lives in
+  // The transcode target is derived from what this encoder sends and from what
+  // the link carries: the portal sizes it from the plan (or from an explicit
+  // destination bitrate, which wins there outright), and has never seen the
+  // rate this pipeline runs at, the transport ceiling it declares, or the WAN
+  // rate the bridge measured. A target above any of those cannot add detail and
+  // would spend uplink the link does not have, so it is lowered to the resolved
+  // rate; one that already fits is left exactly as the portal stated it.
+  // Nothing known leaves the document untouched. The derivation lives in
   // transcode_rate.h.
-  const int transcode_cap = transcode_rate::cap_kbps(source_kbps, ingest_kbps);
-  if (transcode_cap > 0) {
+  const int transcode_target = transcode_rate::resolve(
+      source_kbps, link_budget_kbps, ingest_kbps);
+  if (transcode_target > 0) {
     for (auto& output : body["outputs"]) {
       if (!output.contains("transcode") || !output["transcode"].is_object()) {
         continue;
@@ -140,8 +143,8 @@ bool control_client::prepare_hosted_body(const std::string& start_body_json,
       {
         stated = it->get<int>();
       }
-      transcode["bitrate_kbps"] =
-          transcode_rate::body_kbps(stated, source_kbps, ingest_kbps);
+      transcode["bitrate_kbps"] = transcode_rate::body_kbps(
+          stated, source_kbps, link_budget_kbps, ingest_kbps);
     }
   }
 
@@ -158,7 +161,8 @@ bool control_client::start_hosted(const std::string& control_url,
                                   int ingest_kbps,
                                   std::uint32_t ingest_width,
                                   std::uint32_t ingest_height,
-                                  int source_kbps)
+                                  int source_kbps,
+                                  int link_budget_kbps)
 {
   // Split the allocation's control_url into the origin httplib wants and the
   // path /start hangs off.
@@ -179,7 +183,8 @@ bool control_client::start_hosted(const std::string& control_url,
                            ingest_kbps,
                            ingest_width,
                            ingest_height,
-                           source_kbps))
+                           source_kbps,
+                           link_budget_kbps))
   {
     return false;
   }

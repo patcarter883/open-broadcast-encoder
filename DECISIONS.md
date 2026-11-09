@@ -315,28 +315,31 @@ depth instead (that buys latency, not immunity -- a stalled sink always fills an
 
 ---
 
-## EN-9 — The encoder lowers a transcode target above what it sends (2026-11-09)
+## EN-9 — The encoder sizes a transcode target to the link it sends over (2026-11-09)
 
 **Choice.** `prepare_hosted_body` corrects every `outputs[].transcode.bitrate_kbps` with
-`transcode_rate::body_kbps`: the portal's target when it fits, otherwise the encoder's cap. The cap is
-`max(min(video_kbps, 90% of transport_ceiling_kbps), min(500, 90% of transport_ceiling_kbps))` — the
-logged-in video rate as the upper bound, the transport ceiling the encoder declares to the receiver and
-sizes its RIST recovery ring from (`rist_bandwidth_ceiling_kbps`) for the headroom, and the destination
-API's 500 kbit/s floor unless the ceiling cannot carry that. A target the portal left out or stated
-non-positive is filled from the cap. Unknown inputs leave the document untouched. `transcode_rate.h`
-holds the rule; the caller passes the encode bitrate and the ceiling, so nothing is sampled at runtime.
+`transcode_rate::body_kbps`: the portal's target when it fits, otherwise the resolved rate. The resolved
+rate is the smallest known of the encode bitrate (`source_kbps`, what this pipeline is configured to
+send), the WAN rate the bridge measured at its last successful calibration
+(`library::bridge_link_budget_kbps`, 0 when nothing has been measured since launch), and 90% of the
+transport ceiling the encoder declares to the receiver and sizes its RIST recovery ring from
+(`rist_bandwidth_ceiling_kbps`, whose remainder is retransmission budget). It is floored at the
+destination API's 500 kbit/s unless every known bound is below that, in which case the link wins. A
+target the portal left out or stated non-positive is filled from the resolved rate; nothing known at all
+leaves the document untouched. `transcode_rate.h` holds the rule; the caller passes the three figures, so
+nothing is sampled at runtime.
 
 **Rationale.** The observed body asked for 29 860 kbit/s of transcode from a 7 Mbit/s source over a
 cellular uplink. The portal sizes that from the plan or from an explicit destination bitrate (which wins
-there outright) and has never seen the rate this pipeline runs at, so the number can exceed the source
-by four times — a transcode that cannot add detail and spends uplink the source never needed. The encoder
-is the only side that knows both figures. The rule reproduces the portal's own headroom (90% of the
-link), keeps the floor, and lets the link win below the floor: a rate above the link is the failure this
-exists to stop.
+there outright) and has never seen the rate this pipeline runs at or what the link carries, so the number
+can exceed the source by four times — a transcode that cannot add detail and spends uplink the source
+never needed. The encoder is the only side that knows the sending rate and holds the bridge's
+measurement. With no measurement the source and the ceiling still bound the result, so the answer is
+deterministic rather than link-dependent.
 
-**Rejected.** Replacing the portal's target unconditionally (a target inside the cap is still the
+**Rejected.** Replacing the portal's target unconditionally (a target inside the bound is still the
 portal's decision — DT-22); deriving from the destination's transcode codec (a codec factor would raise
 the best case and is not the encoder's decision to make, and lowering the target is the safe direction);
-probing the link at start (the encoder has no WAN measurement — the bridge's link stats do not travel
-back to it, and the body is posted before any frames flow); sending `measured_budget_kbps` from the
-encoder (it has measured nothing, and the portal would read an estimate as a measurement).
+probing the link at start (the body is posted before any frames flow — a measurement exists only after an
+operator calibration); sending `measured_budget_kbps` from the encoder (the allocate request states
+nothing this side has measured end to end, and the portal would read an estimate as a measurement).
