@@ -279,6 +279,19 @@ target_compile_features(preview_backpressure_test PRIVATE cxx_std_20)
 
 catch_discover_tests(preview_backpressure_test)
 
+# The RIST Address field decides where the stream goes, and it is the only
+# value on screen: address.cpp carries no other dependency, so the parse is
+# pinned without a pipeline or a socket.
+add_executable(address_parse_test
+    source/address_parse_test.cpp
+    ${CMAKE_SOURCE_DIR}/source/lib/address.cpp
+)
+target_include_directories(address_parse_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(address_parse_test PRIVATE cxx_std_20)
+target_link_libraries(address_parse_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(address_parse_test)
+
 # ---- End-of-file commands ----
 
 add_folders(Test)

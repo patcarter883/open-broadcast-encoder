@@ -16,6 +16,8 @@ target_sources(open-broadcast-encoder_lib
   PUBLIC
     lib.h
     lib.cpp
+    address.h
+    address.cpp
 )
 
 target_include_directories(

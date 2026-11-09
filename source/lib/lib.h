@@ -12,6 +12,8 @@
 #include <thread>
 #include <vector>
 
+#include "lib/address.h"
+
 class encode;
 class transport;
 struct ndi_input;
@@ -210,29 +212,13 @@ struct hosted_config
 
 inline std::pair<std::string, int> parse_address(const std::string& addr)
 {
-  // Note: IPv6 addresses must use the bracketed [host]:port form for the
-  // port to parse; a bare IPv6 literal will be treated as host-only below.
-  auto colon = addr.find(':');
-  if (colon == std::string::npos) {
-    if (addr.empty()) {
-      return {"127.0.0.1", 5000};
-    }
-    return {addr, 5000};
-  }
-  std::string h = addr.substr(0, colon);
-  if (h.empty()) {
-    h = "127.0.0.1";
-  }
-  std::string p = addr.substr(colon + 1);
-  try {
-    int port = std::stoi(p);
-    if (port < 1 || port > 65535) {
-      return {h, 5000};
-    }
-    return {h, port};
-  } catch (...) {
-    return {h, 5000};
-  }
+  // Single implementation: parse_rist_address handles the scheme, the query,
+  // bracketed IPv6 and a bare IPv6 literal. Splitting on the first ':' here
+  // used to read "rist://host:20000" as host "rist", port 5000 -- a destination
+  // that resolves to nothing, so the sender reported packets while the wire
+  // carried only keepalives.
+  auto parsed = obr::parse_rist_address(addr);
+  return {parsed.host, parsed.port};
 }
 
 // The system hostname, capped to a stable short label; "encoder" when the

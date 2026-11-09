@@ -1530,6 +1530,18 @@ static void hosted_end_session()
 
 static bool run_transport()
 {
+  // The address is the operator's single statement of the destination and the
+  // only value on screen, so host/port are re-derived from it on every start.
+  // A persisted pair written by an older parse (or a field edited without the
+  // callback firing) then cannot point the sender somewhere the UI does not
+  // name -- which is how a stream reported packets while the wire carried
+  // keepalives to an address nothing answered on.
+  if (!ctx.lib.output_cfg.address.empty()) {
+    auto [host, port] = parse_address(ctx.lib.output_cfg.address);
+    ctx.lib.output_cfg.host = host;
+    ctx.lib.output_cfg.port = port;
+    transport_log(std::format("[rist] destination {}:{}\n", host, port));
+  }
   // A missing or wildcard destination is refused before the sender exists: it
   // used to fall back to 127.0.0.1 and send the stream to this host, which
   // looks like a working pipeline and carries media nowhere.
