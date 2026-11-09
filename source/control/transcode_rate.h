@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 
-// The transcode target a hosted start body may carry, derived from what this
-// encoder actually sends and from what the link carries.
+// The transcode target a hosted start body carries, and the figure used when
+// the chain recipe does not state one.
 //
-// The portal sizes a destination's transcode from the plan and from the bitrate
-// inputs on the allocate request, and an explicit destination bitrate wins
-// there outright. Neither figure is the rate this pipeline is running at, and
-// nothing on the portal side knows it: on the deployed link the body has
-// arrived asking for ~30 Mbit/s of transcode from a 7 Mbit/s source over a
-// cellular uplink.
+// The backplane's chain recipe owns the target: a destination's bitrate_kbps is
+// the operator's decision for that link in the chain, and the allocation body
+// carries it. This encoder runs that figure as stated, including when the rate
+// is above what it is sending, because the recipe describes the chain the
+// operator configured and the portal is where it is changed. A recipe that asks
+// for more than the uplink carries is a recipe defect, visible in the panel's
+// session view, not something to silently rewrite mid-stream.
 //
-// The rates that bound a target live on this side of the chain:
+// The derivation below therefore only fills a target the recipe left out
+// entirely. Its inputs are the ones that only exist on this side of the chain:
 //   video_kbps        what this encoder is configured to send. The transcode
 //                     re-encodes that source, so a target above it asks for
 //                     detail the source never carried.
@@ -23,23 +25,19 @@
 //                     libRIST spends it on retransmissions as well as the
 //                     payload, so it is never fully available to a target.
 //
-// Rule, and its reasons:
+// Rule for that fallback, and its reasons:
 //   - the target is the smallest rate that is known, so a measurement of a
 //     trickle outranks a plan-sized number and a measurement of plenty cannot
 //     exceed what is being sent;
 //   - with no measurement the sending rate and the ceiling still bound it,
 //     which makes the result deterministic rather than link-dependent;
-//   - the ceiling contributes at most 90%, the same headroom the portal's own
-//     derivation applies, because the remainder is retransmission budget on the
-//     same leg;
+//   - the ceiling contributes at most 90%, because the remainder is
+//     retransmission budget on the same leg;
 //   - the floor keeps a picture worth publishing, unless every known bound is
 //     below the floor -- there the link wins, because a rate above the link is
 //     the failure this exists to stop.
 //
-// Zero means nothing is known and the caller leaves the portal's figure alone.
-// The correction only ever LOWERS a target the portal stated: a value that
-// already fits is the portal's decision (DT-22) and stands. A target the portal
-// could not derive at all is filled in.
+// Zero means nothing is known and the caller leaves the body untouched.
 
 #pragma once
 
@@ -90,16 +88,11 @@ inline int body_kbps(int portal_kbps,
                      int link_budget_kbps,
                      int ceiling_kbps)
 {
-  const int target = resolve(video_kbps, link_budget_kbps, ceiling_kbps);
-  if (target <= 0)
+  if (portal_kbps > 0)
   {
     return portal_kbps;
   }
-  if (portal_kbps <= 0)
-  {
-    return target;
-  }
-  return std::min(portal_kbps, target);
+  return resolve(video_kbps, link_budget_kbps, ceiling_kbps);
 }
 
 }  // namespace transcode_rate

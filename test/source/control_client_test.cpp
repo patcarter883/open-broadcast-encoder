@@ -189,16 +189,14 @@ TEST_CASE("the transcode gop follows the ingest rate, not the portal's guess",
   REQUIRE(json::parse(out)["ingest"]["bandwidth"] == 6000);
 }
 
-TEST_CASE("a transcode target above what the encoder sends is lowered to it",
+TEST_CASE("a transcode target the recipe states is run as stated",
           "[hosted][control]")
 {
-  // The deployed body asked for 29 860 kbit/s of transcode from a 7 Mbit/s
-  // source over a cellular uplink. The portal sizes that number from the plan
-  // (an explicit destination bitrate wins there outright), and it cannot know
-  // what this pipeline is actually sending. The encoder can, so it lowers the
-  // target to the resolved rate -- and the transport ceiling it declares and
-  // the WAN rate the bridge measured bound that. A target that already fits is
-  // still the portal's decision.
+  // The chain recipe owns the transcode target: a destination's bitrate_kbps is
+  // the operator's decision for that link, and the body carries it. The encoder
+  // runs it as stated, so the published rate matches the configuration that was
+  // reviewed; a figure that does not fit the uplink is a recipe defect to fix in
+  // the backplane, not something to rewrite mid-stream.
   const char* portal = R"({
     "schema_version": 2,
     "session_id": "s_9f2c",
@@ -220,9 +218,8 @@ TEST_CASE("a transcode target above what the encoder sends is lowered to it",
       portal, codec::h265, out, err, 30, 20000, 1920, 1080, 7000, 0));
   {
     const json body = json::parse(out);
-    // 29 860 > 7 000: lowered to what the source itself carries.
-    REQUIRE(body["outputs"][1]["transcode"]["bitrate_kbps"] == 7000);
-    // Inside the cap: untouched, because the portal owns the target.
+    // Stated by the recipe: run as stated, even above what is being sent.
+    REQUIRE(body["outputs"][1]["transcode"]["bitrate_kbps"] == 29860);
     REQUIRE(body["outputs"][2]["transcode"]["bitrate_kbps"] == 5250);
     // The rest of the block is still the portal's.
     REQUIRE(body["outputs"][1]["transcode"]["codec"] == "h265");
@@ -231,32 +228,28 @@ TEST_CASE("a transcode target above what the encoder sends is lowered to it",
     REQUIRE_FALSE(body["outputs"][0].contains("transcode"));
   }
 
-  // A source rate above the ceiling is capped at 90% of it, not at the source.
+  // Neither a source rate nor a measurement rewrites a stated target.
   REQUIRE(control_client::prepare_hosted_body(
       portal, codec::h265, out, err, 30, 20000, 1920, 1080, 40000, 0));
-  REQUIRE(json::parse(out)["outputs"][1]["transcode"]["bitrate_kbps"] == 18000);
-
-  // No source rate known: the ceiling still bounds the portal's number rather
-  // than letting a plan-sized figure through.
+  REQUIRE(json::parse(out)["outputs"][1]["transcode"]["bitrate_kbps"] == 29860);
   REQUIRE(control_client::prepare_hosted_body(
       portal, codec::h265, out, err, 30, 20000, 1920, 1080, 0, 0));
-  REQUIRE(json::parse(out)["outputs"][1]["transcode"]["bitrate_kbps"] == 18000);
+  REQUIRE(json::parse(out)["outputs"][1]["transcode"]["bitrate_kbps"] == 29860);
 }
 
-TEST_CASE("a transcode target is sized from the measured link",
+TEST_CASE("a target the recipe omits is sized from the measured link",
           "[hosted][control]")
 {
-  // The portal's figure is a plan reservation: 29 860 kbit/s for a session
-  // whose cellular uplink carries under 9 000. The bridge measures the WAN when
-  // the operator calibrates it, and that measurement is the only statement of
-  // what the link will take, so it outranks both the plan and the sending rate.
+  // An opted-in transcode the recipe left without a target: the bridge's WAN
+  // measurement is the only statement of what the link will take, so it
+  // outranks both the sending rate and the transport ceiling.
   const char* portal = R"({
     "schema_version": 2,
     "session_id": "s_9f2c",
     "outputs": [
       {"id": "out1", "type": "rtmp", "url": "rtmp://a.example/live2"},
       {"id": "out2", "type": "rtmp", "url": "rtmp://b.example/live2",
-       "transcode": {"codec": "h264", "bitrate_kbps": 29860, "gop": 120}},
+       "transcode": {"codec": "h264", "gop": 120}},
       {"id": "out3", "type": "rtmp", "url": "rtmp://c.example/live2",
        "transcode": {"codec": "h265", "bitrate_kbps": 3000, "gop": 120}}
     ]
@@ -264,14 +257,14 @@ TEST_CASE("a transcode target is sized from the measured link",
   std::string out;
   std::string err;
 
-  SECTION("the measured budget replaces the portal's figure")
+  SECTION("the measured budget fills the omitted target")
   {
     // fps, ceiling, geometry, source, measured 4 200: the link wins.
     REQUIRE(control_client::prepare_hosted_body(
         portal, codec::h264, out, err, 30, 20000, 1920, 1080, 8000, 4200));
     const json body = json::parse(out);
     REQUIRE(body["outputs"][1]["transcode"]["bitrate_kbps"] == 4200);
-    // A target already inside the budget is the portal's call and stands.
+    // A target the recipe states is its own call and stands.
     REQUIRE(body["outputs"][2]["transcode"]["bitrate_kbps"] == 3000);
     REQUIRE_FALSE(body["outputs"][0].contains("transcode"));
   }
