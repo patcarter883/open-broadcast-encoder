@@ -334,7 +334,16 @@ static void run_loop()
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
   }
-  publish_encode_state(encoder->state.load(std::memory_order_relaxed));
+  // The loop leaves only when the operator stopped it or the encode failed, and
+  // at this moment `encoder->state` is still `streaming`: teardown is what sets
+  // idle, and teardown runs later on the UI thread. Republishing the stored
+  // state here therefore put "Streaming" back on a stopped encoder, with Start
+  // enabled and Stop greyed — the operator's only feedback about whether the
+  // press worked. Report what is true now.
+  publish_encode_state(encoder->state.load(std::memory_order_relaxed)
+                               == encode_state::failed
+                           ? encode_state::failed
+                           : encode_state::idle);
 
   // NOTE: we do NOT rist_destroy() here. stop() runs on the FLTK thread holding
   // Fl::lock() and joins this thread; if we tore the sender down here,
