@@ -437,7 +437,8 @@ void encode::pipeline_build_audio_demux()
           "audioconvert !";
       break;
     case input_mode::raw_local:
-      // OBS hands over planar float32; resample/convert let avenc_aac take it.
+      // OBS hands over planar float32; resample/convert give the AAC encoder
+      // the layout and rate it accepts.
       this->pipeline_str +=
           " rawaudio. ! queue silent=true max-size-buffers=16 max-size-bytes=0 "
           "max-size-time=0 ! audioresample ! audioconvert !";
@@ -453,7 +454,10 @@ void encode::pipeline_build_audio_demux()
 
 void encode::pipeline_build_audio_encoder()
 {
-  this->pipeline_str += " avenc_aac ! aacparse ";
+  // fdkaacenc rather than avenc_aac: both encode AAC-LC, but libav drags the
+  // whole ffmpeg shared-library tree into the Windows installer (aom, dav1d,
+  // gnutls, cairo, ...) while libfdk-aac is a single DLL.
+  this->pipeline_str += " fdkaacenc ! aacparse ";
 }
 
 void encode::pipeline_build_video_encoder()

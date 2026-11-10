@@ -17,6 +17,7 @@
 
 #ifdef _WIN32
 #  include <winsock2.h>
+#  include <windows.h>
 #else
 #  include <arpa/inet.h>
 #  include <unistd.h>
@@ -1864,6 +1865,27 @@ static void preview_input()
 
 auto main(int argc, char** argv) -> int
 {
+#ifdef _WIN32
+  // A self-contained install carries its own GStreamer beside the executable,
+  // so the process states where the plugins are: a customer machine has no
+  // system GStreamer, and a stale machine-wide registry must not shadow ours.
+  // GStreamer resolves plugins through GST_PLUGIN_PATH_1_0, and the runtime
+  // DLLs are found because they ship in the same directory as the executable.
+  {
+    char exe_path[MAX_PATH] {};
+    if (::GetModuleFileNameA(nullptr, exe_path, MAX_PATH) != 0) {
+      std::string dir {exe_path};
+      const auto slash = dir.find_last_of("\\/");
+      if (slash != std::string::npos) {
+        dir.erase(slash);
+        const std::string plugins = dir + "\\lib\\gstreamer-1.0";
+        _putenv_s("GST_PLUGIN_PATH_1_0", plugins.c_str());
+        const std::string registry = dir + "\\gst-registry.bin";
+        _putenv_s("GST_REGISTRY", registry.c_str());
+      }
+    }
+  }
+#endif
   gst_init(&argc, &argv);
 
   user_interface ui;

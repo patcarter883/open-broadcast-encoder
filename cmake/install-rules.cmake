@@ -42,6 +42,27 @@ if(PROJECT_IS_TOP_LEVEL)
       unset(_found_dll CACHE)
     endforeach()
 
+    # ---- Self-contained GStreamer ----
+    # A customer machine has no GStreamer, so the runtime DLLs ship beside the
+    # executable (Windows resolves them from there) and the plugins go to
+    # lib/gstreamer-1.0, which main() points GST_PLUGIN_PATH_1_0 at. The plugin
+    # set is the one the element inventory names -- see the packaging plan.
+    if(DEFINED ENV{GSTREAMER_MINGW_PREFIX})
+      set(_gst_prefix "$ENV{GSTREAMER_MINGW_PREFIX}")
+      install(DIRECTORY "${_gst_prefix}/bin/"
+        DESTINATION bin COMPONENT Runtime
+        FILES_MATCHING PATTERN "*.dll"
+      )
+      install(DIRECTORY "${_gst_prefix}/lib/gstreamer-1.0/"
+        DESTINATION lib/gstreamer-1.0 COMPONENT Runtime
+        FILES_MATCHING PATTERN "*.dll"
+      )
+    else()
+      message(WARNING
+        "GSTREAMER_MINGW_PREFIX is not set: the installer will not carry "
+        "GStreamer and will fail on a machine that has none.")
+    endif()
+
   else()
     set(CPACK_GENERATOR "TGZ")
   endif()
