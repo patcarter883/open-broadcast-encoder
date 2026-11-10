@@ -80,7 +80,6 @@ bool bool_or(const json& j, const char* key, bool fallback)
 }
 }  // namespace
 
-
 hosted_session hosted_session::from_json(const std::string& text)
 {
   hosted_session s;
@@ -112,9 +111,7 @@ std::string state_of(const json& sess)
 {
   // The portal's state word, defensively read: a non-string (an enum object, a
   // null) must not become the literal text "null" and then be classified.
-  if (auto it = sess.find("state");
-      it != sess.end() && it->is_string())
-  {
+  if (auto it = sess.find("state"); it != sess.end() && it->is_string()) {
     return it->get<std::string>();
   }
   return {};
@@ -346,8 +343,7 @@ std::string normalise_state(const std::string& state)
     if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
       continue;
     }
-    out.push_back(static_cast<char>(
-        c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c));
+    out.push_back(static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c));
   }
   return out;
 }
@@ -427,12 +423,12 @@ session_fetch_result backplane_client::get_session(
     return r;
   }
 
-  const auto [status, body] = m_transport(
-      "GET", "/api/v1/sessions/" + session_id, m_device_token, "");
+  const auto [status, body] =
+      m_transport("GET", "/api/v1/sessions/" + session_id, m_device_token, "");
   r.http_status = status;
   const json resp = json::parse(body, nullptr, false);
-  const bool has_session =
-      resp.is_object() && resp.contains("session") && resp.at("session").is_object();
+  const bool has_session = resp.is_object() && resp.contains("session")
+      && resp.at("session").is_object();
   r.probe = classify_probe(status, has_session);
 
   if (r.probe == session_probe::found) {
@@ -450,9 +446,8 @@ session_fetch_result backplane_client::get_session(
     r.error = "backplane refused the device token (HTTP "
         + std::to_string(status) + ")";
   } else {
-    r.error = status == 0
-        ? "no response from backplane"
-        : "could not read session " + session_id + " (HTTP "
+    r.error = status == 0 ? "no response from backplane"
+                          : "could not read session " + session_id + " (HTTP "
             + std::to_string(status) + ")";
   }
   return r;

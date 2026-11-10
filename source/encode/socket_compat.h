@@ -5,7 +5,8 @@
 
 // One vocabulary for the raw-OBS listener's sockets, which are the only sockets
 // this application opens. POSIX on Unix, Winsock on Windows: the names differ
-// (close/closesocket, errno/WSA error code, poll/WSAPoll) but the shape does not.
+// (close/closesocket, errno/WSA error code, poll/WSAPoll) but the shape does
+// not.
 
 #if defined(_WIN32)
 
@@ -24,7 +25,8 @@ inline constexpr handle invalid_handle = INVALID_SOCKET;
 
 inline void start_up()
 {
-  static const int started = []() -> int {
+  static const int started = []() -> int
+  {
     WSADATA data {};
     return ::WSAStartup(MAKEWORD(2, 2), &data) == 0 ? 1 : 0;
   }();
@@ -41,7 +43,8 @@ inline void close_handle(handle h)
   ::closesocket(h);
 }
 
-// EINTR has no Windows equivalent: a Winsock call is not interrupted by a signal.
+// EINTR has no Windows equivalent: a Winsock call is not interrupted by a
+// signal.
 inline bool interrupted()
 {
   return false;
@@ -55,8 +58,9 @@ inline int last_error()
 
 #else
 
-#  include <arpa/inet.h>
 #  include <cerrno>
+
+#  include <arpa/inet.h>
 #  include <netinet/in.h>
 #  include <poll.h>
 #  include <sys/socket.h>

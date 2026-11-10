@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 
-#include "lib/address.h"
-
 #include <cctype>
 #include <cstddef>
+
+#include "lib/address.h"
 
 namespace
 {
@@ -28,12 +28,13 @@ std::string trimmed(const std::string& s)
 {
   std::size_t first = 0;
   std::size_t last = s.size();
-  while (first < last &&
-         std::isspace(static_cast<unsigned char>(s[first])) != 0) {
+  while (first < last
+         && std::isspace(static_cast<unsigned char>(s[first])) != 0) {
     ++first;
   }
-  while (last > first &&
-         std::isspace(static_cast<unsigned char>(s[last - 1])) != 0) {
+  while (last > first
+         && std::isspace(static_cast<unsigned char>(s[last - 1])) != 0)
+  {
     --last;
   }
   return s.substr(first, last - first);
@@ -77,8 +78,8 @@ obr::rist_address obr::parse_rist_address(const std::string& address)
   }
 
   // A scheme is decoration here: only the host and port reach a socket. Cut it
-  // at "://" rather than at the first ':' -- that is what made "rist://host:port"
-  // parse as host "rist".
+  // at "://" rather than at the first ':' -- that is what made
+  // "rist://host:port" parse as host "rist".
   auto scheme_end = rest.find("://");
   if (scheme_end != std::string::npos) {
     rest = rest.substr(scheme_end + 3);

@@ -129,8 +129,8 @@ bool control_client::prepare_hosted_body(const std::string& start_body_json,
   // rate; one that already fits is left exactly as the portal stated it.
   // Nothing known leaves the document untouched. The derivation lives in
   // transcode_rate.h.
-  const int transcode_target = transcode_rate::resolve(
-      source_kbps, link_budget_kbps, ingest_kbps);
+  const int transcode_target =
+      transcode_rate::resolve(source_kbps, link_budget_kbps, ingest_kbps);
   if (transcode_target > 0) {
     for (auto& output : body["outputs"]) {
       if (!output.contains("transcode") || !output["transcode"].is_object()) {
@@ -261,8 +261,8 @@ control_client::receiver_status control_client::status(
     return r;
   }
   const json body = json::parse(res->body, nullptr, false);
-  if (body.is_discarded() || !body.is_object()
-      || !body.contains("is_running") || !body["is_running"].is_boolean())
+  if (body.is_discarded() || !body.is_object() || !body.contains("is_running")
+      || !body["is_running"].is_boolean())
   {
     // Without an unambiguous boolean there is nothing to act on, and treating
     // a missing field as "not running" would re-post /start on every poll

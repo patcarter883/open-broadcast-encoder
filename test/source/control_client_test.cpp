@@ -195,8 +195,8 @@ TEST_CASE("a transcode target the recipe states is run as stated",
   // The chain recipe owns the transcode target: a destination's bitrate_kbps is
   // the operator's decision for that link, and the body carries it. The encoder
   // runs it as stated, so the published rate matches the configuration that was
-  // reviewed; a figure that does not fit the uplink is a recipe defect to fix in
-  // the backplane, not something to rewrite mid-stream.
+  // reviewed; a figure that does not fit the uplink is a recipe defect to fix
+  // in the backplane, not something to rewrite mid-stream.
   const char* portal = R"({
     "schema_version": 2,
     "session_id": "s_9f2c",
@@ -273,14 +273,16 @@ TEST_CASE("a target the recipe omits is sized from the measured link",
   {
     REQUIRE(control_client::prepare_hosted_body(
         portal, codec::h264, out, err, 30, 20000, 1920, 1080, 8000, 12000));
-    REQUIRE(json::parse(out)["outputs"][1]["transcode"]["bitrate_kbps"] == 8000);
+    REQUIRE(json::parse(out)["outputs"][1]["transcode"]["bitrate_kbps"]
+            == 8000);
   }
 
   SECTION("no measurement falls back to the sending rate, below the ceiling")
   {
     REQUIRE(control_client::prepare_hosted_body(
         portal, codec::h264, out, err, 30, 20000, 1920, 1080, 8000, 0));
-    REQUIRE(json::parse(out)["outputs"][1]["transcode"]["bitrate_kbps"] == 8000);
+    REQUIRE(json::parse(out)["outputs"][1]["transcode"]["bitrate_kbps"]
+            == 8000);
   }
 
   SECTION("a target never reaches the transport ceiling")

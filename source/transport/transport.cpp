@@ -163,7 +163,7 @@ auto transport::send_buffer(const std::vector<uint8_t>& data,
     const std::size_t chunk = std::min(kRistPayload, data.size() - offset);
     ok = this->rist_sender->sendData(
              data.data() + offset, static_cast<int>(chunk), 0, virt_dst_port)
-         && ok;
+        && ok;
   }
   return ok;
 }

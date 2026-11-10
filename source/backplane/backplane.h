@@ -76,8 +76,8 @@ struct alloc_result
 // will not fix it).
 enum class session_probe
 {
-  found,        // 2xx with a session document
-  gone,         // 404: the portal does not have this session any more
+  found,  // 2xx with a session document
+  gone,  // 404: the portal does not have this session any more
   unavailable,  // no answer, 5xx, or a document we cannot read: try again
   unauthorised  // 401/403: the device token was refused
 };
@@ -91,7 +91,7 @@ struct session_fetch_result
   bool ok = false;
   int http_status = 0;
   session_probe probe = session_probe::unavailable;
-  std::string state;      // the portal's state word, when it said one
+  std::string state;  // the portal's state word, when it said one
   hosted_session session;  // populated when ok
   std::string error;
 };
@@ -99,10 +99,10 @@ struct session_fetch_result
 // What the encoder does about a persisted session when it launches (E3).
 enum class reattach_action
 {
-  reattach,       // restore the target and re-post the stored /start body
+  reattach,  // restore the target and re-post the stored /start body
   clear_session,  // the session is over: drop the file and say so
-  retry,          // keep the file and try again in 15 s
-  keep_report     // keep the file; this needs the operator, not another try
+  retry,  // keep the file and try again in 15 s
+  keep_report  // keep the file; this needs the operator, not another try
 };
 
 // Classify a fetch by its HTTP status and whether the body parsed into a

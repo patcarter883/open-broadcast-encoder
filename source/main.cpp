@@ -16,8 +16,8 @@
 #include <vector>
 
 #ifdef _WIN32
-#  include <winsock2.h>
 #  include <windows.h>
+#  include <winsock2.h>
 #else
 #  include <arpa/inet.h>
 #  include <unistd.h>
@@ -773,7 +773,8 @@ static void hosted_sign_in()
             cfg.backplane_url, make_device_auth_transport(cfg.backplane_url));
 
         std::string error;
-        auto code = auth.start(encoder_name, "linux", machine_hostname(), error);
+        auto code =
+            auth.start(encoder_name, "linux", machine_hostname(), error);
         if (!code.valid()) {
           transport_log("Hosted sign-in failed: " + error + "\n");
           if (ctx.ui != nullptr) {
@@ -917,7 +918,7 @@ namespace
 {
 std::atomic<bool> g_watchdog_wake {false};  // ask the loop to leave now
 std::atomic<bool> g_watchdog_live {false};  // the thread is still in its loop
-std::atomic<bool> g_shutdown {false};       // the app is exiting
+std::atomic<bool> g_shutdown {false};  // the app is exiting
 std::mutex g_watchdog_mutex;
 std::thread g_watchdog;
 
@@ -950,8 +951,10 @@ static void repost_stored_start(const hosted_session& session)
   if (auto encoder = ctx.lib.encoder_ptr.load()) {
     geometry = encoder->source_geometry_now();
   }
-  transport_log("Receiver was not running; re-posting the stored start body "
-                "for " + session.session_id + ".\n");
+  transport_log(
+      "Receiver was not running; re-posting the stored start body "
+      "for "
+      + session.session_id + ".\n");
   apply_allocation_to_receiver(
       session,
       ctx.lib.encode_cfg.selected_codec,
@@ -994,12 +997,14 @@ static void hosted_watchdog_loop()
     if (!held.has_value()) {
       // End Session cleared it, or it was never there. Either way the poll is
       // done: it exists to hold a session, not to find one.
-      transport_log("Hosted watchdog: the session was ended; polling stopped.\n");
+      transport_log(
+          "Hosted watchdog: the session was ended; polling stopped.\n");
       break;
     }
     if (held->control_url.empty()) {
-      transport_log("Hosted watchdog: the held session has no control URL; "
-                    "polling stopped.\n");
+      transport_log(
+          "Hosted watchdog: the held session has no control URL; "
+          "polling stopped.\n");
       break;
     }
 
@@ -1013,8 +1018,8 @@ static void hosted_watchdog_loop()
       // Only the transition is logged: a node that stays down for an hour must
       // not fill the pane with the same line 40 times.
       if (!failing) {
-        transport_log("Hosted watchdog: receiver status unavailable (" + st.error
-                      + "); retrying with backoff.\n");
+        transport_log("Hosted watchdog: receiver status unavailable ("
+                      + st.error + "); retrying with backoff.\n");
         failing = true;
       }
     } else {
@@ -1100,8 +1105,14 @@ static void hosted_allocate()
   }
 
   track_control_thread(std::thread(
-      [hosted, bridge_cfg, encoder_name, source_codec, video_kbps, encode_kbps,
-       link_budget_kbps, bitrates]
+      [hosted,
+       bridge_cfg,
+       encoder_name,
+       source_codec,
+       video_kbps,
+       encode_kbps,
+       link_budget_kbps,
+       bitrates]
       {
         backplane_client backplane(
             hosted.backplane_url,
@@ -1244,16 +1255,17 @@ static void hosted_allocate()
 static void run()
 {
   // No join while the UI thread holds the FLTK lock: the preview worker reports
-  // through encode_log(), which takes Fl::lock(), so a join taken under the lock
-  // deadlocks the application. ui.cpp's start() releases the event loop's lock
-  // around this call and reclaims it afterwards, so the join below runs unlocked.
+  // through encode_log(), which takes Fl::lock(), so a join taken under the
+  // lock deadlocks the application. ui.cpp's start() releases the event loop's
+  // lock around this call and reclaims it afterwards, so the join below runs
+  // unlocked.
   //
-  // The teardown itself is required, not cosmetic: preview and encode each create
-  // their own ndisrc on the same NDI source; running both contends for the
-  // receiver and the encode pipeline's ndisrc gets no video frames -- mpegtsmux
-  // then emits only PSI (PAT/PMT) and the encoder appears to send nothing while
-  // the preview keeps working. Free the source before opening the encode
-  // pipeline.
+  // The teardown itself is required, not cosmetic: preview and encode each
+  // create their own ndisrc on the same NDI source; running both contends for
+  // the receiver and the encode pipeline's ndisrc gets no video frames --
+  // mpegtsmux then emits only PSI (PAT/PMT) and the encoder appears to send
+  // nothing while the preview keeps working. Free the source before opening the
+  // encode pipeline.
   ctx.lib.preview_running = false;
   if (ctx.lib.preview_thread.joinable()) {
     ctx.lib.preview_thread.join();

@@ -527,9 +527,10 @@ TEST_CASE("re-applying does not duplicate an interface already in the URL",
         == "rist://@239.1.1.10:5100?miface=br-lan&buffer=2000");
 }
 
-TEST_CASE("the interface the bridge joins on is not handed back as a send "
-          "address",
-          "[bridge][actuate]")
+TEST_CASE(
+    "the interface the bridge joins on is not handed back as a send "
+    "address",
+    "[bridge][actuate]")
 {
   fakes f;
   // The bridge reports back exactly what it stored, which carries the

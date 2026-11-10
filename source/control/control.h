@@ -111,7 +111,7 @@ public:
   // every poll.
   struct receiver_status
   {
-    bool ok = false;          // the receiver answered with a usable document
+    bool ok = false;  // the receiver answered with a usable document
     bool is_running = false;  // it is receiving a live feed
     int http_status = 0;
     std::string error;  // human-readable when ok is false

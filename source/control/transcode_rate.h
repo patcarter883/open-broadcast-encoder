@@ -61,18 +61,15 @@ inline int resolve(int video_kbps, int link_budget_kbps, int ceiling_kbps)
   int upper = 0;
   const auto tighten = [&upper](int rate)
   {
-    if (rate > 0 && (upper == 0 || rate < upper))
-    {
+    if (rate > 0 && (upper == 0 || rate < upper)) {
       upper = rate;
     }
   };
   tighten(video_kbps);
-  if (ceiling_kbps > 0)
-  {
+  if (ceiling_kbps > 0) {
     tighten(ceiling_kbps * k_ceiling_headroom_pct / 100);
   }
-  if (upper == 0)
-  {
+  if (upper == 0) {
     return 0;
   }
   const int target =
@@ -88,8 +85,7 @@ inline int body_kbps(int portal_kbps,
                      int link_budget_kbps,
                      int ceiling_kbps)
 {
-  if (portal_kbps > 0)
-  {
+  if (portal_kbps > 0) {
     return portal_kbps;
   }
   return resolve(video_kbps, link_budget_kbps, ceiling_kbps);

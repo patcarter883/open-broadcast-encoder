@@ -476,8 +476,8 @@ TEST_CASE("a live session is reattached to, not replaced", "[backplane][e3]")
 
 TEST_CASE("a session that is over is cleared", "[backplane][e3]")
 {
-  for (const char* state : {"ended", "released", "terminated", "completed",
-                            "expired", "closed"})
+  for (const char* state :
+       {"ended", "released", "terminated", "completed", "expired", "closed"})
   {
     INFO("state: " << state);
     CHECK(decide_reattach(session_probe::found, state)
@@ -488,7 +488,8 @@ TEST_CASE("a session that is over is cleared", "[backplane][e3]")
         == reattach_action::clear_session);
 }
 
-TEST_CASE("an unreadable or unknown session keeps its record", "[backplane][e3]")
+TEST_CASE("an unreadable or unknown session keeps its record",
+          "[backplane][e3]")
 {
   // A transient failure must never delete the file: the session may be live and
   // billable, and the next launch is another chance.
@@ -509,8 +510,7 @@ TEST_CASE("an unreadable or unknown session keeps its record", "[backplane][e3]"
   // A document with no state word is a session the portal still has, saying
   // nothing about it being over: refusing to reattach would cost the operator
   // the destination for the rest of a long session.
-  CHECK(decide_reattach(session_probe::found, "")
-        == reattach_action::reattach);
+  CHECK(decide_reattach(session_probe::found, "") == reattach_action::reattach);
 }
 
 TEST_CASE("a session read never blanks a show-once secret", "[backplane][e3]")
@@ -577,12 +577,15 @@ TEST_CASE("a session is read back from the portal by id", "[backplane][e3]")
 
 TEST_CASE("a 404 session read is 'gone', not an error", "[backplane][e3]")
 {
-  backplane_client client(
-      "https://api.example.au",
-      "devtok",
-      [](const std::string&, const std::string&, const std::string&,
-         const std::string&) -> std::pair<int, std::string>
-      { return {404, "{\"message\":\"Not found\"}"}; });
+  backplane_client client("https://api.example.au",
+                          "devtok",
+                          [](const std::string&,
+                             const std::string&,
+                             const std::string&,
+                             const std::string&) -> std::pair<int, std::string>
+                          {
+                            return {404, "{\"message\":\"Not found\"}"};
+                          });
 
   const session_fetch_result r = client.get_session("s_old");
 
@@ -594,12 +597,15 @@ TEST_CASE("a 404 session read is 'gone', not an error", "[backplane][e3]")
 
 TEST_CASE("an unreachable portal is a retry, not a verdict", "[backplane][e3]")
 {
-  backplane_client client(
-      "https://api.example.au",
-      "devtok",
-      [](const std::string&, const std::string&, const std::string&,
-         const std::string&) -> std::pair<int, std::string>
-      { return {0, ""}; });  // transport failure
+  backplane_client client("https://api.example.au",
+                          "devtok",
+                          [](const std::string&,
+                             const std::string&,
+                             const std::string&,
+                             const std::string&) -> std::pair<int, std::string>
+                          {
+                            return {0, ""};
+                          });  // transport failure
 
   const session_fetch_result r = client.get_session("s_abc");
 

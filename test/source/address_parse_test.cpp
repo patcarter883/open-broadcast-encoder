@@ -7,11 +7,11 @@
 // "rist" + port 5000: a destination nothing answers, reported as healthy
 // sending.
 
-#include <catch2/catch_test_macros.hpp>
-
 #include <string>
 
 #include "lib/address.h"
+
+#include <catch2/catch_test_macros.hpp>
 
 namespace
 {
@@ -57,8 +57,7 @@ TEST_CASE("a host with no port keeps the RIST default", "[address]")
 
 TEST_CASE("the listen marker stays on the host", "[address]")
 {
-  auto parsed =
-      obr::parse_rist_address("rist://@239.1.1.10:5100?miface=eth1");
+  auto parsed = obr::parse_rist_address("rist://@239.1.1.10:5100?miface=eth1");
   REQUIRE(parsed.host == "@239.1.1.10");
   REQUIRE(parsed.port == 5100);
 }
@@ -79,7 +78,8 @@ TEST_CASE("a bare IPv6 literal is host-only", "[address]")
 
 TEST_CASE("user info is not part of the host", "[address]")
 {
-  auto parsed = obr::parse_rist_address("rist://user:pw@relay.example.net.au:5000");
+  auto parsed =
+      obr::parse_rist_address("rist://user:pw@relay.example.net.au:5000");
   REQUIRE(parsed.host == "relay.example.net.au");
   REQUIRE(parsed.port == 5000);
 }

@@ -391,7 +391,8 @@ void encode::pipeline_build_video_demux()
       // themselves from the frames this produces.
       this->pipeline_str +=
           " videotestsrc is-live=true pattern=smpte "
-          "! video/x-raw,width=1920,height=1080,framerate=30/1 ! videoconvert !";
+          "! video/x-raw,width=1920,height=1080,framerate=30/1 ! videoconvert "
+          "!";
       break;
     case input_mode::ndi:
       this->pipeline_str += " demux.video ! queue silent=true ! videoconvert !";

@@ -139,11 +139,17 @@ auto raw_local_input::open_listener() -> bool
   }
 
   int on = 1;
-  ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
-               reinterpret_cast<const char*>(&on), sizeof(on));
+  ::setsockopt(fd,
+               SOL_SOCKET,
+               SO_REUSEADDR,
+               reinterpret_cast<const char*>(&on),
+               sizeof(on));
   int rcvbuf = kReceiveBufferBytes;
-  ::setsockopt(fd, SOL_SOCKET, SO_RCVBUF,
-               reinterpret_cast<const char*>(&rcvbuf), sizeof(rcvbuf));
+  ::setsockopt(fd,
+               SOL_SOCKET,
+               SO_RCVBUF,
+               reinterpret_cast<const char*>(&rcvbuf),
+               sizeof(rcvbuf));
 
   sockaddr_in addr {};
   addr.sin_family = AF_INET;
@@ -185,7 +191,8 @@ auto raw_local_input::accept_connection() -> obc_socket::handle
   pfd.fd = fd;
   pfd.events = POLLIN;
   if (obc_socket::poll(&pfd, 1, kPollTimeoutMs) <= 0) {
-    return obc_socket::invalid_handle;  // timeout, or interrupted: re-check the flag
+    return obc_socket::invalid_handle;  // timeout, or interrupted: re-check the
+                                        // flag
   }
   return ::accept(fd, nullptr, nullptr);
 }
@@ -215,8 +222,8 @@ auto raw_local_input::read_exact(obc_socket::handle fd,
       continue;
     }
 
-    const auto n = ::recv(fd, reinterpret_cast<char*>(out + got),
-                          static_cast<int>(len - got), 0);
+    const auto n = ::recv(
+        fd, reinterpret_cast<char*>(out + got), static_cast<int>(len - got), 0);
     if (n == 0) {
       return false;  // peer closed
     }
@@ -619,7 +626,8 @@ void raw_local_input::run()
                     this->audio_chunks));
   }
 
-  const obc_socket::handle fd = this->listen_fd.exchange(obc_socket::invalid_handle);
+  const obc_socket::handle fd =
+      this->listen_fd.exchange(obc_socket::invalid_handle);
   if (fd != obc_socket::invalid_handle) {
     obc_socket::close_handle(fd);
   }

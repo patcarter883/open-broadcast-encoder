@@ -18,8 +18,7 @@ constexpr int kCeiling = 20000;
 constexpr int kSource = 7000;
 }  // namespace
 
-TEST_CASE("a target the recipe states is run as stated",
-          "[control][transcode]")
+TEST_CASE("a target the recipe states is run as stated", "[control][transcode]")
 {
   // A destination bitrate is the operator's decision for that link in the
   // chain. It is run even when it exceeds what the encoder is sending: the

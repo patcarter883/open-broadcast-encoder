@@ -12,7 +12,7 @@ namespace obr
 struct rist_address
 {
   std::string host;  // empty when the address names no host
-  int port = 5000;   // 5000 unless a valid port is stated
+  int port = 5000;  // 5000 unless a valid port is stated
 };
 
 // Parse an output address into host and port. Accepts every form an operator
