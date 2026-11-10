@@ -1,0 +1,71 @@
+name: linux
+
+# The encoder needs GStreamer >= 1.28, which Ubuntu's runners do not ship
+# (1.24/1.26), so this runs in a rolling-release container rather than building
+# GStreamer from source on every push. Arch is also the distro the app is
+# developed on, so the tutorial build here is the one that has been exercised.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+
+    steps:
+      # actions/checkout runs git *inside* the container, so git has to exist
+      # before the checkout step, not after it.
+      - name: Install git
+        run: pacman -Sy --noconfirm --needed git
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          pacman -S --noconfirm --needed \
+            base-devel cmake ninja pkgconf \
+            gstreamer gst-plugins-base gst-plugins-bad gst-plugins-ugly gst-libav \
+            openssl nlohmann-json catch2 \
+            libx11 libxft fontconfig libxinerama libxcursor
+
+      - name: Report the toolchain
+        run: |
+          pkg-config --modversion gstreamer-1.0
+          cmake --version | head -1
+          g++ --version | head -1
+
+      - name: Configure
+        # No vcpkg: nlohmann-json and catch2 come from the distro, so the
+        # manifest is off and the presets' vcpkg toolchain stays unused.
+        run: |
+          cmake -S . -B build-rel \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -Dopen-broadcast-encoder_DEVELOPER_MODE=ON \
+            -DVCPKG_MANIFEST_MODE=OFF
+
+      - name: Build
+        run: cmake --build build-rel -j"$(nproc)"
+
+      - name: Test
+        # The suite drives real GStreamer element chains, so the plugin set
+        # installed above is part of the test environment, not just the build.
+        run: ctest --test-dir build-rel --output-on-failure
+
+      - name: Package the Linux bundle
+        # The self-extracting .run the project ships; it expects GStreamer and
+        # the NDI runtime on the target (see package-linux.sh).
+        run: |
+          ./package-linux.sh --build-dir build-rel --output open-broadcast-encoder-linux-x86_64.run
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: open-broadcast-encoder-linux
+          path: |
+            open-broadcast-encoder-linux-x86_64.run
+            build-rel/open-broadcast-encoder
