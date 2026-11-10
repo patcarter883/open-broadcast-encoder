@@ -28,7 +28,7 @@ jobs:
       - name: Install build dependencies
         run: |
           pacman -S --noconfirm --needed \
-            base-devel cmake pkgconf \
+            base-devel cmake pkgconf meson ninja \
             gstreamer gst-plugins-base gst-plugins-bad gst-plugins-ugly gst-libav \
             openssl nlohmann-json catch2 \
             libx11 libxext libxrender libxfixes libxpm libxrandr libxi \
