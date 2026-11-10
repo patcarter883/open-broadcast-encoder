@@ -17,6 +17,9 @@ env:
   # "error: no version database entry for catch2 at 3.15.0".
   VCPKG_COMMIT: "059d760472984042e1b4db0d40efd935a1adcbc9"
 
+# No job gates on another's verdict. `needs: [lint]` meant a formatting nit
+# held every build and test behind it, so a week of red lint hid the fact that
+# the suite had stopped running at all.
 jobs:
   lint:
     runs-on: ubuntu-22.04
@@ -37,48 +40,6 @@ jobs:
       if: always()
       run: cmake -P cmake/spell.cmake
 
-  coverage:
-    needs: [lint]
-
-    runs-on: ubuntu-22.04
-
-    # To enable coverage, delete the last line from the conditional below and
-    # edit the "<name>" placeholder to your GitHub name.
-    # If you do not wish to use codecov, then simply delete this job from the
-    # workflow.
-    if: github.repository_owner == '<name>'
-      && false
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Install LCov
-      run: sudo apt-get update -q
-        && sudo apt-get install lcov -q -y
-
-    - name: Install vcpkg
-      uses: friendlyanon/setup-vcpkg@v1
-      with: { committish: "${{ env.VCPKG_COMMIT }}" }
-
-    - name: Configure
-      run: cmake --preset=ci-coverage
-
-    - name: Build
-      run: cmake --build build/coverage -j 2
-
-    - name: Test
-      working-directory: build/coverage
-      run: ctest --output-on-failure --no-tests=error -j 2
-
-    - name: Process coverage info
-      run: cmake --build build/coverage -t coverage
-
-    - name: Submit to codecov.io
-      uses: codecov/codecov-action@v4
-      with:
-        file: build/coverage/coverage.info
-        token: ${{ secrets.CODECOV_TOKEN }}
-
   # The Linux test/sanitize jobs run inside a container that genuinely carries
   # GStreamer >= 1.28 (the floor declared in CMakeLists.txt). The default
   # ubuntu-22.04 runner ships GStreamer 1.20 and fails at Configure, and no job
@@ -91,8 +52,6 @@ jobs:
   # a different ABI.
 
   sanitize:
-    needs: [lint]
-
     runs-on: ubuntu-latest
     container: fedora:44
 
@@ -145,8 +104,6 @@ jobs:
   # Windows cannot use a Linux container job, so they stay as runner-based
   # matrix entries below.
   test-linux:
-    needs: [lint]
-
     runs-on: ubuntu-latest
     container: fedora:44
 
@@ -187,8 +144,6 @@ jobs:
       run: ctest --output-on-failure --no-tests=error -C Release -j 2
 
   test:
-    needs: [lint]
-
     strategy:
       # Report each platform's real result instead of cancelling the others.
       fail-fast: false
@@ -228,51 +183,3 @@ jobs:
     - name: Test
       working-directory: build
       run: ctest --output-on-failure --no-tests=error -C Release -j 2
-
-  docs:
-    # Deploy docs only when builds succeed
-    needs: [sanitize, test]
-
-    runs-on: ubuntu-22.04
-
-    # To enable, first you have to create an orphaned gh-pages branch:
-    #
-    #    git switch --orphan gh-pages
-    #    git commit --allow-empty -m "Initial commit"
-    #    git push -u origin gh-pages
-    #
-    # Edit the <name> placeholder below to your GitHub name, so this action
-    # runs only in your repository and no one else's fork. After these, delete
-    # this comment and the last line in the conditional below.
-    # If you do not wish to use GitHub Pages for deploying documentation, then
-    # simply delete this job similarly to the coverage one.
-    if: github.ref == 'refs/heads/master'
-      && github.event_name == 'push'
-      && github.repository_owner == '<name>'
-      && false
-
-    permissions:
-      contents: write
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - uses: actions/setup-python@v5
-      with: { python-version: "3.12" }
-
-    - name: Install m.css dependencies
-      run: pip3 install jinja2 Pygments
-
-    - name: Install Doxygen
-      run: sudo apt-get update -q
-        && sudo apt-get install doxygen -q -y
-
-    - name: Build docs
-      run: cmake "-DPROJECT_SOURCE_DIR=$PWD" "-DPROJECT_BINARY_DIR=$PWD/build"
-        -P cmake/docs-ci.cmake
-
-    - name: Deploy docs
-      uses: peaceiris/actions-gh-pages@v4
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: build/docs/html
