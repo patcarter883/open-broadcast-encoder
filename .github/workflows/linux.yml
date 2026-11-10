@@ -28,7 +28,7 @@ jobs:
       - name: Install build dependencies
         run: |
           pacman -S --noconfirm --needed \
-            base-devel cmake ninja pkgconf \
+            base-devel cmake pkgconf \
             gstreamer gst-plugins-base gst-plugins-bad gst-plugins-ugly gst-libav \
             openssl nlohmann-json catch2 \
             libx11 libxft fontconfig libxinerama libxcursor
@@ -42,9 +42,11 @@ jobs:
       - name: Configure
         # No vcpkg: nlohmann-json and catch2 come from the distro, so the
         # manifest is off and the presets' vcpkg toolchain stays unused.
+        # The default (Makefiles) generator is deliberate: the vendored FLTK
+        # external project shares its build directory with the developer's own
+        # tree, and mixing generators there fails the configure step.
         run: |
           cmake -S . -B build-rel \
-            -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -Dopen-broadcast-encoder_DEVELOPER_MODE=ON \
             -DVCPKG_MANIFEST_MODE=OFF
