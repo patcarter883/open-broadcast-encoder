@@ -31,7 +31,9 @@ jobs:
             base-devel cmake pkgconf \
             gstreamer gst-plugins-base gst-plugins-bad gst-plugins-ugly gst-libav \
             openssl nlohmann-json catch2 \
-            libx11 libxft fontconfig libxinerama libxcursor
+            libx11 libxext libxrender libxfixes libxpm libxrandr libxi \
+            libxft fontconfig libxinerama libxcursor \
+            mesa glu alsa-lib
 
       - name: Report the toolchain
         run: |
