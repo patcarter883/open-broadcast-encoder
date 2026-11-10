@@ -9,15 +9,11 @@
 
 #include "encode/raw_local.h"
 
-#include <arpa/inet.h>
 #include <gst/app/gstappsrc.h>
-#include <netinet/in.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <unistd.h>
 
 #include "encode/appsrc_policy.h"
 #include "encode/raw_format.h"
+#include "encode/socket_compat.h"
 
 namespace
 {
@@ -135,16 +131,19 @@ void raw_local_input::status(const std::string& msg) const
 
 auto raw_local_input::open_listener() -> bool
 {
-  const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-  if (fd < 0) {
-    log(std::format("[raw] socket() failed: {}\n", std::strerror(errno)));
+  obc_socket::start_up();
+  const obc_socket::handle fd = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (fd == obc_socket::invalid_handle) {
+    log(std::format("[raw] socket() failed: {}\n", obc_socket::last_error()));
     return false;
   }
 
   int on = 1;
-  ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+  ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
+               reinterpret_cast<const char*>(&on), sizeof(on));
   int rcvbuf = kReceiveBufferBytes;
-  ::setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+  ::setsockopt(fd, SOL_SOCKET, SO_RCVBUF,
+               reinterpret_cast<const char*>(&rcvbuf), sizeof(rcvbuf));
 
   sockaddr_in addr {};
   addr.sin_family = AF_INET;
@@ -154,13 +153,13 @@ auto raw_local_input::open_listener() -> bool
   if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
     log(std::format("[raw] bind to port {} failed: {}\n",
                     this->port,
-                    std::strerror(errno)));
-    ::close(fd);
+                    obc_socket::last_error()));
+    obc_socket::close_handle(fd);
     return false;
   }
   if (::listen(fd, 1) != 0) {
-    log(std::format("[raw] listen failed: {}\n", std::strerror(errno)));
-    ::close(fd);
+    log(std::format("[raw] listen failed: {}\n", obc_socket::last_error()));
+    obc_socket::close_handle(fd);
     return false;
   }
 
@@ -175,23 +174,25 @@ auto raw_local_input::open_listener() -> bool
   return true;
 }
 
-auto raw_local_input::accept_connection() -> int
+auto raw_local_input::accept_connection() -> obc_socket::handle
 {
-  const int fd = this->listen_fd.load();
-  if (fd < 0) {
-    return -1;
+  const obc_socket::handle fd = this->listen_fd.load();
+  if (fd == obc_socket::invalid_handle) {
+    return obc_socket::invalid_handle;
   }
 
-  pollfd pfd {};
+  obc_socket::poll_descriptor pfd {};
   pfd.fd = fd;
   pfd.events = POLLIN;
-  if (::poll(&pfd, 1, kPollTimeoutMs) <= 0) {
-    return -1;  // timeout, or interrupted: let the caller re-check the flag
+  if (obc_socket::poll(&pfd, 1, kPollTimeoutMs) <= 0) {
+    return obc_socket::invalid_handle;  // timeout, or interrupted: re-check the flag
   }
   return ::accept(fd, nullptr, nullptr);
 }
 
-auto raw_local_input::read_exact(int fd, void* buf, std::size_t len) -> bool
+auto raw_local_input::read_exact(obc_socket::handle fd,
+                                 void* buf,
+                                 std::size_t len) -> bool
 {
   auto* out = static_cast<std::uint8_t*>(buf);
   std::size_t got = 0;
@@ -200,12 +201,12 @@ auto raw_local_input::read_exact(int fd, void* buf, std::size_t len) -> bool
       return false;
     }
 
-    pollfd pfd {};
+    obc_socket::poll_descriptor pfd {};
     pfd.fd = fd;
     pfd.events = POLLIN;
-    const int ready = ::poll(&pfd, 1, kPollTimeoutMs);
+    const int ready = obc_socket::poll(&pfd, 1, kPollTimeoutMs);
     if (ready < 0) {
-      if (errno == EINTR) {
+      if (obc_socket::interrupted()) {
         continue;
       }
       return false;
@@ -214,12 +215,13 @@ auto raw_local_input::read_exact(int fd, void* buf, std::size_t len) -> bool
       continue;
     }
 
-    const ssize_t n = ::recv(fd, out + got, len - got, 0);
+    const auto n = ::recv(fd, reinterpret_cast<char*>(out + got),
+                          static_cast<int>(len - got), 0);
     if (n == 0) {
       return false;  // peer closed
     }
     if (n < 0) {
-      if (errno == EINTR) {
+      if (obc_socket::interrupted()) {
         continue;
       }
       return false;
@@ -229,7 +231,7 @@ auto raw_local_input::read_exact(int fd, void* buf, std::size_t len) -> bool
   return true;
 }
 
-auto raw_local_input::read_stream_header(int fd) -> bool
+auto raw_local_input::read_stream_header(obc_socket::handle fd) -> bool
 {
   obc_stream_header hdr {};
   if (!this->read_exact(fd, &hdr, sizeof(hdr))) {
@@ -381,7 +383,7 @@ auto raw_local_input::read_stream_header(int fd) -> bool
   return true;
 }
 
-void raw_local_input::frame_loop(int fd)
+void raw_local_input::frame_loop(obc_socket::handle fd)
 {
   while (!this->stop_requested.load()) {
     if (!this->read_and_push(fd)) {
@@ -390,7 +392,7 @@ void raw_local_input::frame_loop(int fd)
   }
 }
 
-auto raw_local_input::read_and_push(int fd) -> bool
+auto raw_local_input::read_and_push(obc_socket::handle fd) -> bool
 {
   obc_frame_header fh {};
   if (!this->read_exact(fd, &fh, sizeof(fh))) {
@@ -543,7 +545,7 @@ void raw_local_input::note_preview_drop()
 // buffer carries no GstAudioMeta, so gst_audio_buffer_map asserts and the
 // branch dies with "The stream is in the wrong format" -- so repack to
 // interleaved.
-auto raw_local_input::read_planar_as_interleaved(int fd,
+auto raw_local_input::read_planar_as_interleaved(obc_socket::handle fd,
                                                  std::uint8_t* dst,
                                                  std::uint32_t payload_bytes)
     -> bool
@@ -593,7 +595,7 @@ void raw_local_input::run()
   }
 
   while (!this->stop_requested.load()) {
-    const int fd = this->accept_connection();
+    const obc_socket::handle fd = this->accept_connection();
     if (fd < 0) {
       continue;
     }
@@ -603,7 +605,7 @@ void raw_local_input::run()
     if (this->read_stream_header(fd)) {
       this->frame_loop(fd);
     }
-    ::close(fd);
+    obc_socket::close_handle(fd);
 
     // No EOS: OBS's plugin retries every couple of seconds, so the pipeline
     // stays up and a restarted OBS resumes into the same session.
@@ -617,8 +619,8 @@ void raw_local_input::run()
                     this->audio_chunks));
   }
 
-  const int fd = this->listen_fd.exchange(-1);
-  if (fd >= 0) {
-    ::close(fd);
+  const obc_socket::handle fd = this->listen_fd.exchange(obc_socket::invalid_handle);
+  if (fd != obc_socket::invalid_handle) {
+    obc_socket::close_handle(fd);
   }
 }

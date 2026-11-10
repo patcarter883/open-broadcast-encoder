@@ -32,3 +32,10 @@ target_link_libraries(obr-cam-browse PRIVATE
     nlohmann_json::nlohmann_json
     Threads::Threads
 )
+
+# httplib uses Winsock on Windows, and the socket calls live in ws2_32 (the
+# executable target gets it from the toolchain's default libraries, this one
+# does not).
+if(WIN32)
+  target_link_libraries(obr-cam-browse PRIVATE ws2_32)
+endif()

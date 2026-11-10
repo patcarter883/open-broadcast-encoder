@@ -9,10 +9,9 @@
 
 #include "bridge/join_interface.h"
 
-#include <arpa/inet.h>
-#include <net/if.h>
-
 #if defined(__linux__)
+#  include <arpa/inet.h>
+#  include <net/if.h>
 #  include <linux/netlink.h>
 #  include <linux/rtnetlink.h>
 #  include <sys/socket.h>
@@ -44,15 +43,29 @@ std::string host_of(const std::string& url)
   return url.substr(begin, end - begin);
 }
 
-// IPv4 multicast is 224.0.0.0/4, i.e. a first octet in [224, 239].
+// IPv4 multicast is 224.0.0.0/4, i.e. a first octet in [224, 239]. Parsed by
+// hand rather than with inet_pton: this file also builds for targets where
+// arpa/inet.h does not exist.
 bool is_multicast_v4(const std::string& host)
 {
-  in_addr parsed {};
-  if (::inet_pton(AF_INET, host.c_str(), &parsed) != 1) {
-    return false;
+  unsigned parts[4] = {0, 0, 0, 0};
+  int index = 0;
+  int digits = 0;
+  for (char c : host) {
+    if (c >= '0' && c <= '9') {
+      parts[index] = parts[index] * 10U + static_cast<unsigned>(c - '0');
+      if (++digits > 3 || parts[index] > 255U) {
+        return false;
+      }
+      continue;
+    }
+    if (c != '.' || digits == 0 || index == 3) {
+      return false;
+    }
+    ++index;
+    digits = 0;
   }
-  const auto first = static_cast<unsigned>(ntohl(parsed.s_addr) >> 24);
-  return first >= 224 && first <= 239;
+  return index == 3 && digits > 0 && parts[0] >= 224U && parts[0] <= 239U;
 }
 }  // namespace
 

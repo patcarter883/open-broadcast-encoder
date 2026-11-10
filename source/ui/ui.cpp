@@ -28,14 +28,14 @@ namespace
 // (AMD, NVENC, QSV, Software) does NOT match the encoder enum order, so a saved
 // choice must be restored by matching user_data — never by using the enum as a
 // menu index.
-void select_choice_by_userdata(Fl_Choice* choice, long value)
+void select_choice_by_userdata(Fl_Choice* choice, std::intptr_t value)
 {
   const Fl_Menu_Item* menu = choice->menu();
   if (menu == nullptr) {
     return;
   }
   for (int i = 0; menu[i].text != nullptr; ++i) {
-    if (reinterpret_cast<long>(menu[i].user_data()) == value) {
+    if (reinterpret_cast<std::intptr_t>(menu[i].user_data()) == value) {
       choice->value(i);
       return;
     }

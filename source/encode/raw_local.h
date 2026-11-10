@@ -14,6 +14,7 @@
 #include <gst/gst.h>
 
 #include "encode/raw_local_port.h"
+#include "encode/socket_compat.h"
 
 // Ingest for the OBS raw output plugin (open-broadcast/obs-raw-output).
 //
@@ -89,12 +90,12 @@ private:
   // arriving), which is what tells a dead input from a healthy one.
   void status(const std::string& msg) const;
   auto open_listener() -> bool;
-  auto accept_connection() -> int;
-  auto read_exact(int fd, void* buf, std::size_t len) -> bool;
-  auto read_stream_header(int fd) -> bool;
-  void frame_loop(int fd);
-  auto read_and_push(int fd) -> bool;
-  auto read_planar_as_interleaved(int fd,
+  auto accept_connection() -> obc_socket::handle;
+  auto read_exact(obc_socket::handle fd, void* buf, std::size_t len) -> bool;
+  auto read_stream_header(obc_socket::handle fd) -> bool;
+  void frame_loop(obc_socket::handle fd);
+  auto read_and_push(obc_socket::handle fd) -> bool;
+  auto read_planar_as_interleaved(obc_socket::handle fd,
                                   std::uint8_t* dst,
                                   std::uint32_t payload_bytes) -> bool;
   // Preview pushes: never block, drop instead, and count what was dropped.
@@ -115,7 +116,7 @@ private:
 
   std::thread reader;
   std::atomic<bool> stop_requested {false};
-  std::atomic<int> listen_fd {-1};
+  std::atomic<obc_socket::handle> listen_fd {obc_socket::invalid_handle};
 
   // Shared PTS origin for both streams; see the class comment.
   std::uint64_t base_timestamp {0};

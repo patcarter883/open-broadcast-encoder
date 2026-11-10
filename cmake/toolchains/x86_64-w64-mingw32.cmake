@@ -27,6 +27,12 @@ set(CMAKE_STRIP        x86_64-w64-mingw32-strip)
 
 # Never use host binaries when searching for libraries/headers/packages.
 set(CMAKE_FIND_ROOT_PATH /usr/x86_64-w64-mingw32)
+# vcpkg's install tree sits outside the sysroot, and LIBRARY/INCLUDE ONLY would
+# hide it, so the packages it provides (openssl) would never be found. vcpkg.cmake
+# runs first and chainloads this file, so both variables are already defined.
+if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+  list(APPEND CMAKE_FIND_ROOT_PATH "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
+endif()
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
