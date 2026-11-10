@@ -6,6 +6,8 @@
 
 #include "backplane/backplane.h"
 
+#include "lib/lib.h"
+
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -94,6 +96,8 @@ hosted_session hosted_session::from_json(const std::string& text)
   s.control_token = str_or(j, "control_token", "");
   s.psk = str_or(j, "psk", "");
   s.psk_aes = static_cast<int>(long_or(j, "psk_aes", 256));
+  // Masked from the instant the record is read (H2).
+  secrets::register_secret(s.psk);
   s.state = str_or(j, "state", "");
   if (j.contains("start_body")) {
     s.start_body_json = j.at("start_body").dump();
@@ -131,6 +135,8 @@ hosted_session parse_session(const json& body)
   s.control_token = str_or(sess, "control_token", "");
   s.psk = str_or(sess, "psk", "");
   s.psk_aes = static_cast<int>(long_or(sess, "psk_aes", 256));
+  // Masked from the instant the allocation is read (H2).
+  secrets::register_secret(s.psk);
   s.state = state_of(sess);
   if (sess.contains("start_body")) {
     s.start_body_json = sess.at("start_body").dump();

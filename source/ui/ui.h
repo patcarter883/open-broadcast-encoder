@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstddef>
 #include <functional>
 #include <string>
 #include <utility>
@@ -11,6 +12,7 @@
 
 #include <FL/Fl.H>
 #include <FL/Fl_Flex.H>
+#include <FL/Fl_Output.H>
 #include <FL/Fl_Text_Buffer.H>
 #include <stdint.h>
 
@@ -112,6 +114,17 @@ public:
   // together, like the bridge setters -- a worker must never write the config
   // directly.
   void set_encoder_target(const std::string& url);
+  // The session's RIST PSK for the DIRECT leg, handed over with the target it
+  // belongs to. A dedicated field on the model (H2: secrets never enter URLs),
+  // registered with the secrets registry so no log line can carry it. An empty
+  // psk clears the key, which is what a bridged session and a manual address
+  // both need. Takes the FLTK lock; safe from a worker thread.
+  void set_session_psk(const std::string& psk, int psk_aes);
+  // One line per bonded RIST peer (4c), already formatted, in peer-id order.
+  // Rows are created once in the constructor and shown/hidden here, so the RIST
+  // stats thread never allocates widgets; the panel grows to the number of legs
+  // and shrinks back. Called under ui.lock() from the stats callback.
+  void set_link_peers(const std::vector<std::string>& rows);
   // The ids the token was minted against, and the backplane's row for the
   // bridge this encoder is driving. Written together because they are learned
   // at different times and a partial update would zero the other.
@@ -142,6 +155,11 @@ public:
 private:
   Fl_Text_Buffer transport_log_buffer;
   Fl_Text_Buffer encode_log_buffer;
+  // The per-peer leg rows (4c): created once, hidden until the sender reports
+  // legs. Never resized from the stats thread, so no widget is allocated there.
+  std::vector<Fl_Output*> link_peer_rows;
+  std::size_t link_peer_rows_shown = 0;
+  void init_link_peer_rows();
   // Owns the storage backing the user_data pointers attached to NDI
   // Fl_Choice items so they remain valid for the lifetime of the choice.
   std::vector<std::string> ndi_choice_storage;

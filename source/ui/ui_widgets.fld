@@ -288,7 +288,7 @@ class ui_widgets {open
         }
           }
           Fl_Flex flx_col_right {open
-            xywh {787 25 762 749} gap 25 fixed_size_tuples {2  0 235  1 283 }
+            xywh {787 25 762 749} gap 25 fixed_size_tuples {3  0 235  1 55  2 283 }
           } {
           Fl_Flex {} {
             label Stats open
@@ -441,6 +441,11 @@ class ui_widgets {open
               }
             }
           }
+        Fl_Flex flx_peers {
+          label {Link legs}
+          xywh {25 25 762 55} box BORDER_BOX margin {8 20 8 8} gap 2
+        } {
+        }
         Fl_Flex flx_bridge {open
           label {Bridge (LAN)}
           xywh {25 25 762 283} box BORDER_BOX margin {8 25 8 8} gap 25 fixed_size_tuples {1  3 75 }

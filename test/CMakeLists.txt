@@ -295,3 +295,32 @@ catch_discover_tests(address_parse_test)
 # ---- End-of-file commands ----
 
 add_folders(Test)
+# --- Task 4a: the direct leg's PSK, proved on loopback -----------------------
+#
+# The sender under test is the production transport (setup_rist_sender with the
+# session key in output_config::psk) and the listener is the same rist-cpp
+# wrapper the receiver ships, on real libRIST. The matrix the test asserts is
+# the WORKLIST-12 one: keyed->keyed delivers the whole payload, keyed->unkeyed
+# delivers nothing, clear->clear is unchanged. It needs no display and no
+# network beyond loopback.
+add_executable(rist_psk_test source/rist_psk_test.cpp)
+target_link_libraries(
+    rist_psk_test PRIVATE
+    transport_lib
+    open-broadcast-encoder_lib
+    Catch2::Catch2WithMain
+)
+target_compile_features(rist_psk_test PRIVATE cxx_std_20)
+
+catch_discover_tests(rist_psk_test)
+
+# --- Task 4c: the per-peer display state -------------------------------------
+#
+# Header-only by design, like the other decision tests: the registry, the
+# aggregate and the row format are pinned without a window or a sender.
+add_executable(peer_stats_test source/peer_stats_test.cpp)
+target_include_directories(peer_stats_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(peer_stats_test PRIVATE cxx_std_20)
+target_link_libraries(peer_stats_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(peer_stats_test)
