@@ -278,11 +278,9 @@ static void run_loop()
   // a use-after-free. The RIST output address is read from output_cfg, which
   // the address field updates directly without touching the live sender.
   if (!run_transport()) {
-    // No destination is not a start that quietly goes nowhere: the operator
-    // allocated a session, or typed an address, or there is nothing to send to.
-    encode_log(
-        "Start refused: no RIST destination. Allocate a hosted session, or "
-        "enter a RIST address, then start again.\n");
+    // run_transport() states the reason (no destination, or an encryption
+    // request this build cannot honour) in the pane the operator is looking at;
+    // this branch only puts the lifecycle back to failed.
     ctx.lib.is_running = false;
     publish_encode_state(encode_state::failed);
     return;
@@ -1226,6 +1224,14 @@ static void hosted_allocate()
           // Point the encoder at the chain the allocation decided: the bridge
           // when one is in the path, the node otherwise.
           ctx.ui->set_encoder_target(outcome.encoder_target);
+          // The session's key, and only on a DIRECT leg. A bridged session's
+          // hop to the bridge is a clear LAN leg by design -- the bridge holds
+          // the secret for its own WAN leg, and its decryptor rejects anything
+          // encrypted.
+          if (!outcome.bridged) {
+            ctx.ui->set_session_psk(outcome.session.psk,
+                                    outcome.session.psk_aes);
+          }
           // The session is now on disk and billable, so End Session becomes the
           // only way to close it (Stop Encode holds it).
           ctx.ui->set_hosted_session_held(true);
@@ -1409,6 +1415,11 @@ static void hosted_reattach()
           // The destination the operator lost with the restart: without it the
           // next Start Encode has nowhere to send.
           ctx.ui->set_encoder_target(session.rist_url);
+          // The key comes back with the session, and only on a direct leg (a
+          // bridged session's LAN hop is clear by design).
+          if (!session.bridge_present) {
+            ctx.ui->set_session_psk(session.psk, session.psk_aes);
+          }
           ctx.ui->set_hosted_session_held(true);
           ctx.ui->set_hosted_state("Reattached to " + session.session_id,
                                    false);
@@ -1535,6 +1546,9 @@ static void hosted_end_session()
           transport_log("Session " + session_id + " ended.\n");
           if (ctx.ui != nullptr) {
             ctx.ui->set_hosted_session_held(false);
+            // The allocation's key died with the session: leaving it armed
+            // would key a later Start to an address the portal no longer serves.
+            ctx.ui->set_session_psk(std::string {}, 0);
             ctx.ui->set_hosted_state("Session ended", false);
           }
           return;
@@ -1569,6 +1583,11 @@ static bool run_transport()
   // looks like a working pipeline and carries media nowhere.
   const std::string& host = ctx.lib.output_cfg.host;
   if (host.empty() || host == "0.0.0.0" || host == "::" || host == "[::]") {
+    // No destination is not a start that quietly goes nowhere: the operator
+    // allocated a session, or typed an address, or there is nothing to send to.
+    encode_log(
+        "Start refused: no RIST destination. Allocate a hosted session, or "
+        "enter a RIST address, then start again.\n");
     return false;
   }
   // The ceiling sizes the recovery ring; it is not a link budget (the encoder's
@@ -1590,7 +1609,15 @@ static bool run_transport()
   ctx.transporter->set_log_callback(&rist_log_cb);
   ctx.transporter->set_statistics_callback(&rist_stats_cb);
   ctx.transporter->set_oob_callback(&rist_oob_cb);
-  ctx.transporter->setup_rist_sender(ctx.lib.output_cfg);
+  if (!ctx.transporter->setup_rist_sender(ctx.lib.output_cfg)) {
+    // The transport already stated the reason in the transport pane; the
+    // encode pane says the Start did not happen, in the one place the operator
+    // looks after pressing the button.
+    encode_log(
+        "Start refused: the session's encryption settings cannot be applied "
+        "by this build. See the transport log.\n");
+    return false;
+  }
   return true;
 }
 
@@ -1970,6 +1997,26 @@ auto main(int argc, char** argv) -> int
   {
     std::error_code ec;
     if (std::filesystem::exists(settings::hosted_session_path(), ec)) {
+      // The key is a secret from the moment it is on disk: register it before
+      // the reattach thread can log anything near it.
+      if (const std::optional<hosted_session> held =
+              settings::load_hosted_session();
+          held.has_value() && !held->psk.empty())
+      {
+        secrets::register_secret(held->psk);
+        // A session key belongs to the destination it was issued for, so it is
+        // armed only when the restored address IS that destination, and only
+        // when the session is direct. A bridged session, or an address the
+        // operator edited by hand, must stay clear.
+        const std::string target = held->encoder_target.empty()
+                                       ? held->rist_url
+                                       : held->encoder_target;
+        if (!held->bridge_present && !target.empty()
+            && target == ctx.lib.output_cfg.address)
+        {
+          ctx.ui->set_session_psk(held->psk, held->psk_aes);
+        }
+      }
       track_control_thread(std::thread([] { hosted_reattach(); }));
     }
   }

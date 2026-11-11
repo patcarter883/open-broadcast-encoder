@@ -7,6 +7,7 @@
 #include <format>
 #include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 
 #ifndef _WIN32
@@ -25,7 +26,10 @@ using std::string;
 class transport
 {
 public:
-  void setup_rist_sender(output_config& output_c);
+  // Builds the RIST sender from the output configuration. Returns false when
+  // the configuration is refused (a PSK this build cannot key), so the caller
+  // refuses the Start instead of sending a stream that authenticates nothing.
+  auto setup_rist_sender(output_config& output_c) -> bool;
   // Returns false when the RIST sender rejected the buffer: either no context
   // is live (initSender never ran, or rist-cpp's own sendData destroyed it
   // after a hard write error) or the write itself failed. The caller must stop
@@ -59,4 +63,5 @@ private:
       size_t size,
       std::shared_ptr<RISTNetSender::NetworkConnection>& connection,
       rist_peer* peer);
+  void log_line(enum rist_log_level level, const std::string& text);
 };

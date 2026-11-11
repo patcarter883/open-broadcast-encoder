@@ -54,6 +54,55 @@ user_interface::user_interface()
   // overlap instead of reflowing. fluid has no property for this, so it lives
   // here.
   main_window->size_range(1600, 1010);
+  init_link_peer_rows();
+}
+
+// The per-peer leg rows (4c). Created here, on the UI thread, once: the RIST
+// stats thread only sets values and shows/hides them, so no widget is ever
+// allocated from a callback thread.
+void user_interface::init_link_peer_rows()
+{
+  constexpr int kMaxLegs = 6;
+  constexpr int kRowHeight = 22;
+  flx_peers->begin();
+  for (int i = 0; i < kMaxLegs; ++i) {
+    auto* row = new Fl_Output(0, 0, 1, kRowHeight);
+    row->box(FL_FLAT_BOX);
+    row->textfont(FL_COURIER);
+    row->textsize(12);
+    row->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+    row->hide();
+    flx_peers->add(row);
+    link_peer_rows.push_back(row);
+  }
+  flx_peers->end();
+}
+
+void user_interface::set_link_peers(const std::vector<std::string>& rows)
+{
+  const std::size_t shown = std::min(rows.size(), link_peer_rows.size());
+  for (std::size_t i = 0; i < link_peer_rows.size(); ++i) {
+    Fl_Output* row = link_peer_rows[i];
+    if (i < shown) {
+      row->value(rows[i].c_str());
+      row->show();
+    } else if (row->visible() != 0) {
+      row->hide();
+    }
+  }
+  if (shown == link_peer_rows_shown) {
+    return;
+  }
+  link_peer_rows_shown = shown;
+  // The panel carries the label plus one line per leg, and gives the height
+  // back to the log panes when a bond drops to a single leg.
+  constexpr int kChrome = 26;
+  constexpr int kRowPitch = 24;
+  const int height =
+      shown == 0 ? 55 : kChrome + kRowPitch * static_cast<int>(shown);
+  flx_col_right->fixed(flx_peers, height);
+  flx_col_right->layout();
+  flx_peers->layout();
 }
 
 void user_interface::show(int argc, char** argv)
@@ -931,8 +980,29 @@ void user_interface::set_encoder_target(const std::string& url)
       }
     } else if (url.empty()) {
       output_config_ptr->host.clear();
+      // The key belongs to the destination: clearing one clears the other, so a
+      // later manual address cannot inherit a session's secret and send an
+      // encrypted stream to a listener that is clear.
+      output_config_ptr->psk.clear();
+      output_config_ptr->psk_aes = 0;
     }
     input_rist_address->value(url.c_str());
+  }
+  unlock();
+  Fl::awake();
+}
+
+void user_interface::set_session_psk(const std::string& psk, int psk_aes)
+{
+  // Register first: from this point every log line is masked, including the
+  // ones the sender emits while it is being built.
+  if (!psk.empty()) {
+    secrets::register_secret(psk);
+  }
+  lock();
+  if (output_config_ptr != nullptr) {
+    output_config_ptr->psk = psk;
+    output_config_ptr->psk_aes = psk_aes;
   }
   unlock();
   Fl::awake();

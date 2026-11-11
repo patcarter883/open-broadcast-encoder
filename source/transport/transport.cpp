@@ -71,7 +71,7 @@ void transport::oob_cb_func(
   }
 }
 
-void transport::setup_rist_sender(output_config& output_c)
+auto transport::setup_rist_sender(output_config& output_c) -> bool
 {
   if (output_c.streams < 1) {
     output_c.streams = 1;
@@ -136,17 +136,58 @@ void transport::setup_rist_sender(output_config& output_c)
 
   my_send_configuration.mLogLevel = RIST_LOG_INFO;
   my_send_configuration.mProfile = RIST_PROFILE_ADVANCED;
-  // Encryption is unicast-only in libRIST (EAP-SRP needs a peer to exchange
-  // keys with), so a multicast sender must stay clear.
 
-  // Deliberately NO PSK on this leg. The bridge's listen side is clear by
-  // design -- a LAN hop that demanded the session key would force every sender
-  // on that LAN to carry it -- and its own decryptor parses anything encrypted
-  // as "Malformed packet, rtp flag value is N instead of 0x80". Encryption is
-  // the bridge's WAN leg only, and the receiver is the encrypted endpoint.
+  // The direct leg carries the session's PSK (4a). The secret reaches librist
+  // through RISTNetSenderSettings::mPSK -- a dedicated field, never a URL
+  // parameter (H2) -- and rist-cpp copies it into every peer's secret, so each
+  // link of a bond is keyed, bonded links included.
+  //
+  // This build keys at AES-128 only -- the shipped strength, matching what the
+  // hosted service issues. A session that asks for AES-256 is refused here
+  // rather than downgraded: a 128-bit key against a 256-bit listener carries no
+  // media at all, which on screen reads as "started, nothing arrives".
+  //
+  // An empty psk leaves the sender exactly as it was: clear. That is what a
+  // bridged session needs -- the LAN hop to the bridge is clear by design (the
+  // bridge's decryptor rejects anything encrypted with "Malformed packet, rtp
+  // flag value..."), and the bridge encrypts its own WAN leg.
+  if (!output_c.psk.empty()) {
+    if (output_c.psk.size() > 128) {
+      log_line(RIST_LOG_ERROR,
+               "[rist] PSK rejected: longer than the 128-byte librist secret "
+               "field\n");
+      return false;
+    }
+    if (output_c.psk_aes != 0 && output_c.psk_aes != 128) {
+      log_line(RIST_LOG_ERROR,
+               std::format("[rist] PSK rejected: session asks for AES-{} but "
+                           "this build keys at AES-128\n",
+                           output_c.psk_aes));
+      return false;
+    }
+    my_send_configuration.mPSK = output_c.psk;
+    // The state, never the value.
+    log_line(RIST_LOG_INFO,
+             std::format("[rist] PSK enabled (AES-128) on {} peer(s)\n",
+                         output_c.streams));
+  } else {
+    log_line(RIST_LOG_INFO, "[rist] PSK: none (clear leg)\n");
+  }
 
   my_send_configuration.mLogSetting->log_cb = log_callback;
   this->rist_sender->initSender(interface_list_sender, my_send_configuration);
+  return true;
+}
+
+// Emit a line through the log callback the owner installed (main routes it into
+// the transport pane, which redacts). Silent when no callback is installed, e.g.
+// a harness driving the transport without a UI.
+void transport::log_line(enum rist_log_level level, const std::string& text)
+{
+  if (this->log_callback != nullptr) {
+    int (*cb)(void*, enum rist_log_level, const char*) = this->log_callback;
+    cb(nullptr, level, text.c_str());
+  }
 }
 
 auto transport::send_buffer(const std::vector<uint8_t>& data,

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "lib/address.h"
+#include "stats/peer_table.h"
 
 class encode;
 class transport;
@@ -95,6 +96,10 @@ struct cumulative_stats
   int64_t last_decrease_ms = 0;
   double window_quality_sum = 0.0;
   int window_quality_count = 0;
+  // Per-peer display state (4c): the latest sample per RIST peer identity, so
+  // the panes show every bonded leg instead of whichever callback fired last.
+  // Display only -- the ABR reads the sample it was handed, never this.
+  peer_stats::registry peers;
 };
 
 struct input_config
@@ -145,6 +150,16 @@ struct output_config
   int rtt_max = 500;
   int reorder_buffer = 30;
   int bandwidth = 6000;
+  // The session's RIST PSK, when the allocation issued one for the DIRECT leg.
+  // A dedicated field, never a URL parameter (H2): the sender hands it to
+  // librist through RISTNetSenderSettings::mPSK, which applies it to every peer
+  // of the bond. Empty keeps the leg clear, which is what a bridged session
+  // needs -- the encoder's hop to the bridge is a clear LAN leg by design and
+  // the bridge encrypts its own WAN leg.
+  std::string psk;
+  // Key size the session asked for. 0 = unset. The sender only keys at AES-128
+  // (see transport::setup_rist_sender); 256 is refused rather than downgraded.
+  int psk_aes = 0;
 };
 
 // RIST's bandwidth is a CEILING used to size the recovery ring, not a statement
