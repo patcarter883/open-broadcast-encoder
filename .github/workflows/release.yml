@@ -1,0 +1,377 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Pat Carter
+#
+# release.yml — release artifacts for open-broadcast-encoder.
+#
+# Jobs:
+#   appimage  Linux x86_64 AppImage, built inside an archlinux:latest container
+#   windows   Windows x86_64 zip, built on windows-latest with the MinGW-w64
+#             toolchain (MSYS2) — the same toolchain family the tree's Windows
+#             code path is written for; see the block comment on that job
+#   release   collects both artifacts and publishes ONE GitHub Release
+#
+# Trigger:  pushed tag matching v*  -> build both + publish the Release
+#           workflow_dispatch        -> build both only (dry run; artifacts, no
+#                                       Release)
+#
+# GStreamer: the CMake floor (CMakeLists.txt) is >= 1.28. Arch ships gstreamer
+# 1.28.x, so the Linux job takes GStreamer from the distro instead of building
+# it from source, and the Windows job takes the 1.28 line from MSYS2. Neither
+# job pins a version; both assert the floor at run time so a distro regression
+# below 1.28 fails with a readable message instead of an opaque pkg-config error.
+#
+# NDI: the encoder reaches NDI only through GStreamer's device monitor
+# (source/ndi_input/ndi_input.cpp filters providers on gst_device_monitor_start),
+# so the tree carries no NDI headers, no libndi link and no dlopen, and
+# CMakeLists.txt's OBC_ENABLE_NDI option is OFF by default. NDI therefore needs
+# nothing from a build and nothing from these artifacts: it is a runtime-provided
+# GStreamer device provider, the user installs the NDI runtime themselves, and
+# the project redistributes nothing NDI.
+#
+# Open limitations (all documented at the step that carries them):
+#   * Desktop entry and icon — the repo ships neither, so the Linux job
+#     synthesises a minimal .desktop and a 1x1 placeholder PNG.
+#   * GStreamer plugin bundling — linuxdeploy's core follows ELF NEEDED links
+#     only and GStreamer dlopen()s its plugins, so linuxdeploy-plugin-gstreamer
+#     does that bundling; the resulting AppImage's plugin set is only proven by
+#     running it on a machine without GStreamer.
+#
+# Neither job has been executed on GitHub. Everything here that an Arch host can
+# run was run locally before commit (package resolution, the configure line,
+# package-linux.sh's argument handling); the AppImage, MSYS2 and arm's-length
+# GitHub-service steps are unproven until a runner executes them.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # required for softprops/action-gh-release to create the Release
+
+jobs:
+  # ===========================================================================
+  # Linux — AppImage
+  #
+  # The container runs as root, so nothing here uses sudo, and git must exist
+  # before actions/checkout because checkout runs inside the container.
+  # ===========================================================================
+  appimage:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+
+    env:
+      # linuxdeploy is itself an AppImage and mounts itself with FUSE. Container
+      # jobs have no /dev/fuse, so it has to extract and run instead.
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+
+    steps:
+      - name: Install git for checkout
+        run: pacman -Sy --noconfirm --needed git
+
+      - uses: actions/checkout@v4
+        with:
+          # FLTK, rist-cpp and sdp-tools-cpp are git submodules built from source
+          # by cmake/ExternalBuilds.cmake; recursive is required.
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        # The same package set as .github/workflows/linux.yml, the Linux lane
+        # that builds green, plus the download/packaging tools the AppImage step
+        # needs. base-devel supplies gcc and make for the FLTK and rist-cpp
+        # external projects. No vcpkg: nlohmann-json and catch2 come from the
+        # distro.
+        run: |
+          pacman -S --noconfirm --needed \
+            base-devel cmake pkgconf ninja clang \
+            gstreamer gst-plugins-base gst-plugins-bad gst-plugins-ugly gst-libav \
+            openssl nlohmann-json catch2 \
+            libx11 libxext libxrender libxfixes libxpm libxrandr libxi \
+            libxft fontconfig libxinerama libxcursor \
+            mesa glu alsa-lib \
+            wget unzip file which tar gzip
+
+      - name: Report the toolchain
+        run: |
+          pkg-config --modversion gstreamer-1.0
+          cmake --version | head -1
+          clang++ --version | head -1
+
+      - name: Verify GStreamer meets the 1.28 CMake floor
+        run: |
+          set -euxo pipefail
+          ver="$(pkg-config --modversion gstreamer-1.0)"
+          awk -v v="${ver}" 'BEGIN {
+            split(v, a, ".")
+            if (a[1] + 0 < 1 || (a[1] + 0 == 1 && a[2] + 0 < 28)) {
+              printf "GStreamer %s is below the 1.28 floor in CMakeLists.txt\n", v
+              exit 1
+            }
+          }'
+
+      - name: Configure
+        # Release build with no vcpkg toolchain, matching package-linux.sh's
+        # invocation. Ninja is safe here: the checkout is fresh, so
+        # build-external/ holds no objects from another generator.
+        run: |
+          set -euxo pipefail
+          cmake -S . -B build -G Ninja \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D CMAKE_C_COMPILER=clang \
+            -D CMAKE_CXX_COMPILER=clang++ \
+            -D VCPKG_MANIFEST_MODE=OFF
+
+      - name: Build
+        run: cmake --build build -j "$(nproc)"
+
+      - name: Stage install into AppDir
+        run: |
+          set -euxo pipefail
+          # install(TARGETS ... RUNTIME) with no DESTINATION lands in <prefix>/bin.
+          cmake --install build --prefix AppDir/usr
+          test -x AppDir/usr/bin/open-broadcast-encoder
+
+      - name: Create desktop entry and placeholder icon
+        # linuxdeploy requires a .desktop file and an icon; the repo ships
+        # neither, so a minimal entry and a 1x1 placeholder PNG are synthesised
+        # here. Replace both once real files are added to the repo.
+        run: |
+          set -euxo pipefail
+          mkdir -p AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
+          cat > AppDir/usr/share/applications/open-broadcast-encoder.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Open Broadcast Encoder
+          Comment=Streaming Broadcast Video Encoder
+          Exec=open-broadcast-encoder
+          Icon=open-broadcast-encoder
+          Categories=AudioVideo;Video;
+          Terminal=false
+          EOF
+          base64 -d > AppDir/usr/share/icons/hicolor/256x256/apps/open-broadcast-encoder.png <<'B64'
+          iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=
+          B64
+
+      - name: Download linuxdeploy tooling
+        run: |
+          set -euxo pipefail
+          cd /tmp
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-gstreamer/releases/download/continuous/linuxdeploy-plugin-gstreamer.sh
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gstreamer.sh
+
+      - name: Build AppImage
+        # linuxdeploy's core follows ELF NEEDED links only; GStreamer loads its
+        # plugins by dlopen, so linuxdeploy-plugin-gstreamer bundles the plugin
+        # .so files and the GST_PLUGIN_PATH wrapper. linuxdeploy-plugin-gtk is
+        # not used — this is an FLTK/X11 app, not GTK.
+        env:
+          GSTREAMER_INCLUDE_BAD_PLUGINS: "1"
+        run: |
+          set -euxo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "${VERSION}" = "${GITHUB_REF_NAME}" ]; then
+            VERSION="0.0.0-dev+${GITHUB_SHA::8}"
+          fi
+          export VERSION
+          /tmp/linuxdeploy-x86_64.AppImage \
+            --appdir AppDir \
+            --plugin gstreamer \
+            --desktop-file AppDir/usr/share/applications/open-broadcast-encoder.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/open-broadcast-encoder.png \
+            --output appimage
+          # linuxdeploy names the output itself; normalise to a stable asset name.
+          built="$(ls -1 ./*.AppImage | head -n1)"
+          mv "${built}" "open-broadcast-encoder-${VERSION}-x86_64.AppImage"
+          echo "APPIMAGE_NAME=open-broadcast-encoder-${VERSION}-x86_64.AppImage" >> "$GITHUB_ENV"
+
+      - name: Compute SHA-256 checksum
+        run: |
+          set -euxo pipefail
+          sha256sum "${APPIMAGE_NAME}" > "${APPIMAGE_NAME}.sha256"
+          cat "${APPIMAGE_NAME}.sha256"
+
+      - name: Upload build artifacts (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: |
+            ${{ env.APPIMAGE_NAME }}
+            ${{ env.APPIMAGE_NAME }}.sha256
+          if-no-files-found: error
+
+  # ===========================================================================
+  # Windows — zip
+  #
+  # Why MinGW and not MSVC:
+  #
+  # The Windows lane of this tree is MinGW-shaped end to end, so an MSVC build
+  # cannot get from configure to link without source changes:
+  #   * cmake/ExternalBuilds.cmake hard-codes MinGW artefact names in the
+  #     imported targets — <prefix>/lib/libfltk.a, librist.a, libristnet.a.
+  #     MSVC produces fltk.lib / rist.lib / ristnet.lib, so fltk::fltk, rist and
+  #     ristnet would point at files that never exist.
+  #   * cmake/install-rules.cmake's Windows packaging collects the MinGW runtime
+  #     (libgcc_s_seh-1.dll, libstdc++-6.dll, libwinpthread-1.dll) beside the exe.
+  #   * CMakePresets.json's ci-windows inherits ci-win64 (Visual Studio 17 2022)
+  #     plus the vcpkg toolchain; vcpkg-win64-static is a hidden triplet-only
+  #     helper, not a selectable configure preset, and it changes neither point.
+  #
+  # MSYS2's MINGW64 environment is the same toolchain family as the CI-proven
+  # cross build (the cross-win64 preset), so the .a names, the FLTK/rist
+  # external projects and the packaging rules all apply unchanged. GStreamer is
+  # the MSYS2 mingw-w64 1.28 packages, which is also where the tree's documented
+  # Windows prerequisite comes from (CROSS_COMPILE_WINDOWS.md).
+  #
+  # Runtime dependency: GStreamer, and it is bundled — the zip carries the
+  # GStreamer DLLs and plugins so the target machine needs none installed.
+  # ===========================================================================
+  windows:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            unzip
+            zip
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-gstreamer
+            mingw-w64-x86_64-gst-plugins-base
+            mingw-w64-x86_64-gst-plugins-bad
+            mingw-w64-x86_64-gst-plugins-ugly
+            mingw-w64-x86_64-gst-libav
+            mingw-w64-x86_64-openssl
+            mingw-w64-x86_64-nlohmann-json
+
+      - name: Report the toolchain
+        run: |
+          pkg-config --modversion gstreamer-1.0
+          cmake --version | head -1
+          g++ --version | head -1
+
+      - name: Verify GStreamer meets the 1.28 CMake floor
+        run: |
+          set -euxo pipefail
+          ver="$(pkg-config --modversion gstreamer-1.0)"
+          awk -v v="${ver}" 'BEGIN {
+            split(v, a, ".")
+            if (a[1] + 0 < 1 || (a[1] + 0 == 1 && a[2] + 0 < 28)) {
+              printf "GStreamer %s is below the 1.28 floor in CMakeLists.txt\n", v
+              exit 1
+            }
+          }'
+
+      - name: Configure (MinGW64, Release)
+        # No vcpkg: nlohmann-json and OpenSSL come from the MSYS2 mingw-w64
+        # packages, so manifest mode is off and there is no toolchain file.
+        # GSTREAMER_MINGW_PREFIX must be a Windows path — cmake is a native
+        # binary here and does not understand /mingw64 — and
+        # cmake/install-rules.cmake reads it to bundle the GStreamer DLLs and
+        # plugins.
+        run: |
+          set -euxo pipefail
+          export GSTREAMER_MINGW_PREFIX="$(cygpath -w /mingw64)"
+          cmake -S . -B build-win -G Ninja \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D CMAKE_C_COMPILER=gcc \
+            -D CMAKE_CXX_COMPILER=g++ \
+            -D VCPKG_MANIFEST_MODE=OFF
+
+      - name: Build
+        run: cmake --build build-win -j "$(nproc)"
+
+      - name: Package the zip
+        # install-rules.cmake already implements the Windows package: the exe in
+        # bin/, the GStreamer DLLs and plugins under bin/ and
+        # lib/gstreamer-1.0 (the location main() points GST_PLUGIN_PATH_1_0 at),
+        # and — because the same /mingw64/bin glob carries them — the mingw-w64
+        # runtime DLLs (libgcc_s_seh-1, libstdc++-6, libwinpthread-1).
+        # CPack's configured generator is NSIS; -G ZIP overrides it so the
+        # artifact is a portable archive.
+        run: |
+          set -euxo pipefail
+          export GSTREAMER_MINGW_PREFIX="$(cygpath -w /mingw64)"
+          cd build-win
+          cpack -G ZIP
+          pkg="$(ls -1 ./*.zip | head -n1)"
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "${VERSION}" = "${GITHUB_REF_NAME}" ]; then
+            VERSION="0.0.0-dev+${GITHUB_SHA::8}"
+          fi
+          mv "${pkg}" "../open-broadcast-encoder-${VERSION}-win64.zip"
+
+      - name: Assert the zip contains the executable
+        run: |
+          set -euxo pipefail
+          zipname="$(ls -1 ./*-win64.zip | head -n1)"
+          echo "${zipname}"
+          unzip -l "${zipname}" | grep -q 'open-broadcast-encoder\.exe'
+
+      - name: Compute SHA-256 checksum
+        run: |
+          set -euxo pipefail
+          zipname="$(ls -1 ./*-win64.zip | head -n1)"
+          sha256sum "${zipname}" > "${zipname}.sha256"
+          cat "${zipname}.sha256"
+
+      - name: Upload build artifacts (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            *-win64.zip
+            *-win64.zip.sha256
+          if-no-files-found: error
+
+  # ===========================================================================
+  # Publish — one Release carrying both platforms, tag pushes only. A single
+  # publisher job avoids two build jobs racing to create the same Release.
+  # workflow_dispatch runs stop after the artifact uploads above (dry run).
+  # ===========================================================================
+  release:
+    needs: [appimage, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Collect artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -l dist
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.AppImage
+            dist/*.AppImage.sha256
+            dist/*-win64.zip
+            dist/*-win64.zip.sha256
