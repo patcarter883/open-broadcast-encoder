@@ -1,6 +1,8 @@
-# Fix a real bug in the vendored FLTK's fluid, applied as part of the external's
-# build rather than committed into the submodule (which stays pristine, so a
-# clone never depends on a local commit that cannot be fetched).
+# Patch a bug in the vendored FLTK's fluid. The source tree is edited in place,
+# so external/fltk reports a modified file after any build that applies this --
+# expected, not someone editing a vendored library by hand. The submodule commit
+# itself is untouched, so a fresh clone fetches upstream and re-applies the fix
+# here. Delete this script once the pinned FLTK carries the upstream fix.
 #
 # Fl_Grid_Type::read_parent_property() chains its property tests with
 #
