@@ -14,6 +14,7 @@
 
 #include "lib/address.h"
 #include "stats/peer_table.h"
+#include "transport/uplink.h"
 
 class encode;
 class transport;
@@ -160,6 +161,12 @@ struct output_config
   // Key size the session asked for. 0 = unset. The sender only keys at AES-128
   // (see transport::setup_rist_sender); 256 is refused rather than downgraded.
   int psk_aes = 0;
+  // The interfaces this host may send the bond over. Empty is the one leg this
+  // encoder has always sent -- the default route, no `miface` and no `weight`
+  // in the URL -- so an operator who never configured an uplink is unaffected.
+  // With entries each leg is a peer on the SAME host:port, pinned to its
+  // adapter (see transport/uplink.h); all of them leave by different devices.
+  std::vector<uplink::config> uplinks;
 };
 
 // RIST's bandwidth is a CEILING used to size the recovery ring, not a statement

@@ -324,3 +324,52 @@ target_compile_features(peer_stats_test PRIVATE cxx_std_20)
 target_link_libraries(peer_stats_test PRIVATE Catch2::Catch2WithMain)
 
 catch_discover_tests(peer_stats_test)
+
+# --- Encoder-side bonding: the decisions, pinned without a pipeline ----------
+#
+# Which URL each uplink produces (miface + weight on the same session port), the
+# adapter-name resolution rule under both platform bind styles, and the
+# stats-to-weight mapping. The transport library is linked for uplink.cpp; no
+# sender, no GStreamer pipeline and no network are started.
+add_executable(uplink_test source/uplink_test.cpp)
+target_link_libraries(
+    uplink_test PRIVATE
+    transport_lib
+    open-broadcast-encoder_lib
+    Catch2::Catch2WithMain
+)
+target_compile_features(uplink_test PRIVATE cxx_std_20)
+
+catch_discover_tests(uplink_test)
+
+# --- Encoder-side bonding: two peers, two interfaces, real libRIST -----------
+#
+# This one runs the real sender, because the assertion is on librist's own bind
+# line ("Binding socket to <device>"): a failed device bind is logged and
+# ignored, so the log is the only proof the leg left by the interface it named.
+add_executable(bond_two_interface_test source/bond_two_interface_test.cpp)
+target_link_libraries(
+    bond_two_interface_test PRIVATE
+    transport_lib
+    open-broadcast-encoder_lib
+    Catch2::Catch2WithMain
+)
+target_compile_features(bond_two_interface_test PRIVATE cxx_std_20)
+
+catch_discover_tests(bond_two_interface_test)
+
+# --- Encoder-side bonding: the settings file ---------------------------------
+#
+# The uplink list is also hand-editable, so both directions are pinned: what a
+# save writes, and what a load accepts.
+add_executable(uplink_settings_test source/uplink_settings_test.cpp)
+target_link_libraries(
+    uplink_settings_test PRIVATE
+    settings_lib
+    open-broadcast-encoder_lib
+    nlohmann_json::nlohmann_json
+    Catch2::Catch2WithMain
+)
+target_compile_features(uplink_settings_test PRIVATE cxx_std_20)
+
+catch_discover_tests(uplink_settings_test)

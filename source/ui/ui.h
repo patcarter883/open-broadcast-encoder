@@ -149,6 +149,10 @@ public:
   // in each item's user_data, so both outlive the Fl_Choice's items.
   std::vector<std::string> capture_label_storage;
   std::vector<std::string> capture_address_storage;
+  // The uplink picker (bonding). Lists this host's usable adapters, appends the
+  // chosen one to output_config::uplinks, and removes the selected entry. The
+  // model is written in place on the UI thread, so Save Settings persists it.
+  void edit_uplinks();
   void lock();
   void unlock();
 
@@ -217,6 +221,9 @@ private:
   // allocation can move the encoder's target, and that write must not happen on
   // a worker thread.
   output_config* output_config_ptr = nullptr;
+  // "Uplinks" or "Uplinks (2)": the pane's one indication that a bond is
+  // configured, without opening the picker.
+  void refresh_uplinks_label();
   void start(FuncPtr start_funcptr);
   void stop(FuncPtr stop_funcptr);
   void save_settings(FuncPtr save_settings_funcptr);

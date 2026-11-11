@@ -110,6 +110,7 @@ fltk::fltk
 )
 
 target_link_libraries(ui_lib PRIVATE
+net_lib
 open-broadcast-encoder_lib
 )
 

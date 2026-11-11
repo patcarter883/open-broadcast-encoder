@@ -4,9 +4,11 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <format>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -19,6 +21,8 @@ using u_int16_t = uint16_t;
 
 #include "RISTNet.h"
 #include "lib/lib.h"
+#include "stats/bond_weight.h"
+#include "transport/uplink.h"
 #include "url/url.h"
 
 using std::string;
@@ -58,6 +62,34 @@ private:
   std::atomic<void (*)(const rist_stats&)> statistics_callback {nullptr};
   std::atomic<void (*)(const uint8_t*, size_t)> oob_callback {nullptr};
   void stats_cb_func(const rist_stats& stats);
+
+  // One leg of the bond, in the order the uplinks resolved. peer_id is what
+  // librist reports in that peer's stats -- the only thing that attributes a
+  // sample to a leg, because every leg of a session shares its cname.
+  struct leg_state
+  {
+    std::string label;
+    std::string miface;
+    bool auto_weight = false;
+    std::uint32_t peer_id = 0;
+    // The weight the sender gives this leg now, and the share of the rotation
+    // it therefore holds.
+    std::uint32_t weight = 0;
+    // An estimate waiting to be applied, and the numbers behind it. Zero means
+    // nothing is waiting.
+    std::uint32_t pending_weight = 0;
+    std::string pending_note;
+  };
+  std::vector<leg_state> legs;
+  // Guards legs: the stats callback runs on the librist sender thread and the
+  // send thread applies what it computed.
+  std::mutex legs_mtx;
+  // Turns one stats sample into a weight for the leg it belongs to. Runs on the
+  // librist sender thread, which holds librist's peer list lock, so it may not
+  // call back into librist.
+  void estimate_weights(const rist_stats& stats);
+  // Applies any pending estimate. Runs on the send thread.
+  void apply_pending_weights();
   void oob_cb_func(
       const uint8_t* buf,
       size_t size,

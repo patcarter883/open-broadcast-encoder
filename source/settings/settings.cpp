@@ -193,6 +193,48 @@ void get_encoder(const json& j, const char* key, encoder& out)
     parse_encoder(it->get<std::string>(), out);
   }
 }
+
+// One object per uplink: the adapter name and how its weight is decided. The
+// array is written empty when no uplink is configured, which is the single
+// default-route leg -- not the same as an absent key, and both load to the same
+// thing, so an older settings file stays valid.
+json uplinks_json(const std::vector<uplink::config>& uplinks)
+{
+  json array = json::array();
+  for (const uplink::config& u : uplinks) {
+    array.push_back(json {
+        {"name", u.name},
+        {"weight_is_auto", u.weight_is_auto},
+        {"fixed_weight", u.fixed_weight},
+    });
+  }
+  return array;
+}
+
+// Entries that name nothing are dropped: a nameless uplink resolves to no
+// adapter and would refuse every Start, so a hand-edited file cannot wedge the
+// encoder into a configuration its own picker never produces.
+std::vector<uplink::config> uplinks_from_json(const json& array)
+{
+  std::vector<uplink::config> uplinks;
+  for (const json& entry : array) {
+    if (!entry.is_object()) {
+      continue;
+    }
+    uplink::config u;
+    get_to(entry, "name", u.name);
+    if (u.name.empty()) {
+      continue;
+    }
+    get_to(entry, "weight_is_auto", u.weight_is_auto);
+    get_to(entry, "fixed_weight", u.fixed_weight);
+    if (u.fixed_weight < 1) {
+      u.fixed_weight = 1;
+    }
+    uplinks.push_back(std::move(u));
+  }
+  return uplinks;
+}
 }  // namespace
 
 namespace settings
@@ -271,6 +313,9 @@ bool save(const library& lib)
       {"rtt_max", out.rtt_max},
       {"reorder_buffer", out.reorder_buffer},
       {"bandwidth", out.bandwidth},
+      // One object per uplink, always written: an empty array is the single
+      // default-route leg, which is what the encoder sends without a bond.
+      {"uplinks", uplinks_json(out.uplinks)},
   };
 
   const bridge_control_config& bc = lib.bridge_ctl;
@@ -403,6 +448,9 @@ bool load(library& lib)
     get_to(j, "rtt_max", out.rtt_max);
     get_to(j, "reorder_buffer", out.reorder_buffer);
     get_to(j, "bandwidth", out.bandwidth);
+    if (auto u = j.find("uplinks"); u != j.end() && u->is_array()) {
+      out.uplinks = uplinks_from_json(*u);
+    }
   }
 
   if (auto it = root.find("encoder"); it != root.end() && it->is_object()) {

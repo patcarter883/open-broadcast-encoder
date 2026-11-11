@@ -16,6 +16,8 @@ target_sources(transport_lib ${warning_guard}
   PUBLIC
     transport.h
     transport.cpp
+    uplink.h
+    uplink.cpp
 )
 
 target_include_directories(
@@ -31,6 +33,7 @@ ristnet
 
 target_link_libraries(transport_lib PRIVATE
 url_lib
+net_lib
 open-broadcast-encoder_lib
 )
 

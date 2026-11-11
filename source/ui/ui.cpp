@@ -2,8 +2,11 @@
 // Copyright (C) 2026 Pat Carter
 
 #include <algorithm>
+#include <cstdlib>
+#include <format>
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "ui/ui.h"
@@ -11,16 +14,19 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Button.H>
+#include <FL/Fl_Check_Button.H>
 #include <FL/Fl_Choice.H>
 #include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Flex.H>
 #include <FL/Fl_Grid.H>
+#include <FL/Fl_Hold_Browser.H>
 #include <FL/Fl_Input.H>
 #include <FL/Fl_Output.H>
 #include <FL/Fl_Text_Display.H>
 #include <stdint.h>
 
 #include "FL/fl_callback_macros.H"
+#include "net/adapters.h"
 
 namespace
 {
@@ -42,6 +48,150 @@ void select_choice_by_userdata(Fl_Choice* choice, std::intptr_t value)
   }
 }
 
+// ---- The uplink picker -----------------------------------------------------
+//
+// A modal window rather than more rows in the Output pane: the uplink list
+// grows with the hardware attached to the machine, and the pane's rows are
+// fixed height. It edits output_config::uplinks in place, on the UI thread, so
+// Save Settings persists whatever is on screen.
+class uplink_dialog : public Fl_Window
+{
+public:
+  uplink_dialog(std::vector<uplink::config>& uplinks,
+                std::vector<net::adapter> adapters)
+      : Fl_Window(600, 330, "Bond uplinks")
+      , uplinks_(uplinks)
+      , adapters_(std::move(adapters))
+  {
+    auto* caption = new Fl_Box(20, 16, 95, 25, "Adapter");
+    caption->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+
+    choice_ = new Fl_Choice(120, 16, 340, 25);
+    for (const net::adapter& a : adapters_) {
+      // Only an adapter that is up and carries an IPv4 can hold a leg: the
+      // other two states are shown as unusable rather than offered and refused
+      // later.
+      if (!a.up || a.ipv4.empty()) {
+        continue;
+      }
+      choice_->add(std::format("{}  ({})", a.name, a.ipv4).c_str());
+      names_.push_back(a.name);
+    }
+    if (!names_.empty()) {
+      choice_->value(0);
+    }
+
+    auto_ = new Fl_Check_Button(120, 53, 130, 25, "Auto weight");
+    auto_->value(1);
+    auto_->callback(toggle_cb, this);
+
+    weight_ = new Fl_Input(270, 53, 70, 25);
+    weight_->value("100");
+    weight_->deactivate();
+
+    auto* add = new Fl_Button(360, 53, 90, 25, "Add");
+    add->callback(add_cb, this);
+    auto* remove = new Fl_Button(460, 53, 100, 25, "Remove");
+    remove->callback(remove_cb, this);
+
+    auto* hint = new Fl_Box(20,
+                            80,
+                            560,
+                            20,
+                            "One leg per adapter, all to the same host and "
+                            "port. Empty sends the single default-route leg.");
+    hint->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+    hint->labelsize(11);
+
+    browser_ = new Fl_Hold_Browser(20, 104, 560, 170);
+
+    auto* done = new Fl_Button(480, 286, 100, 28, "Done");
+    done->callback(done_cb, this);
+
+    end();
+    set_modal();
+    refresh();
+  }
+
+private:
+  std::vector<uplink::config>& uplinks_;
+  std::vector<net::adapter> adapters_;
+  // Adapter names in menu order: the choice only stores a label, and the name
+  // is what an uplink must remember.
+  std::vector<std::string> names_;
+  Fl_Choice* choice_ = nullptr;
+  Fl_Check_Button* auto_ = nullptr;
+  Fl_Input* weight_ = nullptr;
+  Fl_Hold_Browser* browser_ = nullptr;
+
+  void refresh()
+  {
+    browser_->clear();
+    for (const uplink::config& u : uplinks_) {
+      browser_->add(std::format("{}   {}",
+                                u.name,
+                                u.weight_is_auto
+                                    ? std::string("auto")
+                                    : std::format("weight {}", u.fixed_weight))
+                        .c_str());
+    }
+  }
+
+  void add()
+  {
+    if (names_.empty() || choice_->value() < 0) {
+      return;
+    }
+    const std::string& name =
+        names_[static_cast<std::size_t>(choice_->value())];
+    for (const uplink::config& u : uplinks_) {
+      // Two peers on one adapter is not a bond: it splits the payload across
+      // the same device and halves the recovery budget for nothing.
+      if (u.name == name) {
+        return;
+      }
+    }
+    uplink::config u;
+    u.name = name;
+    u.weight_is_auto = auto_->value() != 0;
+    const int fixed = std::atoi(weight_->value());
+    u.fixed_weight = fixed < 1 ? 1 : fixed;
+    uplinks_.push_back(u);
+    refresh();
+  }
+
+  void remove()
+  {
+    const int line = browser_->value();  // 1-based, 0 when nothing is selected
+    if (line < 1 || static_cast<std::size_t>(line) > uplinks_.size()) {
+      return;
+    }
+    uplinks_.erase(uplinks_.begin() + (line - 1));
+    refresh();
+  }
+
+  static void add_cb(Fl_Widget*, void* self)
+  {
+    static_cast<uplink_dialog*>(self)->add();
+  }
+  static void remove_cb(Fl_Widget*, void* self)
+  {
+    static_cast<uplink_dialog*>(self)->remove();
+  }
+  static void toggle_cb(Fl_Widget*, void* self)
+  {
+    auto* dialog = static_cast<uplink_dialog*>(self);
+    if (dialog->auto_->value() != 0) {
+      dialog->weight_->deactivate();
+    } else {
+      dialog->weight_->activate();
+    }
+  }
+  static void done_cb(Fl_Widget*, void* self)
+  {
+    static_cast<uplink_dialog*>(self)->hide();
+  }
+};
 }  // namespace
 
 // The widget tree is generated: ui.fld -> ui_widgets.{h,cpp} (see ui.h). The
@@ -76,6 +226,40 @@ void user_interface::init_link_peer_rows()
     link_peer_rows.push_back(row);
   }
   flx_peers->end();
+}
+
+void user_interface::edit_uplinks()
+{
+  if (output_config_ptr == nullptr) {
+    return;
+  }
+  // The adapter set is read here, not at construction: a modem that appeared
+  // after launch is offered the next time the picker is opened.
+  uplink_dialog dialog(output_config_ptr->uplinks, net::list());
+  // Over the pane that opened it, not at the screen origin.
+  dialog.position(main_window->x() + (main_window->w() - dialog.w()) / 2,
+                  main_window->y() + (main_window->h() - dialog.h()) / 2);
+  dialog.show();
+  // FLTK maps a modal window and returns; the nested wait is what keeps this
+  // callback (and the pane behind it) responsive while the dialog is up.
+  while (dialog.shown() != 0) {
+    Fl::wait();
+  }
+  refresh_uplinks_label();
+}
+
+void user_interface::refresh_uplinks_label()
+{
+  if (btn_uplinks == nullptr || output_config_ptr == nullptr) {
+    return;
+  }
+  const std::size_t legs = output_config_ptr->uplinks.size();
+  if (legs == 0) {
+    btn_uplinks->label("Uplinks");
+  } else {
+    btn_uplinks->copy_label(std::format("Uplinks ({})", legs).c_str());
+  }
+  btn_uplinks->redraw();
 }
 
 void user_interface::set_link_peers(const std::vector<std::string>& rows)
@@ -856,6 +1040,7 @@ void user_interface::apply_settings(const input_config& input_c,
 
   // ---- Output ----
   input_rist_address->value(output_c.address.c_str());
+  refresh_uplinks_label();
 
   // ---- Instance identity ----
   const std::string shown_name =
@@ -1197,6 +1382,10 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        save_settings,
                        FuncPtr,
                        save_settings_funcptr);
+
+  btn_uplinks->callback([](Fl_Widget*, void* v)
+                        { static_cast<user_interface*>(v)->edit_uplinks(); },
+                        this);
 
   btn_exit->callback([](Fl_Widget*, void* v)
                      { static_cast<user_interface*>(v)->main_window->hide(); },

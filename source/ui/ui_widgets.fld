@@ -226,6 +226,11 @@ class ui_widgets {open
                 label {Save Settings}
                 xywh {905 50 110 25}
               }
+              Fl_Button btn_uplinks {
+                label {Uplinks}
+                tooltip {The interfaces the bond is sent over. Empty sends the single leg this encoder has always sent. Each uplink becomes one RIST peer on the same host and port, pinned to that adapter.}
+                xywh {905 50 110 25}
+              }
               Fl_Button btn_exit {
                 label Exit
                 xywh {1020 50 80 25}
