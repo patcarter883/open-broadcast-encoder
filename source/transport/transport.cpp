@@ -142,8 +142,8 @@ auto transport::setup_rist_sender(output_config& output_c) -> bool
   // parameter (H2) -- and rist-cpp copies it into every peer's secret, so each
   // link of a bond is keyed, bonded links included.
   //
-  // The pinned rist-cpp fixes key_size to 128 whenever mPSK is set, so this
-  // build keys at AES-128 only. A session that asks for AES-256 is refused here
+  // This build keys at AES-128 only -- the shipped strength, matching what the
+  // hosted service issues. A session that asks for AES-256 is refused here
   // rather than downgraded: a 128-bit key against a 256-bit listener carries no
   // media at all, which on screen reads as "started, nothing arrives".
   //
