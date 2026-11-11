@@ -180,7 +180,8 @@ jobs:
           set -euxo pipefail
           cd /tmp
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage appimagetool-x86_64.AppImage
 
       - name: Build AppImage
         # GStreamer loads its plugins with dlopen, which linuxdeploy's ELF walk
@@ -219,10 +220,11 @@ jobs:
           )
           apprun.write_bytes(head + sep + export + tail)
           PY
-          /tmp/linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
-          # linuxdeploy names the output itself; normalise to a stable asset name.
-          built="$(ls -1 ./*.AppImage | head -n1)"
-          mv "${built}" "open-broadcast-encoder-${VERSION}-x86_64.AppImage"
+          # appimagetool, not a second linuxdeploy pass: linuxdeploy would
+          # re-resolve the bundled GStreamer this time and ldd fails on it.
+          ARCH=x86_64 /tmp/appimagetool-x86_64.AppImage AppDir \
+            "open-broadcast-encoder-${VERSION}-x86_64.AppImage"
+          test -f "open-broadcast-encoder-${VERSION}-x86_64.AppImage"
           echo "APPIMAGE_NAME=open-broadcast-encoder-${VERSION}-x86_64.AppImage" >> "$GITHUB_ENV"
 
       - name: Compute SHA-256 checksum
@@ -289,6 +291,7 @@ jobs:
             zip
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-meson
             mingw-w64-x86_64-ninja
             mingw-w64-x86_64-pkgconf
             mingw-w64-x86_64-gstreamer
