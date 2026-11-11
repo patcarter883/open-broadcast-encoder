@@ -55,6 +55,13 @@ struct hosted_session
   std::string bridge_uid;
   std::string bridge_lan_host;
 
+  // Whether the session actually goes via a bridge. `bridge_present` is NOT
+  // this: it only says the portal answered the bridge question, and a direct
+  // allocation answers it with a present-but-null bridge. Deciding "bridged"
+  // from bridge_present sends a direct session's traffic in the clear, because
+  // the session PSK is only armed on a direct leg.
+  bool is_bridged() const { return !bridge_uid.empty(); }
+
   bool valid() const { return !session_id.empty() && !control_url.empty(); }
 
   std::string to_json() const;

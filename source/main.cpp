@@ -1417,9 +1417,18 @@ static void hosted_reattach()
           // next Start Encode has nowhere to send.
           ctx.ui->set_encoder_target(session.rist_url);
           // The key comes back with the session, and only on a direct leg (a
-          // bridged session's LAN hop is clear by design).
-          if (!session.bridge_present) {
+          // bridged session's LAN hop is clear by design). A direct
+          // allocation still carries bridge_present: the portal answered the
+          // bridge question with a present-but-null bridge, so "bridged" is
+          // decided by the uid, not by the field's presence.
+          if (!session.is_bridged()) {
             ctx.ui->set_session_psk(session.psk, session.psk_aes);
+            if (session.psk.empty()) {
+              transport_log(
+                  "Reattached to " + session.session_id
+                  + " with no session key. A receiver that expects encrypted "
+                    "ingest will drop a clear leg.\n");
+            }
           }
           ctx.ui->set_hosted_session_held(true);
           ctx.ui->set_hosted_state("Reattached to " + session.session_id,
@@ -2024,7 +2033,7 @@ auto main(int argc, char** argv) -> int
         const std::string target = held->encoder_target.empty()
                                        ? held->rist_url
                                        : held->encoder_target;
-        if (!held->bridge_present && !target.empty()
+        if (!held->is_bridged() && !target.empty()
             && target == ctx.lib.output_cfg.address)
         {
           ctx.ui->set_session_psk(held->psk, held->psk_aes);

@@ -265,6 +265,31 @@ TEST_CASE("the allocation carries the bridge the portal chose",
     // Present and null: the operator chose a direct chain.
     CHECK(r.session.bridge_present);
     CHECK(r.session.bridge_uid.empty());
+    // A direct allocation must read as direct even though the bridge field is
+    // present: the reattach path arms the session PSK off this, and reading
+    // "bridged" from bridge_present sent the leg out in the clear.
+    CHECK_FALSE(r.session.is_bridged());
+  }
+
+  // The same shape with a key: a keyed direct session survives the settings
+  // round-trip as direct, so a restarted encoder re-arms its leg.
+  {
+    hosted_session s;
+    s.session_id = "s_abc";
+    s.rist_url = "rist://h:1";
+    s.control_url = "https://h/s_abc";
+    s.psk = "deadbeef";
+    s.psk_aes = 128;
+    s.bridge_present = true;  // present-and-null allocation, parsed
+    s.bridge_id = 7;
+
+    const hosted_session back = hosted_session::from_json(s.to_json());
+    CHECK(back.psk == "deadbeef");
+    CHECK(back.psk_aes == 128);
+    CHECK(back.bridge_present);
+    CHECK(back.bridge_id == 7);
+    CHECK(back.bridge_uid.empty());
+    CHECK_FALSE(back.is_bridged());
   }
 
   {
