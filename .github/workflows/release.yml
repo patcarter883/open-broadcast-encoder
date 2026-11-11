@@ -208,16 +208,16 @@ jobs:
           # linuxdeploy only writes AppRun when one is absent, so the exports
           # survive the packaging pass below.
           python3 - <<'PY'
+          # Byte-level: linuxdeploy writes AppRun with non-UTF-8 bytes, so a
+          # text read fails before anything is patched.
           import pathlib
           apprun = pathlib.Path("AppDir/AppRun")
-          text = apprun.read_text()
+          head, sep, tail = apprun.read_bytes().partition(b"\n")
           export = (
-              'export GST_PLUGIN_SYSTEM_PATH_1_0="$APPDIR/usr/lib/gstreamer-1.0"\n'
-              'export LD_LIBRARY_PATH="$APPDIR/usr/lib:${LD_LIBRARY_PATH:-}"\n'
+              b'export GST_PLUGIN_SYSTEM_PATH_1_0="$APPDIR/usr/lib/gstreamer-1.0"\n'
+              b'export LD_LIBRARY_PATH="$APPDIR/usr/lib:${LD_LIBRARY_PATH:-}"\n'
           )
-          lines = text.splitlines(keepends=True)
-          lines.insert(1, export)
-          apprun.write_text("".join(lines))
+          apprun.write_bytes(head + sep + export + tail)
           PY
           /tmp/linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
           # linuxdeploy names the output itself; normalise to a stable asset name.

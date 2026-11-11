@@ -59,6 +59,16 @@ if(NOT CMAKE_CROSSCOMPILING)
   set(FLTK_BUILD_FLUID_FLAG ON)
 endif()
 
+# Windows has no X11 or Wayland: FLTK's glX probe fails that configure, and this
+# app draws with FLTK widgets only. Passed as a plain list rather than a
+# generator expression, which ExternalProject does not expand in CMAKE_ARGS.
+set(FLTK_BACKEND_ARGS "")
+if(WIN32)
+  list(APPEND FLTK_BACKEND_ARGS
+    "-DFLTK_BACKEND_X11:BOOL=OFF"
+    "-DFLTK_BACKEND_WAYLAND:BOOL=OFF")
+endif()
+
 ExternalProject_Add(
   external_fltk
   SOURCE_DIR "${PROJECT_SOURCE_DIR}/external/fltk"
@@ -94,10 +104,7 @@ ExternalProject_Add(
     -DFLTK_BUILD_TEST:BOOL=OFF
     -DBUILD_TESTING:BOOL=OFF
     -DOpenGL_GL_PREFERENCE:STRING=LEGACY
-    # Windows has no X11 or Wayland: FLTK's glX probe fails that configure
-    # outright, and this app draws with FLTK widgets only.
-    $<$<BOOL:${WIN32}>:-DFLTK_BACKEND_X11:BOOL=OFF>
-    $<$<BOOL:${WIN32}>:-DFLTK_BACKEND_WAYLAND:BOOL=OFF>
+    ${FLTK_BACKEND_ARGS}
     # Cross-compilation: TestBigEndian can't run target binaries; x86_64 Windows is LE.
     $<$<BOOL:${CMAKE_CROSSCOMPILING}>:-DCMAKE_C_BYTE_ORDER:STRING=LITTLE_ENDIAN>
     $<$<BOOL:${CMAKE_CROSSCOMPILING}>:-DCMAKE_CXX_BYTE_ORDER:STRING=LITTLE_ENDIAN>
