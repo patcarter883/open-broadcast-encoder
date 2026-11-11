@@ -87,7 +87,7 @@ jobs:
         # distro.
         run: |
           pacman -S --noconfirm --needed \
-            base-devel cmake pkgconf ninja clang \
+            base-devel cmake pkgconf meson ninja clang \
             gstreamer gst-plugins-base gst-plugins-bad gst-plugins-ugly gst-libav \
             openssl nlohmann-json catch2 \
             libx11 libxext libxrender libxfixes libxpm libxrandr libxi \
@@ -153,7 +153,26 @@ jobs:
           Terminal=false
           EOF
           base64 -d > AppDir/usr/share/icons/hicolor/256x256/apps/open-broadcast-encoder.png <<'B64'
-          iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=
+          iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAEEElEQVR42u3cTUpcQRiGUZeRoQtw
+Ta7NFUomGRshE0FautquJPU9B54VXN4D/VN1H348PknZHjwCASABIAEgASABIAEgASABIAEgASAB
+IAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEg
+ASABIAEgASABIAEgASABIAEgASABsL/Xn7/ulYcJQGvxPABg9DAAcKHnl7f3yrsnoQvgz/r/iYH/
+cPcktAB8XP/fNHDE9DEYDuDz+ncbOG73JIwFcGn9mwwMmD4GcwB8vf77Ghg2fQyOB3DN+u9iYPD0
+MTgVwPXr/6aByPoZGA7gBgOp6WMw+SPQqoHs9DEY+CV41YDpMzDnZ9BVA0bPwJw/wpYM2DoGo45C
+LBkwcQZGHYZbMmDcDIw6Dn19No3BtAsx1s9A/UaY9TNQvxJp/QzU7wRbPwP1S/HWz0D9rRDWz0D9
+tSjWz0D9vUAGygAAAiAJwDQZ6AIwSga6AMyRAQAEQBKAITLQBWCCDHQBGB8DAAiAJACzYwAAAZAE
+YHAMdAGYGgMACIAkACNjAAABkARgXgwAIACSAAyLAQAEAAACoAbApBgAQAAkARgTAwAIAAAEQA2A
+GTEAgAAAQADUABgQAwAIAAAEAAACIATAdBgAQAAAIAAAEAAACIAGAKNhAAABAIAAAEAAACAAABAA
+AAgAAAQAAAIAAAEAgAAAQAAAIAAAEAAACAAABAAAAgAAAQCAAABAAAAgAAAQAAAIAAAEAAACgAF5
+MxwAAgAAAQCAAABAADCgSesHQAAAIAAAEAAMqLV+AAQAAAKAAQXXD4AAAEAAMKDg+gEQAIcAYMD6
+ATAsAAAQAE0ADFg/AOYFQBgAA9YPgJEBEAbAgPUDYGoAhAEwYP11AAxYPwBmB0AYAAPWD4DxARAG
+wID11wEwYP11AAxYPwDmCEAYAAPWXwfAgPXXATBg/QAYKABhAAzs7vnl7T0AGOiuf5KBmQAY2L3+
+MQbGAmBg9/pnGJgMgIHd6x9gYDgABnav/3QD8wEwsHv9RxtIAGBg9/rPNVABgMENf3WtAjjRQAsA
+A6t/9I43kAPAwOoxh9kGigAwWD3hM9hAFwADS+fbphpIA2Bg6XTnSAN1AHEGqw9qngEAogxufkoA
+MFC/0eIjEAb1y1y+BGNQv8foZ1AM6ld4/RFGQv3quqMQGNTf2uAwHAn1t5U4Dk2Ct/S4EAOD0QOg
+HR48TAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQABICnIAAkACQAJAAkACQAJAAk
+ACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJACkzf0GzcfjWpWg
+HUEAAAAASUVORK5CYII=
           B64
 
       - name: Download linuxdeploy tooling
@@ -161,16 +180,13 @@ jobs:
           set -euxo pipefail
           cd /tmp
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-gstreamer/releases/download/continuous/linuxdeploy-plugin-gstreamer.sh
-          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gstreamer.sh
+          chmod +x linuxdeploy-x86_64.AppImage
 
       - name: Build AppImage
-        # linuxdeploy's core follows ELF NEEDED links only; GStreamer loads its
-        # plugins by dlopen, so linuxdeploy-plugin-gstreamer bundles the plugin
-        # .so files and the GST_PLUGIN_PATH wrapper. linuxdeploy-plugin-gtk is
-        # not used — this is an FLTK/X11 app, not GTK.
-        env:
-          GSTREAMER_INCLUDE_BAD_PLUGINS: "1"
+        # GStreamer loads its plugins with dlopen, which linuxdeploy's ELF walk
+        # cannot see, so the runtime and plugin set are copied in by hand and
+        # AppRun points at them. linuxdeploy-plugin-gstreamer is not used: that
+        # repository publishes no releases, so the download can only 404.
         run: |
           set -euxo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
@@ -180,10 +196,30 @@ jobs:
           export VERSION
           /tmp/linuxdeploy-x86_64.AppImage \
             --appdir AppDir \
-            --plugin gstreamer \
             --desktop-file AppDir/usr/share/applications/open-broadcast-encoder.desktop \
-            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/open-broadcast-encoder.png \
-            --output appimage
+            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/open-broadcast-encoder.png
+          mkdir -p AppDir/usr/lib/gstreamer-1.0
+          for lib in gstreamer-1.0 gstbase-1.0 gstapp-1.0 gstvideo-1.0 \
+                     gstaudio-1.0 gstrtp-1.0 gstsdp-1.0 gstnet-1.0 \
+                     gstpbutils-1.0 gsttag-1.0 gstcheck-1.0 gstcontroller-1.0; do
+            cp -a /usr/lib/lib${lib}.so* AppDir/usr/lib/ 2>/dev/null || true
+          done
+          cp -a /usr/lib/gstreamer-1.0/. AppDir/usr/lib/gstreamer-1.0/
+          # linuxdeploy only writes AppRun when one is absent, so the exports
+          # survive the packaging pass below.
+          python3 - <<'PY'
+          import pathlib
+          apprun = pathlib.Path("AppDir/AppRun")
+          text = apprun.read_text()
+          export = (
+              'export GST_PLUGIN_SYSTEM_PATH_1_0="$APPDIR/usr/lib/gstreamer-1.0"\n'
+              'export LD_LIBRARY_PATH="$APPDIR/usr/lib:${LD_LIBRARY_PATH:-}"\n'
+          )
+          lines = text.splitlines(keepends=True)
+          lines.insert(1, export)
+          apprun.write_text("".join(lines))
+          PY
+          /tmp/linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
           # linuxdeploy names the output itself; normalise to a stable asset name.
           built="$(ls -1 ./*.AppImage | head -n1)"
           mv "${built}" "open-broadcast-encoder-${VERSION}-x86_64.AppImage"
@@ -298,7 +334,14 @@ jobs:
             -D VCPKG_MANIFEST_MODE=OFF
 
       - name: Build
-        run: cmake --build build-win -j "$(nproc)"
+        # --parallel instead of -j "$(nproc)": under the MSYS2 shell a missing
+        # nproc aborts the step before cmake runs, which reads as a build
+        # failure with no compiler output. The cache check names the real cause
+        # if configure ever stops producing one.
+        run: |
+          set -x
+          test -f build-win/build.ninja
+          cmake --build build-win --parallel 4
 
       - name: Package the zip
         # install-rules.cmake already implements the Windows package: the exe in
