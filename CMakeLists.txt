@@ -155,6 +155,12 @@ target_link_libraries(open-broadcast-encoder_exe PRIVATE
   PkgConfig::gstreamer-video
   ${NDI_LIBRARIES})
 
+if(WIN32)
+  # OpenSSL's certificate-store loader calls the Win32 crypto API directly, so
+  # the executable needs crypt32; MinGW does not pull it in implicitly.
+  target_link_libraries(open-broadcast-encoder_exe PRIVATE crypt32 ws2_32)
+endif()
+
 
 target_include_directories(open-broadcast-encoder_exe PUBLIC SYSTEM
 ${RIST_INSTALL_DIR}/include
