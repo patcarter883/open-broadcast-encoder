@@ -329,7 +329,7 @@ jobs:
         # plugins.
         run: |
           set -euxo pipefail
-          export GSTREAMER_MINGW_PREFIX="$(cygpath -w /mingw64)"
+          export GSTREAMER_MINGW_PREFIX="$(cygpath -m /mingw64)"
           cmake -S . -B build-win -G Ninja \
             -D CMAKE_BUILD_TYPE=Release \
             -D CMAKE_C_COMPILER=gcc \
@@ -356,7 +356,7 @@ jobs:
         # artifact is a portable archive.
         run: |
           set -euxo pipefail
-          export GSTREAMER_MINGW_PREFIX="$(cygpath -w /mingw64)"
+          export GSTREAMER_MINGW_PREFIX="$(cygpath -m /mingw64)"
           cd build-win
           cpack -G ZIP
           pkg="$(ls -1 ./*.zip | head -n1)"
