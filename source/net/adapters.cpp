@@ -10,9 +10,10 @@
 #if defined(_WIN32) || defined(_WIN64)
 #  include <cstring>
 
-#  include <iphlpapi.h>
-#  include <windows.h>
 #  include <winsock2.h>
+
+#  include <windows.h>
+#  include <iphlpapi.h>
 #  include <ws2tcpip.h>
 #else
 #  include <arpa/inet.h>
@@ -52,22 +53,20 @@ namespace
 // it has one, else the internal name, which is always present.
 auto adapter_name(const IP_ADAPTER_ADDRESSES* entry) -> std::string
 {
-  const wchar_t* wide =
-      entry->FriendlyName != nullptr && entry->FriendlyName[0] != L'\0'
-      ? entry->FriendlyName
-      : entry->AdapterName;
-  if (wide == nullptr) {
-    return {};
+  const wchar_t* friendly = entry->FriendlyName;
+  if (friendly != nullptr && friendly[0] != L'\0') {
+    const int size = WideCharToMultiByte(
+        CP_UTF8, 0, friendly, -1, nullptr, 0, nullptr, nullptr);
+    if (size > 1) {
+      std::string name(static_cast<std::size_t>(size - 1), '\0');
+      WideCharToMultiByte(
+          CP_UTF8, 0, friendly, -1, name.data(), size, nullptr, nullptr);
+      return name;
+    }
   }
-  const int size =
-      WideCharToMultiByte(CP_UTF8, 0, wide, -1, nullptr, 0, nullptr, nullptr);
-  if (size <= 1) {
-    return {};
-  }
-  std::string name(static_cast<std::size_t>(size - 1), '\0');
-  WideCharToMultiByte(
-      CP_UTF8, 0, wide, -1, name.data(), size, nullptr, nullptr);
-  return name;
+  // AdapterName is a narrow string and is always present.
+  return entry->AdapterName != nullptr ? std::string(entry->AdapterName)
+                                       : std::string{};
 }
 }  // namespace
 
