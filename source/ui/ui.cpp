@@ -965,6 +965,18 @@ void user_interface::set_hosted_session_held(bool held)
 
 void user_interface::start(void (*start_funcptr)())
 {
+  if (input_cfg_ptr != nullptr &&
+      input_cfg_ptr->selected_input_mode == input_mode::ndi && !ndi_enabled) {
+    // A saved project naming NDI on a host without the runtime: no ndisrc can
+    // exist, so the pipeline would carry nothing. Say why and leave the model
+    // and the Start/Stop buttons as they were.
+    set_input_status("NDI unavailable - install the NDI runtime");
+    encode_log_append("NDI input unavailable: the NDI runtime is not installed on "
+                      "this machine. Install it and restart the encoder, or pick "
+                      "another input.\n");
+    return;
+  }
+
   lock();
   btn_start_encode->deactivate();
   btn_stop_encode->activate();
@@ -1326,6 +1338,7 @@ void user_interface::init_ui_callbacks(input_config* input_c,
 
   transport_log_display->buffer(transport_log_buffer);
   encode_log_display->buffer(encode_log_buffer);
+  input_cfg_ptr = input_c;
   flush_pending_logs();
 
   FL_METHOD_CALLBACK_3(choice_input_protocol,

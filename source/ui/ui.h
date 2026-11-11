@@ -190,6 +190,9 @@ private:
   // Whether the startup probe found the NDI runtime. A missing runtime must not
   // cost a monitor thread or a device refresh that can only fail.
   bool ndi_enabled = false;
+  // The input model Start refuses to run when it names NDI and the runtime is
+  // missing; apply_settings restores that model before the operator sees it.
+  input_config* input_cfg_ptr = nullptr;
   void choose_ndi_input(input_config* input_config);
   void choose_input_protocol(input_config* input_config,
                              FuncPtr refresh_ndi_funcptr,
