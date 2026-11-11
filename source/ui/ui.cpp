@@ -330,14 +330,46 @@ void user_interface::layout()
   layout_flex_tree(main_window);
 }
 
-void user_interface::transport_log_append(const std::string& msg) const
+void user_interface::append_log(Fl_Text_Display* display,
+                               std::vector<std::string>& pending,
+                               const std::string& msg) const
 {
   // M1.9: no stream key / token / PSK material ever reaches the log panes.
   const std::string clean = secrets::redact(msg);
+  std::lock_guard<std::mutex> guard(log_mutex);
+  if (!logs_ready || display == nullptr) {
+    if (pending.size() < kMaxPendingLogLines) {
+      pending.push_back(clean);
+    }
+    return;
+  }
   Fl::lock();
-  transport_log_display->insert(clean.c_str());
+  display->insert(clean.c_str());
   Fl::unlock();
   Fl::awake();
+}
+
+void user_interface::flush_pending_logs()
+{
+  std::vector<std::string> transport;
+  std::vector<std::string> encode;
+  {
+    std::lock_guard<std::mutex> guard(log_mutex);
+    transport.swap(pending_transport_log);
+    encode.swap(pending_encode_log);
+    logs_ready = true;
+  }
+  for (const std::string& line : transport) {
+    transport_log_append(line);
+  }
+  for (const std::string& line : encode) {
+    encode_log_append(line);
+  }
+}
+
+void user_interface::transport_log_append(const std::string& msg) const
+{
+  append_log(transport_log_display, pending_transport_log, msg);
 }
 
 void user_interface::set_encode_state(const std::string& text, bool is_failed)
@@ -368,11 +400,7 @@ void user_interface::set_input_status(const std::string& text)
 
 void user_interface::encode_log_append(const std::string& msg) const
 {
-  const std::string clean = secrets::redact(msg);
-  Fl::lock();
-  encode_log_display->insert(clean.c_str());
-  Fl::unlock();
-  Fl::awake();
+  append_log(encode_log_display, pending_encode_log, msg);
 }
 
 void user_interface::init_ui()
@@ -1298,6 +1326,7 @@ void user_interface::init_ui_callbacks(input_config* input_c,
 
   transport_log_display->buffer(transport_log_buffer);
   encode_log_display->buffer(encode_log_buffer);
+  flush_pending_logs();
 
   FL_METHOD_CALLBACK_3(choice_input_protocol,
                        user_interface,

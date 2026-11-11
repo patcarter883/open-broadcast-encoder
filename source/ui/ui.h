@@ -14,6 +14,8 @@
 #include <FL/Fl_Flex.H>
 #include <FL/Fl_Output.H>
 #include <FL/Fl_Text_Buffer.H>
+#include <FL/Fl_Text_Display.H>
+#include <mutex>
 #include <stdint.h>
 
 #include "lib/lib.h"
@@ -165,6 +167,18 @@ public:
 private:
   Fl_Text_Buffer transport_log_buffer;
   Fl_Text_Buffer encode_log_buffer;
+  // Lines logged before init_ui_callbacks binds the buffers are held here and
+  // replayed on flush: FLTK's insert() reads the display's buffer, which is
+  // null until then.
+  static constexpr std::size_t kMaxPendingLogLines = 200;
+  mutable std::mutex log_mutex;
+  mutable bool logs_ready = false;
+  mutable std::vector<std::string> pending_transport_log;
+  mutable std::vector<std::string> pending_encode_log;
+  void append_log(Fl_Text_Display* display,
+                  std::vector<std::string>& pending,
+                  const std::string& msg) const;
+  void flush_pending_logs();
   // The per-peer leg rows (4c): created once, hidden until the sender reports
   // legs. Never resized from the stats thread, so no widget is allocated there.
   std::vector<Fl_Output*> link_peer_rows;

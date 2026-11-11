@@ -1946,6 +1946,10 @@ auto main(int argc, char** argv) -> int
   ctx.ui = &ui;
   ctx.ui->init_ui();
   ctx.ui->set_ndi_available(ndi_available);
+  if (!ndi_available) {
+    ctx.ui->transport_log_append(
+        "NDI runtime not installed; install it from ndi.video to enable NDI input.\n");
+  }
   ctx.ndi = std::make_unique<ndi_input>(ctx.lib.input_cfg, &encode_log);
   if (ndi_available) {
     ctx.ndi->run_device_monitor();
