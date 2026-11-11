@@ -139,6 +139,12 @@ public:
   void request_close();
   void add_ndi_choices(const std::vector<std::string>& choice_names);
   void clear_ndi_choices();
+  // Apply the startup runtime probe to the NDI options group: with no NDI
+  // runtime on this machine the picker and its refresh button are inactive and
+  // the group's status line says where the runtime comes from; with the runtime
+  // present both stay usable and the line is empty. Safe from any thread (FLTK
+  // lock); called once before show().
+  void set_ndi_available(bool available);
   // Capture (MC4) picker callbacks, mirroring the NDI picker. The chooser
   // writes the selected camera's ADDRESS to the model's capture_address (on the
   // FLTK thread, from the menu item's user_data); the browse worker goes
@@ -167,6 +173,9 @@ private:
   // Owns the storage backing the user_data pointers attached to NDI
   // Fl_Choice items so they remain valid for the lifetime of the choice.
   std::vector<std::string> ndi_choice_storage;
+  // Whether the startup probe found the NDI runtime. A missing runtime must not
+  // cost a monitor thread or a device refresh that can only fail.
+  bool ndi_enabled = false;
   void choose_ndi_input(input_config* input_config);
   void choose_input_protocol(input_config* input_config,
                              FuncPtr refresh_ndi_funcptr,
