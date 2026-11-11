@@ -94,6 +94,10 @@ ExternalProject_Add(
     -DFLTK_BUILD_TEST:BOOL=OFF
     -DBUILD_TESTING:BOOL=OFF
     -DOpenGL_GL_PREFERENCE:STRING=LEGACY
+    # Windows has no X11 or Wayland: FLTK's glX probe fails that configure
+    # outright, and this app draws with FLTK widgets only.
+    $<$<BOOL:${WIN32}>:-DFLTK_BACKEND_X11:BOOL=OFF>
+    $<$<BOOL:${WIN32}>:-DFLTK_BACKEND_WAYLAND:BOOL=OFF>
     # Cross-compilation: TestBigEndian can't run target binaries; x86_64 Windows is LE.
     $<$<BOOL:${CMAKE_CROSSCOMPILING}>:-DCMAKE_C_BYTE_ORDER:STRING=LITTLE_ENDIAN>
     $<$<BOOL:${CMAKE_CROSSCOMPILING}>:-DCMAKE_CXX_BYTE_ORDER:STRING=LITTLE_ENDIAN>
