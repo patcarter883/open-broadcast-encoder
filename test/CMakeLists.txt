@@ -372,4 +372,24 @@ target_link_libraries(
 )
 target_compile_features(uplink_settings_test PRIVATE cxx_std_20)
 
+# --- The NDI runtime probe and the options group it gates --------------------
+#
+# ndi_runtime.cpp is compiled directly and linked against GStreamer: the probe
+# is a registry lookup, so the test asserts it against a second, independent
+# lookup rather than against a define. ndi_options.h is header-only, so the
+# widget state is pinned with no window on screen.
+add_executable(ndi_runtime_test
+    source/ndi_runtime_test.cpp
+    ${CMAKE_SOURCE_DIR}/source/ndi_input/ndi_runtime.cpp
+)
+target_include_directories(ndi_runtime_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(ndi_runtime_test PRIVATE cxx_std_20)
+target_link_libraries(
+    ndi_runtime_test PRIVATE
+    PkgConfig::gstreamer
+    Catch2::Catch2WithMain
+)
+
+catch_discover_tests(ndi_runtime_test)
+
 catch_discover_tests(uplink_settings_test)

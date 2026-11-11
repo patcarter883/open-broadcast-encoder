@@ -16,6 +16,8 @@ target_sources(ndi_input_lib ${warning_guard}
   PUBLIC
     ndi_input.h
     ndi_input.cpp
+    ndi_runtime.h
+    ndi_runtime.cpp
 )
 
 target_include_directories(

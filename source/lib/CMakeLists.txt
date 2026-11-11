@@ -18,6 +18,7 @@ target_sources(open-broadcast-encoder_lib
     lib.cpp
     address.h
     address.cpp
+    ndi_options.h
 )
 
 target_include_directories(

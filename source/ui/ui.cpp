@@ -26,6 +26,7 @@
 #include <stdint.h>
 
 #include "FL/fl_callback_macros.H"
+#include "lib/ndi_options.h"
 #include "net/adapters.h"
 
 namespace
@@ -455,7 +456,11 @@ void user_interface::choose_input_protocol(input_config* input_config,
       layout();
       Fl::unlock();
       Fl::awake();
-      refresh_ndi_funcptr();
+      // Without the runtime there is no monitor to refresh; the group's status
+      // line already says why the picker is inactive.
+      if (ndi_enabled) {
+        refresh_ndi_funcptr();
+      }
       break;
     }
 
@@ -537,6 +542,34 @@ void user_interface::clear_ndi_choices()
   ndi_choice_storage.clear();
   Fl::unlock();
   Fl::awake();
+}
+
+void user_interface::set_ndi_available(bool available)
+{
+  const ndi_options_state state = ndi_options_state_for(available);
+  ndi_enabled = state.selectable;
+  lock();
+  if (state.selectable) {
+    choice_ndi_input->activate();
+  } else {
+    choice_ndi_input->deactivate();
+  }
+  if (state.refreshable) {
+    btn_refresh_ndi_devices->activate();
+  } else {
+    btn_refresh_ndi_devices->deactivate();
+  }
+  ndi_state_output->value(std::string(state.status).c_str());
+  // Nothing to say while the runtime is present: the row then holds the refresh
+  // button alone, at the width it has always had.
+  if (state.status.empty()) {
+    ndi_state_output->hide();
+  } else {
+    ndi_state_output->show();
+  }
+  ndi_state_output->redraw();
+  layout();
+  unlock();
 }
 
 void user_interface::choose_ndi_input(input_config* input_config)

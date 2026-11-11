@@ -91,15 +91,22 @@ class ui_widgets {open
                 }
               }
               Fl_Flex ndi_options_group {open
-                xywh {100 252 260 128} align 5 hide gap 12 fixed_size_tuples {2  0 25  1 25 }
+                xywh {100 252 421 62} align 5 hide gap 12 fixed_size_tuples {2  0 25  1 25 }
               } {
                 Fl_Choice choice_ndi_input {
                   label {NDI Input} open
-                  xywh {100 252 260 25} down_box BORDER_BOX align 5
+                  xywh {100 252 421 25} down_box BORDER_BOX align 5
                 } {}
-                Fl_Button btn_refresh_ndi_devices {
-                  label {Refresh Devices}
-                  xywh {100 289 260 25}
+                Fl_Flex ndi_status_row {open
+                  xywh {100 289 421 25} type HORIZONTAL gap 12 fixed_size_tuples {1  0 260 }
+                } {
+                  Fl_Output ndi_state_output {open
+                    xywh {100 289 260 25} align 5 hide
+                  }
+                  Fl_Button btn_refresh_ndi_devices {
+                    label {Refresh Devices}
+                    xywh {372 289 149 25}
+                  }
                 }
               }
               Fl_Flex capture_options_group {open

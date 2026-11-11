@@ -43,6 +43,7 @@
 #include "encode/appsrc_policy.h"
 #include "lib.h"
 #include "ndi_input.h"
+#include "ndi_runtime.h"
 #include "raw_local.h"
 #include "raw_local_port.h"
 #include "settings/settings.h"
@@ -1936,11 +1937,19 @@ auto main(int argc, char** argv) -> int
 #endif
   gst_init(&argc, &argv);
 
+  // One probe at startup, before anything touches the NDI elements. A machine
+  // without the proprietary runtime is a normal install: the app runs, the NDI
+  // options group says what is missing and where to get it.
+  const bool ndi_available = ndi_runtime_available();
+
   user_interface ui;
   ctx.ui = &ui;
   ctx.ui->init_ui();
+  ctx.ui->set_ndi_available(ndi_available);
   ctx.ndi = std::make_unique<ndi_input>(ctx.lib.input_cfg, &encode_log);
-  ctx.ndi->run_device_monitor();
+  if (ndi_available) {
+    ctx.ndi->run_device_monitor();
+  }
   ctx.ui->init_ui_callbacks(
       &(ctx.lib.input_cfg),
       &(ctx.lib.encode_cfg),
