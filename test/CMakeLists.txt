@@ -425,3 +425,17 @@ target_link_libraries(
 )
 
 catch_discover_tests(raw_local_control_test)
+
+# A leg disappearing mid-stream, measured on the sending side. Skipped unless
+# armed from the environment, because the operator takes the interface down from
+# another shell (see the file header).
+add_executable(bond_leg_down_test source/bond_leg_down_test.cpp)
+target_link_libraries(
+    bond_leg_down_test PRIVATE
+    transport_lib
+    open-broadcast-encoder_lib
+    Catch2::Catch2WithMain
+)
+target_compile_features(bond_leg_down_test PRIVATE cxx_std_20)
+
+catch_discover_tests(bond_leg_down_test)

@@ -28,6 +28,7 @@
 #include "FL/fl_callback_macros.H"
 #include "lib/ndi_options.h"
 #include "net/adapters.h"
+#include "version.h"
 
 namespace
 {
@@ -765,7 +766,9 @@ void user_interface::encoder_name_cb(std::string* encoder_name)
   }
   const std::string shown =
       encoder_name->empty() ? default_encoder_name() : *encoder_name;
-  main_window->label(("Open Broadcast Encoder - " + shown).c_str());
+  main_window->label(
+      std::format("Open Broadcast Encoder {} - {}", OBC_VERSION, shown)
+          .c_str());
 }
 
 // ---- Bridge (LAN) control callbacks ---------------------------------------
@@ -1121,7 +1124,9 @@ void user_interface::apply_settings(const input_config& input_c,
   const std::string shown_name =
       encoder_name.empty() ? default_encoder_name() : encoder_name;
   input_encoder_name->value(encoder_name.c_str());
-  main_window->label(("Open Broadcast Encoder - " + shown_name).c_str());
+  main_window->label(
+      std::format("Open Broadcast Encoder {} - {}", OBC_VERSION, shown_name)
+          .c_str());
 
   // ---- Bridge (LAN) ----
   // Written directly rather than through the setters: this runs once on the
