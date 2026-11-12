@@ -23,6 +23,8 @@ target_sources(encode_lib ${warning_guard}
     capture_input.cpp
     raw_format.h
     raw_format.cpp
+    raw_control.h
+    raw_control.cpp
     raw_local.h
     raw_local.cpp
     raw_local_port.h

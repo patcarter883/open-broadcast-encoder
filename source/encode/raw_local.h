@@ -8,11 +8,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <thread>
 
 #include <gst/gst.h>
 
+#include "encode/raw_control.h"
 #include "encode/raw_local_port.h"
 #include "encode/socket_compat.h"
 
@@ -117,6 +119,10 @@ private:
   std::thread reader;
   std::atomic<bool> stop_requested {false};
   std::atomic<obc_socket::handle> listen_fd {obc_socket::invalid_handle};
+  // Tells the OBS plugin to start and stop with this listener. Owned here
+  // because preview and encode are exactly this listener's lifetime, and the
+  // operator must never have to hold OBS's Tools toggle in step with them.
+  std::unique_ptr<raw_control_server> control;
 
   // Shared PTS origin for both streams; see the class comment.
   std::uint64_t base_timestamp {0};

@@ -393,3 +393,35 @@ target_link_libraries(
 catch_discover_tests(ndi_runtime_test)
 
 catch_discover_tests(uplink_settings_test)
+
+# The control channel the encoder opens beside the OBS raw listener: the port
+# pairing both sides derive, and the state a client is told. raw_control.cpp
+# carries no GStreamer types, so this compiles directly and needs no pipeline.
+add_executable(raw_control_test
+    source/raw_control_test.cpp
+    ${CMAKE_SOURCE_DIR}/source/encode/raw_control.cpp
+)
+target_include_directories(raw_control_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(raw_control_test PRIVATE cxx_std_20)
+target_link_libraries(raw_control_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(raw_control_test)
+
+# The handshake through the real reader: the control channel has to appear with
+# the frame listener and tell the plugin to start, then stop it at teardown.
+add_executable(raw_local_control_test
+    source/raw_local_control_test.cpp
+    ${CMAKE_SOURCE_DIR}/source/encode/raw_local.cpp
+    ${CMAKE_SOURCE_DIR}/source/encode/raw_control.cpp
+    ${CMAKE_SOURCE_DIR}/source/encode/raw_format.cpp
+)
+target_include_directories(raw_local_control_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(raw_local_control_test PRIVATE cxx_std_20)
+target_link_libraries(
+    raw_local_control_test PRIVATE
+    PkgConfig::gstreamer
+    PkgConfig::gstreamer-app
+    Catch2::Catch2WithMain
+)
+
+catch_discover_tests(raw_local_control_test)

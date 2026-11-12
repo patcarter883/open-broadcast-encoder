@@ -38,6 +38,20 @@ inline int poll(poll_descriptor* fds, unsigned long count, int timeout_ms)
   return ::WSAPoll(fds, count, timeout_ms);
 }
 
+// A send that never raises SIGPIPE: a dropped client goes into the return
+// value, everywhere, instead of killing the process on one platform.
+inline constexpr int no_signal = 0;
+
+inline void set_send_timeout_ms(handle h, int ms)
+{
+  const DWORD timeout = static_cast<DWORD>(ms);
+  ::setsockopt(h,
+               SOL_SOCKET,
+               SO_SNDTIMEO,
+               reinterpret_cast<const char*>(&timeout),
+               sizeof(timeout));
+}
+
 inline void close_handle(handle h)
 {
   ::closesocket(h);
@@ -64,6 +78,7 @@ inline int last_error()
 #  include <netinet/in.h>
 #  include <poll.h>
 #  include <sys/socket.h>
+#  include <sys/time.h>
 #  include <unistd.h>
 
 namespace obc_socket
@@ -77,6 +92,18 @@ inline void start_up() {}
 inline int poll(poll_descriptor* fds, unsigned long count, int timeout_ms)
 {
   return ::poll(fds, static_cast<nfds_t>(count), timeout_ms);
+}
+
+// A send that never raises SIGPIPE: a dropped client goes into the return
+// value, everywhere, instead of killing the process on one platform.
+inline constexpr int no_signal = MSG_NOSIGNAL;
+
+inline void set_send_timeout_ms(handle h, int ms)
+{
+  timeval timeout {};
+  timeout.tv_sec = ms / 1000;
+  timeout.tv_usec = (ms % 1000) * 1000;
+  ::setsockopt(h, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 }
 
 inline void close_handle(handle h)

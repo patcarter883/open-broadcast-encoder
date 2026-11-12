@@ -601,6 +601,18 @@ void raw_local_input::run()
     return;
   }
 
+  // Preview and encode both consume frames, so "frames should be flowing" is
+  // exactly this listener's lifetime. The plugin is told at both edges, and a
+  // plugin that connects late is told the current state on accept.
+  const std::uint16_t control_port =
+      raw_local::control_port(this->port);
+  if (control_port != 0) {
+    this->control = std::make_unique<raw_control_server>(
+        control_port, [this](const std::string& msg) { this->log(msg); });
+    this->control->start();
+    this->control->set_streaming(true);
+  }
+
   while (!this->stop_requested.load()) {
     const obc_socket::handle fd = this->accept_connection();
     if (fd < 0) {
@@ -624,6 +636,15 @@ void raw_local_input::run()
                     "and {} audio chunks; waiting for it to reconnect\n",
                     this->video_frames,
                     this->audio_chunks));
+  }
+
+  // The plugin stops before the frame listener goes: its output is sending into
+  // this socket, and an explicit stop is what keeps OBS from blasting frames at
+  // a port that is about to disappear.
+  if (this->control) {
+    this->control->set_streaming(false);
+    this->control->stop();
+    this->control.reset();
   }
 
   const obc_socket::handle fd =
