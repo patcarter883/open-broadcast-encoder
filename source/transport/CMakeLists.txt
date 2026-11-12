@@ -18,6 +18,8 @@ target_sources(transport_lib ${warning_guard}
     transport.cpp
     uplink.h
     uplink.cpp
+    librist_log_filter.h
+    librist_log_filter.cpp
 )
 
 target_include_directories(

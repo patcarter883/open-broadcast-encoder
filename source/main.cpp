@@ -50,6 +50,7 @@
 #include "settings/settings.h"
 #include "stats.h"
 #include "transport.h"
+#include "transport/librist_log_filter.h"
 #include "ui.h"
 #include "version.h"
 
@@ -155,7 +156,17 @@ static auto rist_log_cb(void* /*arg*/,
                         const char* msg) -> int
 {
   if (ctx.ui != nullptr && msg != nullptr) {
-    ctx.ui->transport_log_append(msg);
+    // A dead leg makes librist report every packet it cannot send, which would
+    // bury this pane at the moment the operator needs it. The filter folds that
+    // one class of message into a line a second and passes everything else
+    // through untouched.
+    static librist_log_filter filter;
+    const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::steady_clock::now().time_since_epoch())
+                         .count();
+    for (const std::string& line : filter.on_line(msg, now)) {
+      ctx.ui->transport_log_append(line);
+    }
   }
   return 1;
 }

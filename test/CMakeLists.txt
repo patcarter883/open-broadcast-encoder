@@ -439,3 +439,15 @@ target_link_libraries(
 target_compile_features(bond_leg_down_test PRIVATE cxx_std_20)
 
 catch_discover_tests(bond_leg_down_test)
+
+# librist's per-packet send failures, folded into one line a second. Pure string
+# and clock logic, so it is pinned without a socket or a pipeline.
+add_executable(librist_log_filter_test
+    source/librist_log_filter_test.cpp
+    ${CMAKE_SOURCE_DIR}/source/transport/librist_log_filter.cpp
+)
+target_include_directories(librist_log_filter_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(librist_log_filter_test PRIVATE cxx_std_20)
+target_link_libraries(librist_log_filter_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(librist_log_filter_test)
