@@ -5,11 +5,16 @@ include(cmake/prelude.cmake)
 
 project(
     open-broadcast-encoder
-    VERSION 0.1.0
+    VERSION 1.0.0
     DESCRIPTION "Streaming Broadcast Video Encoder"
-    HOMEPAGE_URL "https://example.com/"
+    HOMEPAGE_URL "https://stream.huntervalleyit.net.au/"
     LANGUAGES C CXX
 )
+
+# The product version, in one place: every target in this tree reads it through
+# source/version.h, and the window title, --version and the release artefacts
+# all name the same string.
+add_compile_definitions(OBC_VERSION="${PROJECT_VERSION}")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
