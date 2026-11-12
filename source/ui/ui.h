@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -15,7 +16,6 @@
 #include <FL/Fl_Output.H>
 #include <FL/Fl_Text_Buffer.H>
 #include <FL/Fl_Text_Display.H>
-#include <mutex>
 #include <stdint.h>
 
 #include "lib/lib.h"

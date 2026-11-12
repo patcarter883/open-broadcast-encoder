@@ -18,7 +18,8 @@
 // identity and derives a display aggregate from that set.
 //
 // Two rules this module is deliberately NOT allowed to break:
-//  - It never feeds the ABR. The bitrate decision keeps librist's own per-sample
+//  - It never feeds the ABR. The bitrate decision keeps librist's own
+//  per-sample
 //    quality and its window mean (bitrate_scale.cpp); "worst leg" is a DISPLAY
 //    rule only.
 //  - Row order is by peer_id, so a UI redraw never reorders the legs.
@@ -73,8 +74,8 @@ class registry
 {
 public:
   // Record one peer's sample. A sample with peer_id 0 (an older librist that
-  // does not identify the peer) is still keyed, under id 0, rather than dropped:
-  // one row is the truth for a single-leg session.
+  // does not identify the peer) is still keyed, under id 0, rather than
+  // dropped: one row is the truth for a single-leg session.
   void observe(const sample& s, int64_t now_ms)
   {
     for (entry& e : rows_) {
@@ -104,7 +105,10 @@ public:
                 rows_.end());
   }
 
-  [[nodiscard]] auto peers() const -> const std::vector<entry>& { return rows_; }
+  [[nodiscard]] auto peers() const -> const std::vector<entry>&
+  {
+    return rows_;
+  }
 
   [[nodiscard]] auto total() const -> aggregate
   {
@@ -146,8 +150,8 @@ private:
 };
 
 // One pane line per peer. Fixed field order so a reader can compare legs down
-// the column: label, quality, RTT, bandwidth, packets, retransmits. The label is
-// padded to a common width because the row is rendered in a monospace font.
+// the column: label, quality, RTT, bandwidth, packets, retransmits. The label
+// is padded to a common width because the row is rendered in a monospace font.
 inline auto format_row(const entry& e) -> std::string
 {
   std::string label = e.label;
@@ -155,11 +159,10 @@ inline auto format_row(const entry& e) -> std::string
   if (label.size() < kLabelWidth) {
     label.append(kLabelWidth - label.size(), ' ');
   }
-  return label + "Q " + std::to_string(static_cast<int>(e.quality))
-      + "%   " + std::to_string(e.rtt_ms) + " ms   "
-      + std::to_string(e.bandwidth / 1000) + " Mb   "
-      + std::to_string(e.sent) + " pkt   " + std::to_string(e.retransmitted)
-      + " retx";
+  return label + "Q " + std::to_string(static_cast<int>(e.quality)) + "%   "
+      + std::to_string(e.rtt_ms) + " ms   " + std::to_string(e.bandwidth / 1000)
+      + " Mb   " + std::to_string(e.sent) + " pkt   "
+      + std::to_string(e.retransmitted) + " retx";
 }
 }  // namespace peer_stats
 

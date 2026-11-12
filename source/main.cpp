@@ -1557,7 +1557,8 @@ static void hosted_end_session()
           if (ctx.ui != nullptr) {
             ctx.ui->set_hosted_session_held(false);
             // The allocation's key died with the session: leaving it armed
-            // would key a later Start to an address the portal no longer serves.
+            // would key a later Start to an address the portal no longer
+            // serves.
             ctx.ui->set_session_psk(std::string {}, 0);
             ctx.ui->set_hosted_state("Session ended", false);
           }
@@ -1957,7 +1958,8 @@ auto main(int argc, char** argv) -> int
   ctx.ui->set_ndi_available(ndi_available);
   if (!ndi_available) {
     ctx.ui->transport_log_append(
-        "NDI runtime not installed; install it from ndi.video to enable NDI input.\n");
+        "NDI runtime not installed; install it from ndi.video to enable NDI "
+        "input.\n");
   }
   ctx.ndi = std::make_unique<ndi_input>(ctx.lib.input_cfg, &encode_log);
   if (ndi_available) {
@@ -2031,8 +2033,8 @@ auto main(int argc, char** argv) -> int
         // when the session is direct. A bridged session, or an address the
         // operator edited by hand, must stay clear.
         const std::string target = held->encoder_target.empty()
-                                       ? held->rist_url
-                                       : held->encoder_target;
+            ? held->rist_url
+            : held->encoder_target;
         if (!held->is_bridged() && !target.empty()
             && target == ctx.lib.output_cfg.address)
         {

@@ -10,10 +10,9 @@
 #if defined(_WIN32) || defined(_WIN64)
 #  include <cstring>
 
-#  include <winsock2.h>
-
-#  include <windows.h>
 #  include <iphlpapi.h>
+#  include <windows.h>
+#  include <winsock2.h>
 #  include <ws2tcpip.h>
 #else
 #  include <arpa/inet.h>
@@ -66,7 +65,7 @@ auto adapter_name(const IP_ADAPTER_ADDRESSES* entry) -> std::string
   }
   // AdapterName is a narrow string and is always present.
   return entry->AdapterName != nullptr ? std::string(entry->AdapterName)
-                                       : std::string{};
+                                       : std::string {};
 }
 }  // namespace
 

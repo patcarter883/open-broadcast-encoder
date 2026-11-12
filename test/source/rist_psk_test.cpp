@@ -5,12 +5,13 @@
 //
 // The sender is the PRODUCTION path (transport::setup_rist_sender with the
 // session's key in output_config::psk); the listener is a real libRIST receiver
-// through the same rist-cpp wrapper the shipped receiver uses. The matrix is the
-// one WORKLIST-12 measured on librist 0.2.20:
+// through the same rist-cpp wrapper the shipped receiver uses. The matrix is
+// the one WORKLIST-12 measured on librist 0.2.20:
 //
 //   keyed sender   -> keyed receiver    : the payload arrives, zero loss
 //   keyed sender   -> unkeyed receiver  : nothing arrives (no handshake)
-//   unkeyed sender -> unkeyed receiver  : the payload arrives (today's behaviour)
+//   unkeyed sender -> unkeyed receiver  : the payload arrives (today's
+//   behaviour)
 //
 // A handshake that delivers zero bytes is NOT a pass for the keyed/keyed case,
 // so the assertion is on the delivered byte count, not on a connection state.
@@ -27,14 +28,13 @@
 #include <vector>
 
 #include <arpa/inet.h>
+#include <catch2/catch_test_macros.hpp>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include "lib/lib.h"
 #include "transport/transport.h"
-
-#include <catch2/catch_test_macros.hpp>
 
 namespace
 {
@@ -146,8 +146,8 @@ auto run_case(const std::string& sender_psk,
   // unset validator rejects every peer ("validateConnectionCallback not
   // implemented"), which would make the harness look like an encryption
   // failure. Accept unconditionally, as the shipped receiver does.
-  receiver.validateConnectionCallback =
-      [](std::string /*ip*/, uint16_t /*port*/)
+  receiver.validateConnectionCallback = [](std::string /*ip*/,
+                                           uint16_t /*port*/)
       -> std::shared_ptr<RISTNetReceiver::NetworkConnection>
   { return std::make_shared<RISTNetReceiver::NetworkConnection>(); };
 
@@ -157,8 +157,8 @@ auto run_case(const std::string& sender_psk,
   receiver_settings.mPSK = receiver_psk;
   receiver_settings.mLogSetting->log_cb = &log_cb;
   receiver_settings.mLogSetting->log_cb_arg = &receiver_log;
-  std::vector<std::string> listen_urls {
-      "rist://@127.0.0.1:" + std::to_string(port)};
+  std::vector<std::string> listen_urls {"rist://@127.0.0.1:"
+                                        + std::to_string(port)};
   REQUIRE(receiver.initReceiver(listen_urls, receiver_settings));
 
   // ---- Sender (the code under test) --------------------------------------
@@ -222,7 +222,8 @@ auto run_case(const std::string& sender_psk,
 }
 }  // namespace
 
-TEST_CASE("a keyed direct leg delivers its payload to a keyed receiver", "[psk]")
+TEST_CASE("a keyed direct leg delivers its payload to a keyed receiver",
+          "[psk]")
 {
   const std::string secret = "obr-loopback-psk-4a";
   log_sink sender_log;
@@ -242,7 +243,8 @@ TEST_CASE("a keyed direct leg delivers nothing to an unkeyed receiver", "[psk]")
   const std::string secret = "obr-loopback-psk-4a";
   log_sink sender_log;
   log_sink receiver_log;
-  const case_result r = run_case(secret, std::string {}, sender_log, receiver_log);
+  const case_result r =
+      run_case(secret, std::string {}, sender_log, receiver_log);
 
   INFO("delivered " << r.bytes << " bytes in " << r.packets << " packets");
   REQUIRE(r.bytes == 0);

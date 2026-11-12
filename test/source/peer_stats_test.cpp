@@ -8,9 +8,9 @@
 #include <cstdint>
 #include <string>
 
-#include "stats/peer_table.h"
-
 #include <catch2/catch_test_macros.hpp>
+
+#include "stats/peer_table.h"
 
 namespace
 {
@@ -34,7 +34,8 @@ peer_stats::sample make(uint32_t id,
 }
 }  // namespace
 
-TEST_CASE("two peers keep two rows whatever order they report in", "[peer_stats]")
+TEST_CASE("two peers keep two rows whatever order they report in",
+          "[peer_stats]")
 {
   peer_stats::registry registry;
   registry.observe(make(1, "fibre", 99.0, 20, 5000, 100, 1), 1000);
@@ -103,8 +104,8 @@ TEST_CASE("a peer with no cname still gets a row", "[peer_stats]")
   registry.observe(make(0, "", 100.0, 5, 9000, 10, 0), 1000);
   REQUIRE(registry.peers().size() == 1);
   REQUIRE(registry.peers()[0].label == "peer 0");
-  REQUIRE(peer_stats::format_row(registry.peers()[0])
-              .find("peer 0") != std::string::npos);
+  REQUIRE(peer_stats::format_row(registry.peers()[0]).find("peer 0")
+          != std::string::npos);
 }
 
 TEST_CASE("a formatted row carries every column", "[peer_stats]")

@@ -15,12 +15,13 @@
 #include <string>
 #include <thread>
 
+#include "encode/raw_local.h"
+
 #include <catch2/catch_test_macros.hpp>
 #include <gst/app/gstappsrc.h>
 #include <gst/gst.h>
 
 #include "encode/raw_control.h"
-#include "encode/raw_local.h"
 #include "encode/socket_compat.h"
 
 namespace
@@ -37,8 +38,7 @@ struct pipeline_guard
 
   ~pipeline_guard()
   {
-    if (pipeline != nullptr)
-    {
+    if (pipeline != nullptr) {
       gst_element_set_state(pipeline, GST_STATE_NULL);
       gst_object_unref(pipeline);
     }
@@ -49,8 +49,7 @@ auto connect_control() -> obc_socket::handle
 {
   obc_socket::start_up();
   const obc_socket::handle fd = ::socket(AF_INET, SOCK_STREAM, 0);
-  if (fd == obc_socket::invalid_handle)
-  {
+  if (fd == obc_socket::invalid_handle) {
     return fd;
   }
 
@@ -58,8 +57,7 @@ auto connect_control() -> obc_socket::handle
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = htons(kControlPort);
-  if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0)
-  {
+  if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
     obc_socket::close_handle(fd);
     return obc_socket::invalid_handle;
   }
@@ -70,11 +68,9 @@ auto connect_control() -> obc_socket::handle
 // legitimately lose a race with it.
 auto connect_control_when_ready() -> obc_socket::handle
 {
-  for (int attempt = 0; attempt < 60; ++attempt)
-  {
+  for (int attempt = 0; attempt < 60; ++attempt) {
     const obc_socket::handle fd = connect_control();
-    if (fd != obc_socket::invalid_handle)
-    {
+    if (fd != obc_socket::invalid_handle) {
       return fd;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -87,15 +83,13 @@ auto read_line(obc_socket::handle fd, int timeout_ms) -> std::string
   obc_socket::poll_descriptor pfd {};
   pfd.fd = fd;
   pfd.events = POLLIN;
-  if (obc_socket::poll(&pfd, 1, timeout_ms) <= 0)
-  {
+  if (obc_socket::poll(&pfd, 1, timeout_ms) <= 0) {
     return {};
   }
 
   char buf[64] {};
   const auto got = ::recv(fd, buf, sizeof(buf) - 1, 0);
-  if (got <= 0)
-  {
+  if (got <= 0) {
     return {};
   }
   return std::string {buf, static_cast<std::size_t>(got)};
@@ -128,13 +122,8 @@ TEST_CASE("the raw ingest tells the plugin to start and stop with it",
   { last_status = msg; };
 
   {
-    raw_local_input reader(video,
-                           audio,
-                           kFramePort,
-                           log_line,
-                           {},
-                           status_line,
-                           push_mode::drop);
+    raw_local_input reader(
+        video, audio, kFramePort, log_line, {}, status_line, push_mode::drop);
     reader.start();
 
     const obc_socket::handle client = connect_control_when_ready();

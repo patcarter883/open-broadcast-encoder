@@ -6,9 +6,9 @@
 
 #include "backplane/backplane.h"
 
-#include "lib/lib.h"
-
 #include <nlohmann/json.hpp>
+
+#include "lib/lib.h"
 
 using json = nlohmann::json;
 

@@ -604,8 +604,7 @@ void raw_local_input::run()
   // Preview and encode both consume frames, so "frames should be flowing" is
   // exactly this listener's lifetime. The plugin is told at both edges, and a
   // plugin that connects late is told the current state on accept.
-  const std::uint16_t control_port =
-      raw_local::control_port(this->port);
+  const std::uint16_t control_port = raw_local::control_port(this->port);
   if (control_port != 0) {
     this->control = std::make_unique<raw_control_server>(
         control_port, [this](const std::string& msg) { this->log(msg); });

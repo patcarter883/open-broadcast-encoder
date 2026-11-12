@@ -105,9 +105,10 @@ auto stats::got_rist_statistics(const rist_stats& statistics,
     // 4c: keep the sample per peer identity. librist calls this once per peer
     // per interval, so without the registry the panes render whichever leg
     // reported last and alternate every second on a two-leg bond.
-    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                               std::chrono::steady_clock::now().time_since_epoch())
-                               .count();
+    const int64_t now_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count();
     peer_stats::sample sample;
     sample.peer_id = statistics.stats.sender_peer.peer_id;
     sample.cname = statistics.stats.sender_peer.cname;
@@ -139,8 +140,7 @@ auto stats::got_rist_statistics(const rist_stats& statistics,
   ui.bandwidth_output->value(std::to_string(bandwidth_snapshot / 1000).c_str());
   ui.link_quality_output->value(
       std::to_string(static_cast<int>(peer_totals.quality)).c_str());
-  ui.total_packets_output->value(
-      std::to_string(peer_totals.sent).c_str());
+  ui.total_packets_output->value(std::to_string(peer_totals.sent).c_str());
   ui.retransmitted_packets_output->value(
       std::to_string(peer_totals.retransmitted).c_str());
   ui.rtt_output->value(std::to_string(peer_totals.rtt_ms).c_str());

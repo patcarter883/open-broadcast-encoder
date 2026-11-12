@@ -15,9 +15,10 @@
 #include <string>
 
 #include "encode/raw_control.h"
-#include "encode/socket_compat.h"
 
 #include <catch2/catch_test_macros.hpp>
+
+#include "encode/socket_compat.h"
 
 namespace
 {
@@ -41,8 +42,7 @@ auto connect_local(std::uint16_t port) -> obc_socket::handle
 {
   obc_socket::start_up();
   const obc_socket::handle fd = ::socket(AF_INET, SOCK_STREAM, 0);
-  if (fd == obc_socket::invalid_handle)
-  {
+  if (fd == obc_socket::invalid_handle) {
     return fd;
   }
 
@@ -50,8 +50,7 @@ auto connect_local(std::uint16_t port) -> obc_socket::handle
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = htons(port);
-  if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0)
-  {
+  if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
     obc_socket::close_handle(fd);
     return obc_socket::invalid_handle;
   }
@@ -59,21 +58,20 @@ auto connect_local(std::uint16_t port) -> obc_socket::handle
 }
 
 // One line, or empty when none arrived before the deadline. The server tells a
-// freshly accepted client the current state, so this is what a late plugin sees.
+// freshly accepted client the current state, so this is what a late plugin
+// sees.
 auto read_line(obc_socket::handle fd, int timeout_ms) -> std::string
 {
   obc_socket::poll_descriptor pfd {};
   pfd.fd = fd;
   pfd.events = POLLIN;
-  if (obc_socket::poll(&pfd, 1, timeout_ms) <= 0)
-  {
+  if (obc_socket::poll(&pfd, 1, timeout_ms) <= 0) {
     return {};
   }
 
   char buf[64] {};
   const auto got = ::recv(fd, buf, sizeof(buf) - 1, 0);
-  if (got <= 0)
-  {
+  if (got <= 0) {
     return {};
   }
   return std::string {buf, static_cast<std::size_t>(got)};

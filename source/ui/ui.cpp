@@ -331,8 +331,8 @@ void user_interface::layout()
 }
 
 void user_interface::append_log(Fl_Text_Display* display,
-                               std::vector<std::string>& pending,
-                               const std::string& msg) const
+                                std::vector<std::string>& pending,
+                                const std::string& msg) const
 {
   // M1.9: no stream key / token / PSK material ever reaches the log panes.
   const std::string clean = secrets::redact(msg);
@@ -965,15 +965,17 @@ void user_interface::set_hosted_session_held(bool held)
 
 void user_interface::start(void (*start_funcptr)())
 {
-  if (input_cfg_ptr != nullptr &&
-      input_cfg_ptr->selected_input_mode == input_mode::ndi && !ndi_enabled) {
+  if (input_cfg_ptr != nullptr
+      && input_cfg_ptr->selected_input_mode == input_mode::ndi && !ndi_enabled)
+  {
     // A saved project naming NDI on a host without the runtime: no ndisrc can
     // exist, so the pipeline would carry nothing. Say why and leave the model
     // and the Start/Stop buttons as they were.
     set_input_status("NDI unavailable - install the NDI runtime");
-    encode_log_append("NDI input unavailable: the NDI runtime is not installed on "
-                      "this machine. Install it and restart the encoder, or pick "
-                      "another input.\n");
+    encode_log_append(
+        "NDI input unavailable: the NDI runtime is not installed on "
+        "this machine. Install it and restart the encoder, or pick "
+        "another input.\n");
     return;
   }
 
