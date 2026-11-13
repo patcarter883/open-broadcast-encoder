@@ -170,6 +170,22 @@ struct output_config
   std::vector<uplink::config> uplinks;
 };
 
+// The uplink this host measured with the upload probe, and the destination it
+// was measured against. Read-only data rather than a setting: the operator
+// never types it, and a figure only applies to the destination it was taken
+// over, so a changed address invalidates it.
+struct upload_measurement
+{
+  // 0 means the probe has not produced a figure.
+  int kbps = 0;
+  // The rist:// address the figure was measured against.
+  std::string destination;
+  // ISO-8601 local time the ramp finished, empty when unmeasured.
+  std::string taken_at;
+
+  auto valid() const -> bool { return kbps > 0; }
+};
+
 // ---------------------------------------------------------------------------
 // Bridge control (DT-19, DT-21). The rist2rist bridge on the customer LAN: the
 // encoder finds it, claims it ONCE, then applies the configuration it should
@@ -268,6 +284,10 @@ struct library
   // by the calibration worker, read when a hosted session sizes its transcode
   // target (transcode_rate.h).
   std::atomic<int> bridge_link_budget_kbps {0};
+  // The uplink the probe measured for a direct session. Persisted with the
+  // destination it belongs to; rist_bandwidth_kbps() is what turns it into a
+  // sender ceiling, and only for that destination.
+  upload_measurement upload;
 
   cumulative_stats stats;
 

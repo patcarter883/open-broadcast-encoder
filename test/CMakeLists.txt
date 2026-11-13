@@ -490,3 +490,30 @@ target_compile_features(upload_probe_test PRIVATE cxx_std_20)
 target_link_libraries(upload_probe_test PRIVATE Catch2::Catch2WithMain)
 
 catch_discover_tests(upload_probe_test)
+
+# The probe's adapter seam: the sender-peer counters mapped into the rule, and
+# the ceiling the ramp's sender is built with. Header-only over the probe, so it
+# needs no libRIST -- only the probe's own .cpp for the plan it scales from.
+add_executable(rist_probe_adapter_test
+    source/rist_probe_adapter_test.cpp
+    ${CMAKE_SOURCE_DIR}/source/calibrate/upload_probe.cpp
+)
+target_include_directories(rist_probe_adapter_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(rist_probe_adapter_test PRIVATE cxx_std_20)
+target_link_libraries(rist_probe_adapter_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(rist_probe_adapter_test)
+
+# The measured uplink as it lands on disk: a figure read back only with the
+# destination it describes, and an older file loading with none at all.
+add_executable(upload_settings_test source/upload_settings_test.cpp)
+target_link_libraries(
+    upload_settings_test PRIVATE
+    settings_lib
+    open-broadcast-encoder_lib
+    nlohmann_json::nlohmann_json
+    Catch2::Catch2WithMain
+)
+target_compile_features(upload_settings_test PRIVATE cxx_std_20)
+
+catch_discover_tests(upload_settings_test)

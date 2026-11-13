@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -42,6 +43,7 @@
 #include "bridge/mdns.h"
 #include "bridge/reporting.h"
 #include "bridge/ubus.h"
+#include "calibrate/rist_probe.h"
 #include "control/control.h"
 #include "encode.h"
 #include "encode/appsrc_policy.h"
@@ -165,6 +167,220 @@ static void refresh_ndi_devices()
     ctx.ui->clear_ndi_choices();
     ctx.ui->add_ndi_choices(ctx.ndi->refresh_devices());
   }
+}
+
+// ---- measured uplink -------------------------------------------------------
+// The probe writes ctx.lib.upload from its worker while the UI thread reads it
+// to size a session and to render the pane, so the measurement is copied in and
+// out under one lock.
+static std::mutex upload_mutex;
+
+static auto upload_measurement_now() -> upload_measurement
+{
+  std::lock_guard<std::mutex> guard(upload_mutex);
+  return ctx.lib.upload;
+}
+
+// settings::save() rewrites the whole file, and the probe worker reaches it as
+// well as the UI. Both locks are taken so a save never reads the measurement
+// while a ramp is writing it.
+static std::mutex settings_save_mtx;
+
+static auto save_settings_to_disk() -> bool
+{
+  std::lock_guard<std::mutex> upload_guard(upload_mutex);
+  std::lock_guard<std::mutex> save_guard(settings_save_mtx);
+  return settings::save(ctx.lib);
+}
+
+// "2026-11-13 14:32", local time. The operator reads this to know whether the
+// figure still describes the venue's link.
+static auto local_timestamp_now() -> std::string
+{
+  const std::time_t now = std::time(nullptr);
+  std::tm local {};
+  if (::localtime_r(&now, &local) == nullptr) {
+    return {};
+  }
+  char stamp[32] {};
+  if (std::strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M", &local) == 0) {
+    return {};
+  }
+  return stamp;
+}
+
+// The measured uplink that may size THIS session: a direct session, and only
+// against the address it was measured to. Nullopt means nothing is known and
+// the sender keeps the payload-plus-headroom ceiling.
+static auto sizing_upload_kbps(bool bridged) -> std::optional<int>
+{
+  if (bridged) {
+    return std::nullopt;
+  }
+  const upload_measurement measured = upload_measurement_now();
+  return measured_upload_kbps_for(
+      measured.kbps, measured.destination, ctx.lib.output_cfg.address);
+}
+
+// The read-only pane: the figure with when it was taken, or why there is none
+// for this destination.
+static void refresh_upload_display()
+{
+  if (ctx.ui == nullptr) {
+    return;
+  }
+  const upload_measurement measured = upload_measurement_now();
+  if (!measured.valid()) {
+    ctx.ui->set_upload_calibration("uplink not measured", false);
+    return;
+  }
+  if (measured.destination != ctx.lib.output_cfg.address) {
+    // The figure describes the path to another address; it is kept, and not
+    // used, until a probe covers this one.
+    ctx.ui->set_upload_calibration(
+        "not measured for this address - press Calibrate upload", false);
+    return;
+  }
+  ctx.ui->set_upload_calibration(
+      std::format("{} kbps, measured {}", measured.kbps, measured.taken_at),
+      false);
+}
+
+// The destination field fires on every edit, so this only updates what is
+// shown: a figure for the old address stops being used the moment the address
+// differs, and the operator is told a probe is needed for the new one.
+static void upload_destination_changed()
+{
+  refresh_upload_display();
+}
+
+// One ramp at a time, on its own thread: the ramp drives the transporter, so a
+// Start has to be able to stop and join it before that sender is replaced.
+static std::mutex probe_thread_mtx;
+static std::thread g_probe_thread;
+static std::atomic<bool> g_probe_active {false};
+static std::atomic<bool> g_probe_cancel {false};
+
+// Aborts an in-flight ramp and waits for it. A caller must not hold the FLTK
+// lock: the ramp reports through setters that take it, so a join under the lock
+// would wait on the thread it is joining.
+static void stop_upload_probe()
+{
+  g_probe_cancel.store(true, std::memory_order_release);
+  std::lock_guard<std::mutex> guard(probe_thread_mtx);
+  if (g_probe_thread.joinable()) {
+    g_probe_thread.join();
+  }
+  g_probe_cancel.store(false, std::memory_order_release);
+  g_probe_active.store(false, std::memory_order_release);
+}
+
+// Measure this host's uplink to the configured destination. The ramp runs for
+// seconds and drives the live RIST sender, so it is a worker like every other
+// control action -- and the sender is rebuilt on that worker, never on the UI
+// thread.
+static void calibrate_upload()
+{
+  if (ctx.ui == nullptr) {
+    return;
+  }
+  if (ctx.lib.is_running.load(std::memory_order_acquire)) {
+    // The button is disabled while streaming; a queued press must not slip past
+    // the rule and rebuild the sender under a live stream.
+    ctx.ui->set_upload_calibration(
+        "stop the stream before measuring the uplink", true);
+    return;
+  }
+  const std::string destination = ctx.lib.output_cfg.address;
+  const int encode_kbps =
+      ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
+  if (destination.empty()) {
+    ctx.ui->set_upload_calibration("set a RIST address first", true);
+    return;
+  }
+  if (encode_kbps <= 0) {
+    ctx.ui->set_upload_calibration("set an encode bitrate first", true);
+    return;
+  }
+  if (g_probe_active.load(std::memory_order_acquire)) {
+    ctx.ui->set_upload_calibration("already measuring", false);
+    return;
+  }
+  // A finished ramp still holds a joinable handle; reclaim it before starting
+  // the next one.
+  stop_upload_probe();
+  if (ctx.transporter == nullptr) {
+    ctx.transporter = std::make_unique<transport>();
+  }
+  ctx.ui->set_upload_calibration("measuring - the ramp runs for a few seconds",
+                                 false);
+  transport_log("Uplink probe: ramping the sender to " + destination
+                + " from the " + std::to_string(encode_kbps)
+                + " kbps encode rate.\n");
+  g_probe_active.store(true, std::memory_order_release);
+  std::lock_guard<std::mutex> guard(probe_thread_mtx);
+  g_probe_thread = std::thread(
+      [destination, encode_kbps]
+      {
+        // Cleared on every way out, including an aborted ramp.
+        struct active_guard
+        {
+          ~active_guard()
+          {
+            g_probe_active.store(false, std::memory_order_release);
+          }
+        };
+        [[maybe_unused]] active_guard guard;
+
+        // initSender builds a fresh context, so any sender left from a previous
+        // Start is destroyed first. Both rist_destroy() and initSender() block
+        // on their own threads: this one is a worker, not the UI thread.
+        output_config probe_cfg = ctx.lib.output_cfg;
+        probe_cfg.bandwidth = calibrate::probe_bandwidth_kbps(encode_kbps);
+        ctx.transporter->destroy_sender();
+        if (!ctx.transporter->setup_rist_sender(probe_cfg)) {
+          transport_log("Uplink probe: the sender would not build for "
+                        + destination + ". See the transport log.\n");
+          ctx.ui->set_upload_calibration(
+              "probe refused - see the transport log", true);
+          return;
+        }
+        const upload_probe::hooks hooks {
+            .keep_running =
+                []
+            {
+              return !g_probe_cancel.load(std::memory_order_acquire)
+                  && !ctx.lib.is_running.load(std::memory_order_acquire);
+            },
+        };
+        const upload_probe::outcome outcome =
+            calibrate::run_probe(*ctx.transporter, encode_kbps, hooks);
+        // The probe's sender is not the session's: it is torn down here, before
+        // Start builds the one the stream uses.
+        ctx.transporter->destroy_sender();
+
+        if (outcome.ok) {
+          const upload_measurement measured {
+              outcome.upload_kbps, destination, local_timestamp_now()};
+          {
+            std::lock_guard<std::mutex> guard(upload_mutex);
+            ctx.lib.upload = measured;
+          }
+          // Saved straight away: the operator may calibrate and then quit.
+          save_settings_to_disk();
+          const std::string text = calibrate::format_outcome(outcome);
+          transport_log("Uplink probe: " + text + " to " + destination + ", at "
+                        + measured.taken_at + ".\n");
+          ctx.ui->set_upload_calibration(std::format("{} kbps, measured {}",
+                                                     outcome.upload_kbps,
+                                                     measured.taken_at),
+                                         false);
+          return;
+        }
+        const std::string text = calibrate::format_outcome(outcome);
+        transport_log("Uplink probe: " + text + " (to " + destination + ").\n");
+        ctx.ui->set_upload_calibration(text, true);
+      });
 }
 
 static auto rist_log_cb(void* /*arg*/,
@@ -344,6 +560,10 @@ static void rist_oob_cb(const uint8_t* data, size_t size)
 }
 
 static bool run_transport();
+static bool current_session_is_bridged();
+// States, before the stream starts, that the measured uplink cannot carry the
+// encode rate. Defined beside current_session_is_bridged().
+static void warn_upload_below_payload();
 static void ensure_hosted_watchdog();
 static void stop_hosted_watchdog();
 
@@ -375,6 +595,9 @@ void encode_state_apply(void* p)
   // the plugin's pre-start guard -- and this is the operator-facing half of the
   // same rule, so the answer arrives before the press rather than after it.
   ctx.ui->set_bridge_calibrate_enabled(post->calibrate_enabled);
+  // The upload probe is a pre-start action for the same reason, and writes test
+  // traffic at the session's own destination: off while a stream is up.
+  ctx.ui->set_upload_calibrate_enabled(post->calibrate_enabled);
 }
 }  // namespace
 
@@ -1096,7 +1319,9 @@ static void repost_stored_start(const hosted_session& session)
       session,
       ctx.lib.encode_cfg.selected_codec,
       geometry,
-      rist_bandwidth_kbps(payload_kbps, std::nullopt, session.is_bridged()),
+      rist_bandwidth_kbps(payload_kbps,
+                          sizing_upload_kbps(session.is_bridged()),
+                          session.is_bridged()),
       payload_kbps,
       ctx.lib.bridge_link_budget_kbps.load(std::memory_order_relaxed));
 }
@@ -1354,6 +1579,11 @@ static void hosted_allocate()
           if (!outcome.bridged) {
             ctx.ui->set_session_psk(outcome.session.psk,
                                     outcome.session.psk_aes);
+            // The allocation just moved the destination, so the stored figure
+            // describes a link this session no longer uses. The encoder is idle
+            // before Start, which is the one moment the ramp may run.
+            refresh_upload_display();
+            calibrate_upload();
           }
           // The session is now on disk and billable, so End Session becomes the
           // only way to close it (Stop Encode holds it).
@@ -1378,7 +1608,9 @@ static void hosted_allocate()
             outcome.session,
             source_codec,
             geometry,
-            rist_bandwidth_kbps(encode_kbps, std::nullopt, outcome.bridged),
+            rist_bandwidth_kbps(encode_kbps,
+                                sizing_upload_kbps(outcome.bridged),
+                                outcome.bridged),
             encode_kbps,
             link_budget_kbps);
         // E4: from now on the session is held, so a node that restarts must get
@@ -1398,6 +1630,16 @@ static void hosted_allocate()
 
 static void run()
 {
+  // A ramp still running owns the transporter: abort and join it before
+  // run_loop() builds the sender the stream uses. ui.cpp's start() released the
+  // event loop's lock for this call, so the join cannot deadlock against the
+  // probe's own UI updates.
+  stop_upload_probe();
+
+  // Stated before anything opens: a measurement under the encode rate is not a
+  // reason to refuse the Start, but the operator is never left to discover it.
+  warn_upload_below_payload();
+
   // No join while the UI thread holds the FLTK lock: the preview worker reports
   // through encode_log(), which takes Fl::lock(), so a join taken under the
   // lock deadlocks the application. ui.cpp's start() releases the event loop's
@@ -1421,6 +1663,8 @@ static void run()
 static void stop()
 {
   ctx.lib.is_running = false;
+  // A ramp still in flight cannot outlive the stream it gave way to.
+  stop_upload_probe();
   // Silence the sender's callbacks (fast atomic stores — safe on the UI
   // thread). We do NOT destroy the transporter here: rist_destroy() must not
   // run while the UI thread holds Fl::lock() and joins run_loop (librist's
@@ -1712,6 +1956,46 @@ static bool current_session_is_bridged()
   return held.has_value() && held->is_bridged();
 }
 
+// A direct leg measured below the encode rate has no retransmission budget:
+// libRIST spends the ceiling on the payload and stops retransmitting, so loss
+// reaches the receiver uncorrected and the stats read "Retransmitted 0" like a
+// clean link. That silent degradation is what this states before Start.
+static void warn_upload_below_payload()
+{
+  if (current_session_is_bridged()) {
+    return;
+  }
+  const upload_measurement measured = upload_measurement_now();
+  if (!measured.valid() || measured.destination != ctx.lib.output_cfg.address) {
+    return;
+  }
+  const int payload_kbps =
+      ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
+  if (measured.kbps >= payload_kbps) {
+    return;
+  }
+  const std::string text = std::format(
+      "\n*** The measured uplink ({} kbps) is below the {} kbps encode rate. "
+      "***\n"
+      "*** This stream cannot be carried reliably at that rate: the link has "
+      "no room for retransmission, so packet loss will reach the receiver "
+      "uncorrected. ***\n"
+      "*** Lower the encode bitrate to {} kbps or less, or measure the uplink "
+      "again. ***\n",
+      measured.kbps,
+      payload_kbps,
+      measured.kbps);
+  transport_log(text);
+  encode_log(text);
+  if (ctx.ui != nullptr) {
+    ctx.ui->set_upload_calibration(
+        std::format("{} kbps - below the {} kbps encode rate",
+                    measured.kbps,
+                    payload_kbps),
+        true);
+  }
+}
+
 static bool run_transport()
 {
   // The address is the operator's single statement of the destination and the
@@ -1745,8 +2029,10 @@ static bool run_transport()
   // with no retransmission budget.
   const int payload_kbps =
       ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
+  const std::optional<int> measured_upload =
+      sizing_upload_kbps(current_session_is_bridged());
   ctx.lib.output_cfg.bandwidth = rist_bandwidth_kbps(
-      payload_kbps, std::nullopt, current_session_is_bridged());
+      payload_kbps, measured_upload, current_session_is_bridged());
   // State the figure on screen: the ceiling is otherwise invisible, and the
   // only 6000 in the chain is the saved default, so an operator seeing RIST
   // complain about it has no way to tell which side set it.
@@ -1756,6 +2042,11 @@ static bool run_transport()
                   ctx.lib.output_cfg.bandwidth,
                   payload_kbps,
                   ctx.lib.output_cfg.bandwidth - payload_kbps));
+  if (measured_upload.has_value()) {
+    transport_log(std::format(
+        "[rist] the ceiling follows the measured uplink of {} kbps\n",
+        *measured_upload));
+  }
   ctx.transporter = std::make_unique<transport>();
   ctx.transporter->set_log_callback(&rist_log_cb);
   ctx.transporter->set_statistics_callback(&rist_stats_cb);
@@ -1779,7 +2070,7 @@ static bool run_transport()
 // last-used values are remembered without an explicit click.
 static void save_settings()
 {
-  if (settings::save(ctx.lib)) {
+  if (save_settings_to_disk()) {
     transport_log("Settings saved to " + settings::settings_file_path().string()
                   + "\n");
   } else {
@@ -2126,10 +2417,11 @@ auto main(int argc, char** argv) -> int
       &run,
       &stop,
       &refresh_ndi_devices,
-      // No address-change callback: the RIST sender is
-      // (re)created at Start on the run_loop thread, never
-      // from the FLTK UI thread. The field just edits cfg.
-      nullptr,
+      // The address field only updates output_cfg here: the RIST sender is
+      // (re)built at Start on the run_loop thread, never from the UI thread.
+      // What changes on an edit is which measurement applies, so the probe
+      // pane states that the stored figure was taken elsewhere.
+      &upload_destination_changed,
       &preview_input,
       &scaling_source_changed,
       &save_settings,
@@ -2137,6 +2429,7 @@ auto main(int argc, char** argv) -> int
       &bridge_claim,
       &bridge_apply,
       &bridge_calibrate,
+      &calibrate_upload,
       &hosted_allocate,
       &hosted_sign_in,
       &hosted_sign_out,
@@ -2162,6 +2455,8 @@ auto main(int argc, char** argv) -> int
                            ctx.lib.bridge_ctl,
                            ctx.lib.hosted);
   }
+  // The pane states the restored figure, or that it describes another address.
+  refresh_upload_display();
 
   // A previous run can leave an allocation behind (a crash, a service restart,
   // a kill that beat the release). E3: do NOT hand it back -- reattach to it.
@@ -2222,8 +2517,12 @@ auto main(int argc, char** argv) -> int
   // re-takes the lock per-mutation (transport_log_append etc.) as needed.
   ctx.ui->unlock();
 
+  // A ramp in flight writes the measurement (and the settings file) from its
+  // own thread: joined before the save below and before the ui goes away.
+  stop_upload_probe();
+
   // Auto-save on clean exit so the latest values persist without a click.
-  settings::save(ctx.lib);
+  save_settings_to_disk();
 
   // Tear down in reverse dependency order before the FLTK ui goes out of
   // scope. Each component drains its own threads / callbacks.
@@ -2244,9 +2543,11 @@ auto main(int argc, char** argv) -> int
   // transport_log()/ctx.ui once the FLTK ui is destroyed below.
   g_shutdown.store(true, std::memory_order_release);
   stop_hosted_watchdog();
-  // Join any in-flight receiver-control POSTs before the FLTK ui is destroyed
-  // so a worker cannot call transport_log()/ctx.ui after teardown.
+  // Join any in-flight receiver-control POSTs and the upload probe before the
+  // FLTK ui is destroyed so a worker cannot call transport_log()/ctx.ui after
+  // teardown.
   join_control_threads();
+  stop_upload_probe();
   ctx.ui = nullptr;
 
   return result;

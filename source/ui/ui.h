@@ -57,6 +57,7 @@ public:
                          FuncPtr bridge_claim_funcptr,
                          FuncPtr bridge_apply_funcptr,
                          FuncPtr bridge_calibrate_funcptr,
+                         FuncPtr calibrate_upload_funcptr,
                          FuncPtr hosted_allocate_funcptr,
                          FuncPtr hosted_signin_funcptr,
                          FuncPtr hosted_signout_funcptr,
@@ -91,6 +92,12 @@ public:
   // The calibration report, and the DT-28 enable rule. Both take the FLTK lock.
   void set_bridge_calibration(const std::string& text, bool is_error);
   void set_bridge_calibrate_enabled(bool on);
+  // The measured uplink, read-only: the figure and when it was taken. Takes the
+  // FLTK lock, so a probe worker can report its result directly.
+  void set_upload_calibration(const std::string& text, bool is_error);
+  // The probe writes test traffic to the destination, so it is unavailable
+  // while a stream is up -- the same rule the bridge's calibrate follows.
+  void set_upload_calibrate_enabled(bool on);
   // Hosted sign-in state. Same rules: takes the FLTK lock, so it is safe from a
   // background thread, and the token is never rendered -- only set/not-set.
   void set_hosted_state(const std::string& text, bool is_error);
@@ -219,6 +226,9 @@ private:
   void bridge_claim(FuncPtr claim_funcptr);
   void bridge_apply(FuncPtr apply_funcptr);
   void bridge_calibrate(FuncPtr calibrate_funcptr);
+  // The upload probe lives in main.cpp for the same reason: it drives the RIST
+  // sender and runs for seconds at a time.
+  void calibrate_upload(FuncPtr calibrate_funcptr);
   // The model the bridge widgets edit. Held as a pointer (set once in
   // init_ui_callbacks) so the thread-safe setters can update the model as well
   // as the widgets -- a worker thread must never write the config directly.

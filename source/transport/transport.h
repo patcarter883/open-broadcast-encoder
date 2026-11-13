@@ -53,6 +53,29 @@ public:
   void set_statistics_callback(void (*statistics_callback)(const rist_stats&));
   void set_oob_callback(void (*oob_callback)(const uint8_t*, size_t));
 
+  // The counters libRIST reports for the sender's peer, as the upload probe
+  // consumes them: one sample per stats interval, cached as it arrives.
+  struct peer_snapshot
+  {
+    // Grows by one per sample, so a reader can tell a fresh interval from the
+    // one it already used.
+    std::uint64_t epoch = 0;
+    std::uint64_t sent = 0;
+    std::uint64_t received = 0;
+    std::uint64_t retransmitted = 0;
+    std::uint32_t rtt_ms = 0;
+    double quality = 0.0;
+  };
+
+  // The newest sender-peer sample, cached from the libRIST stats thread.
+  // Returns false when the sender has reported nothing yet.
+  auto latest_peer_snapshot(peer_snapshot& out) -> bool;
+
+  // Destroys the live sender. rist_destroy() joins libRIST's sender thread, so
+  // this belongs on a worker thread with no FLTK lock held -- the probe calls
+  // it before and after its ramp.
+  void destroy_sender();
+
 private:
   std::unique_ptr<RISTNetSender> rist_sender =
       std::make_unique<RISTNetSender>();
@@ -62,6 +85,12 @@ private:
   std::atomic<void (*)(const rist_stats&)> statistics_callback {nullptr};
   std::atomic<void (*)(const uint8_t*, size_t)> oob_callback {nullptr};
   void stats_cb_func(const rist_stats& stats);
+
+  // The newest sender-peer sample and its epoch, written from the libRIST stats
+  // thread and read from whichever thread runs the probe.
+  std::mutex peer_snapshot_mtx;
+  peer_snapshot peer_latest;
+  bool peer_latest_valid = false;
 
   // One leg of the bond, in the order the uplinks resolved. peer_id is what
   // librist reports in that peer's stats -- the only thing that attributes a

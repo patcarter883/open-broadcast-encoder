@@ -207,7 +207,7 @@ class ui_widgets {open
           }
           Fl_Flex {} {
             label Output open
-            xywh {25 25 762 205} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {4  0 25  1 25  2 25  3 25 }
+            xywh {25 25 762 205} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {5  0 25  1 25  2 25  3 25  4 25 }
           } {
             Fl_Input input_rist_address {
               label {RIST Address}
@@ -247,6 +247,19 @@ class ui_widgets {open
               label {Encode State}
               xywh {476 76 421 25} align 5
               code0 {encode_state_output->value("Idle");}
+            }
+            Fl_Flex flx_upload_probe {open
+              xywh {476 101 421 25} type HORIZONTAL gap 12 fixed_size_tuples {1  0 130 }
+            } {
+              Fl_Button btn_calibrate_upload {
+                label {Calibrate upload}
+                tooltip {Measure this host's uplink to the RIST address by ramping the encoder's own sender over it. Sends test traffic to that address for a few seconds; unavailable while streaming.}
+                xywh {476 101 130 25}
+              }
+              Fl_Output upload_probe_output {
+                xywh {618 101 279 25}
+                code0 {upload_probe_output->value("uplink not measured");}
+              }
             }
           }
         Fl_Flex flx_hosted {open
