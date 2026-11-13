@@ -162,8 +162,9 @@ target_link_libraries(open-broadcast-encoder_exe PRIVATE
 
 if(WIN32)
   # OpenSSL's certificate-store loader calls the Win32 crypto API directly, so
-  # the executable needs crypt32; MinGW does not pull it in implicitly.
-  target_link_libraries(open-broadcast-encoder_exe PRIVATE crypt32 ws2_32)
+  # the executable needs crypt32; GetAdaptersAddresses lives in iphlpapi. MinGW
+  # pulls in neither implicitly.
+  target_link_libraries(open-broadcast-encoder_exe PRIVATE crypt32 ws2_32 iphlpapi)
 endif()
 
 
