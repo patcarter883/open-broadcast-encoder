@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
+#include <string>
 
 #include "net/adapters.h"
 
@@ -23,6 +25,7 @@
 #  include <net/if.h>
 #  include <netinet/in.h>
 #  include <sys/socket.h>
+#  include <unistd.h>
 #endif
 
 namespace net
@@ -154,6 +157,82 @@ auto list() -> std::vector<adapter>
   return adapters;
 }
 
+#endif
+
+#if defined(_WIN32) || defined(_WIN64)
+auto link_speed_mbps(const std::string& name) -> int
+{
+  // GetAdaptersAddresses carries no link speed; reading it needs the adapter's
+  // own driver data. Reported as unknown so callers fall back rather than size
+  // from a guess.
+  (void)name;
+  return 0;
+}
+#else
+auto link_speed_mbps(const std::string& name) -> int
+{
+  if (name.empty()) {
+    return 0;
+  }
+  std::ifstream speed("/sys/class/net/" + name + "/speed");
+  int mbps = 0;
+  // A down link reads -1, and a virtual device may read nothing at all.
+  if (!(speed >> mbps) || mbps <= 0) {
+    return 0;
+  }
+  return mbps;
+}
+#endif
+
+#if defined(_WIN32) || defined(_WIN64)
+auto link_speed_for_destination(const std::string& host, int port) -> int
+{
+  (void)host;
+  (void)port;
+  return 0;
+}
+#else
+auto link_speed_for_destination(const std::string& host, int port) -> int
+{
+  if (host.empty() || port <= 0) {
+    return 0;
+  }
+  // A connected UDP socket resolves the route without sending a packet, and
+  // getsockname() then names the local address the kernel chose.
+  const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    return 0;
+  }
+  sockaddr_in target {};
+  target.sin_family = AF_INET;
+  target.sin_port = htons(static_cast<std::uint16_t>(port));
+  if (::inet_pton(AF_INET, host.c_str(), &target.sin_addr) != 1
+      || ::connect(fd, reinterpret_cast<sockaddr*>(&target), sizeof(target))
+             != 0) {
+    ::close(fd);
+    return 0;
+  }
+  sockaddr_in local {};
+  socklen_t local_len = sizeof(local);
+  if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local), &local_len) != 0) {
+    ::close(fd);
+    return 0;
+  }
+  ::close(fd);
+
+  // Name the device that owns that address, then read its speed.
+  std::vector<adapter> adapters = list();
+  char text[INET_ADDRSTRLEN] = {};
+  if (::inet_ntop(AF_INET, &local.sin_addr, text, sizeof(text)) == nullptr) {
+    return 0;
+  }
+  for (const adapter& a : adapters) {
+    if (a.ipv4 == text) {
+      return link_speed_mbps(a.name);
+    }
+  }
+  return 0;
+}
 #endif
 
 auto miface_for(const std::vector<adapter>& adapters,

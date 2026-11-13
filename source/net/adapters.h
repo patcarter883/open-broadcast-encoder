@@ -50,6 +50,16 @@ auto list() -> std::vector<adapter>;
 // True when `text` is a dotted-quad IPv4 literal.
 auto is_ipv4_literal(const std::string& text) -> bool;
 
+// The interface's link speed in Mbit/s, or 0 when it is unknown, down, or the
+// platform does not report it. Callers must treat 0 as "no figure", never as a
+// speed: /sys reports -1 for a down link.
+auto link_speed_mbps(const std::string& name) -> int;
+
+// The link speed of the interface the host would leave by to reach `host`, or 0
+// when that cannot be resolved. Resolved from the route rather than guessed: a
+// bridged session is sized from the interface that actually carries it.
+auto link_speed_for_destination(const std::string& host, int port) -> int;
+
 // The `miface` value for an uplink that names `name`, under `style`:
 //  - an adapter name resolves to the device name (device_name) or to that
 //    adapter's IPv4 address (source_address);

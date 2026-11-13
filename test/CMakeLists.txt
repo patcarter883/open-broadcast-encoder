@@ -497,6 +497,7 @@ catch_discover_tests(upload_probe_test)
 add_executable(rist_probe_adapter_test
     source/rist_probe_adapter_test.cpp
     ${CMAKE_SOURCE_DIR}/source/calibrate/upload_probe.cpp
+    ${CMAKE_SOURCE_DIR}/source/lib/rist_bandwidth.cpp
 )
 target_include_directories(rist_probe_adapter_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
 target_compile_features(rist_probe_adapter_test PRIVATE cxx_std_20)

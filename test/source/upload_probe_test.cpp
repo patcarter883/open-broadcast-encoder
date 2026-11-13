@@ -122,61 +122,55 @@ auto instant() -> upload_probe::hooks
 
 }  // namespace
 
-TEST_CASE("the ramp is a multiple of the encode rate under the time cap",
+TEST_CASE("the ramp asks only for the rate the stream needs",
           "[calibrate][upload]")
 {
   const auto steps = upload_probe::plan(encode_config(30000));
-  REQUIRE(steps.size() == 4);
-  REQUIRE(steps[0].percent == 50);
-  REQUIRE(steps[0].kbps == 15000);
-  REQUIRE(steps[1].kbps == 22500);
-  REQUIRE(steps[2].kbps == 30000);
-  REQUIRE(steps[3].kbps == 37500);
-  REQUIRE(4 * upload_probe::k_step_ms <= upload_probe::k_max_total_ms);
+  REQUIRE(steps.size() == 1);
+  REQUIRE(steps[0].percent == 100);
+  REQUIRE(steps[0].kbps == 30000);
 
-  // A dwell long enough to overrun the cap is truncated, not allowed past it.
+  // A dwell long enough to overrun the cap still plans the one step it has.
   upload_probe::config slow = encode_config(30000);
   slow.step_ms = 2000;
-  REQUIRE(upload_probe::plan(slow).size() == 2);
+  REQUIRE(upload_probe::plan(slow).size() == 1);
 
-  // No encode rate, no ramp: there is nothing to scale.
+  // No rate, no ramp: there is nothing to scale.
   REQUIRE(upload_probe::plan(encode_config(0)).empty());
 }
 
-TEST_CASE("a clean ramp returns the top step", "[calibrate][upload]")
+TEST_CASE("a clean ramp returns the rate it probed", "[calibrate][upload]")
 {
   counting_ramp ramp;
-  scripted_stats stats(
-      {clean_sample(), clean_sample(), clean_sample(), clean_sample()});
+  scripted_stats stats({clean_sample()});
   const auto out =
       upload_probe::run(encode_config(30000), stats, ramp, instant());
 
   REQUIRE(out.ok);
   REQUIRE_FALSE(out.aborted);
-  REQUIRE(out.upload_kbps == 37500);
-  REQUIRE(out.percent == 125);
+  REQUIRE(out.upload_kbps == 30000);
+  REQUIRE(out.percent == 100);
   REQUIRE_FALSE(out.by_quality);
-  REQUIRE(out.steps.size() == 4);
-  REQUIRE(ramp.starts.size() == 4);
-  REQUIRE(ramp.stops == 4);
+  REQUIRE(out.steps.size() == 1);
+  REQUIRE(ramp.starts.size() == 1);
+  REQUIRE(ramp.stops == 1);
   REQUIRE_FALSE(ramp.running);
 }
 
-TEST_CASE("loss appearing at the 100% step returns the 75% step",
+TEST_CASE("loss at the rate the stream needs yields no figure",
           "[calibrate][upload]")
 {
   counting_ramp ramp;
-  scripted_stats stats({clean_sample(), clean_sample(), broken_sample()});
+  scripted_stats stats({broken_sample()});
   const auto out =
       upload_probe::run(encode_config(30000), stats, ramp, instant());
 
-  REQUIRE(out.ok);
-  REQUIRE(out.upload_kbps == 22500);
-  REQUIRE(out.percent == 75);
-  REQUIRE(out.steps.size() == 3);
-  // The ramp stops at the failing step; the 125% step is never sent.
-  REQUIRE(ramp.starts.size() == 3);
-  REQUIRE(stats.reads() == 3);
+  // The leg could not carry the stream: there is no headroom to report.
+  REQUIRE_FALSE(out.ok);
+  REQUIRE(out.upload_kbps == 0);
+  REQUIRE(out.steps.size() == 1);
+  REQUIRE(ramp.starts.size() == 1);
+  REQUIRE(stats.reads() == 1);
   REQUIRE(out.steps.back().seen == verdict::lossy);
 }
 
@@ -203,20 +197,18 @@ TEST_CASE("with no loss counters the quality rule decides",
           "[calibrate][upload]")
 {
   counting_ramp ramp;
-  scripted_stats stats({quality_sample(100.0),
-                        quality_sample(99.2),
-                        quality_sample(98.4),
-                        quality_sample(90.0)});
+  scripted_stats stats({quality_sample(100.0)});
   const auto out =
       upload_probe::run(encode_config(30000), stats, ramp, instant());
 
   REQUIRE(out.ok);
   REQUIRE(out.by_quality);
-  REQUIRE(out.percent == 75);
-  REQUIRE(out.upload_kbps == 22500);
+  REQUIRE(out.percent == 100);
+  REQUIRE(out.upload_kbps == 30000);
 
-  REQUIRE(upload_probe::judge(quality_sample(99.0)) == verdict::clean);
-  REQUIRE(upload_probe::judge(quality_sample(98.9)) == verdict::lossy);
+  // Recovery is all-or-nothing: anything under a full 100 is losing frames.
+  REQUIRE(upload_probe::judge(quality_sample(100.0)) == verdict::clean);
+  REQUIRE(upload_probe::judge(quality_sample(99.9)) == verdict::lossy);
 }
 
 TEST_CASE("a leg that reports nothing yields no figure", "[calibrate][upload]")
@@ -239,8 +231,9 @@ TEST_CASE("a probe aborted mid-ramp returns no result", "[calibrate][upload]")
   scripted_stats stats(
       {clean_sample(), clean_sample(), clean_sample(), clean_sample()});
   upload_probe::hooks h = instant();
-  // The stream starts after the second step: the probe must give way.
-  h.keep_running = [&stats]() { return stats.reads() < 2; };
+  // A stream starting mid-probe: the second poll says give way.
+  int polls = 0;
+  h.keep_running = [&polls]() { return ++polls <= 1; };
 
   const auto out = upload_probe::run(encode_config(30000), stats, ramp, h);
 
@@ -248,22 +241,17 @@ TEST_CASE("a probe aborted mid-ramp returns no result", "[calibrate][upload]")
   REQUIRE_FALSE(out.ok);
   REQUIRE(out.upload_kbps == 0);
   REQUIRE(out.percent == 0);
-  // Two steps completed, and the leg was released rather than left running.
-  REQUIRE(out.steps.size() == 2);
-  REQUIRE(ramp.stops == 2);
+  // Aborted inside the step, and the leg was released rather than left running.
+  REQUIRE(out.steps.empty());
+  REQUIRE(ramp.stops == 1);
   REQUIRE_FALSE(ramp.running);
 }
 
 TEST_CASE("a short ramp is never selected as a figure", "[calibrate][upload]")
 {
   const auto steps = upload_probe::plan(encode_config(30000));
-  std::vector<step_result> partial(2);
-  partial[0].kbps = 15000;
-  partial[0].percent = 50;
-  partial[0].seen = verdict::clean;
-  partial[1].kbps = 22500;
-  partial[1].percent = 75;
-  partial[1].seen = verdict::clean;
+  // A run that stopped short while still clean was aborted, not measured.
+  std::vector<step_result> partial;
 
   const auto out = upload_probe::select(steps, partial);
   REQUIRE(out.aborted);
@@ -287,11 +275,12 @@ TEST_CASE("the real dwell polls for an abort instead of sleeping it out",
 
   upload_probe::config fast = encode_config(30000);
   fast.step_ms = 5;
+  fast.settle_ms = 5;
   // No sleep hook: the runner's own slice loop is exercised.
   const auto out = upload_probe::run(fast, stats, ramp, upload_probe::hooks {});
 
   REQUIRE(out.ok);
-  REQUIRE(out.upload_kbps == 37500);
-  REQUIRE(out.steps.size() == 4);
+  REQUIRE(out.upload_kbps == 30000);
+  REQUIRE(out.steps.size() == 1);
   REQUIRE_FALSE(ramp.running);
 }

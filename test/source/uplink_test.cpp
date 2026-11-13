@@ -61,7 +61,7 @@ TEST_CASE("the single implicit leg builds the URL this encoder has always sent",
 
   // No miface, no weight: byte for byte the pre-bonding URL, so an operator
   // with no uplink configured cannot notice the bonding code exists.
-  CHECK(uplink::build_url(bare_output(), legs.front())
+  CHECK(uplink::build_url(bare_output(), legs.front(), bare_output().bandwidth)
         == "rist://203.0.113.5:5000?bandwidth=20000&buffer-min=1000"
            "&buffer-max=5000&rtt-min=40&rtt-max=500&reorder-buffer=30"
            "&timing-mode=0");
@@ -80,22 +80,26 @@ TEST_CASE("each uplink's URL pins its device and states its weight", "[uplink]")
   REQUIRE(error.empty());
   REQUIRE(legs.size() == 2);
 
-  CHECK(uplink::build_url(oc, legs[0])
+  CHECK(uplink::build_url(oc, legs[0], oc.bandwidth)
         == "rist://203.0.113.5:5000?bandwidth=20000&buffer-min=1000"
            "&buffer-max=5000&rtt-min=40&rtt-max=500&reorder-buffer=30"
            "&timing-mode=0&miface=wwan0&weight=90");
-  CHECK(uplink::build_url(oc, legs[1]).ends_with("&miface=wwan1&weight=10"));
+  CHECK(uplink::build_url(oc, legs[1], oc.bandwidth)
+            .ends_with("&miface=wwan1&weight=10"));
 
   // Both legs are peers on the SAME session port: bonded links are one flow.
-  CHECK(uplink::build_url(oc, legs[0]).rfind("rist://203.0.113.5:5000?", 0)
+  CHECK(uplink::build_url(oc, legs[0], oc.bandwidth)
+            .rfind("rist://203.0.113.5:5000?", 0)
         == 0);
-  CHECK(uplink::build_url(oc, legs[1]).rfind("rist://203.0.113.5:5000?", 0)
+  CHECK(uplink::build_url(oc, legs[1], oc.bandwidth)
+            .rfind("rist://203.0.113.5:5000?", 0)
         == 0);
 
   // The host's LISTEN form never reaches a sender URL.
   output_config listen_form = oc;
   listen_form.host = "@203.0.113.5";
-  CHECK(uplink::build_url(listen_form, legs[0]).rfind("rist://203.0.113.5:", 0)
+  CHECK(uplink::build_url(listen_form, legs[0], listen_form.bandwidth)
+            .rfind("rist://203.0.113.5:", 0)
         == 0);
 }
 

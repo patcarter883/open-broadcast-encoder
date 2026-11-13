@@ -78,11 +78,12 @@ TEST_CASE("no sample at all is unknown, not clean", "[calibrate][probe]")
 TEST_CASE("the probe sender declares the top of the ramp plus headroom",
           "[calibrate][probe]")
 {
-  // 4000 kbps ramps to 5000 (125%); the ramp then tests the link, not the
-  // sender's own ceiling, only if the declared ceiling clears the top step.
-  const int top_step = 4000 * 125 / 100;
-  CHECK(calibrate::probe_bandwidth_kbps(4000) == top_step + 5000);
-  CHECK(calibrate::probe_bandwidth_kbps(4000) > top_step);
+  // The probe asks for the rate the stream needs on the wire plus the
+  // retransmission allowance, and declares that same figure as its ceiling.
+  const int stream = rist_stream_rate_kbps(4000);
+  const int wanted = stream + rist_direct_headroom_kbps(stream);
+  CHECK(calibrate::probe_bandwidth_kbps(4000) == wanted);
+  CHECK(calibrate::probe_bandwidth_kbps(4000) > stream);
   // Nothing to encode is still a number the sender can be built with.
   CHECK(calibrate::probe_bandwidth_kbps(0) >= 100);
 }

@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <atomic>
+
+#include "lib/rist_bandwidth.h"
 #include <cstdint>
 #include <format>
 #include <string>
@@ -60,14 +62,15 @@ inline auto peer_sample_from(const sender_counters& counters)
 // link rather than libRIST's own ceiling.
 inline auto probe_bandwidth_kbps(int encode_kbps) -> int
 {
-  const upload_probe::config cfg {.encode_kbps = encode_kbps};
-  int top = std::max(encode_kbps, 0);
+  const int required = rist_stream_rate_kbps(encode_kbps);
+  const upload_probe::config cfg {.encode_kbps = required};
+  int top = std::max(required, 0);
   for (const upload_probe::step_plan& step : upload_probe::plan(cfg)) {
     top = std::max(top, step.kbps);
   }
   // transport::setup_rist_sender clamps anything under 100, and a probe of a
   // link below 100 kbps has nothing to say.
-  return std::max(top + rist_direct_headroom_kbps, 100);
+  return std::max(top + rist_direct_headroom_kbps(top), 100);
 }
 
 // What the operator is shown after a ramp.

@@ -68,7 +68,9 @@ public:
 // ---- the ramp -------------------------------------------------------------
 
 // Percent of the encode bitrate for each step, in ascending order.
-inline constexpr int k_step_percent[] = {50, 75, 100, 125};
+// The stream is the target: the leg is only asked to carry what the encoder
+// will send, since nothing here shapes traffic.
+inline constexpr int k_step_percent[] = {100};
 
 // Dwell per step. Four steps at this figure total the 5 s cap below.
 inline constexpr int k_step_ms = 1250;
@@ -77,14 +79,22 @@ inline constexpr int k_step_ms = 1250;
 // truncated rather than allowed to overrun.
 inline constexpr int k_max_total_ms = 5000;
 
+// Settling before a step is judged.
+inline constexpr int k_settle_ms = 1000;
+
 // A step is clean on the quality rule at or above this figure.
-inline constexpr double k_quality_floor = 99.0;
+// Recovery is all-or-nothing for a live stream: a leg that delivers 99% is
+// losing frames, so only a full 100 after settling counts as carried.
+inline constexpr double k_quality_floor = 100.0;
 
 struct config
 {
-  // The encoder's configured encode rate. The ramp is a multiple of it, so this
-  // must be set; zero plans nothing.
+  // The rate the stream needs on the wire: video plus audio plus headers plus
+  // retransmission. Zero plans nothing.
   int encode_kbps = 0;
+  // Discarded before a step is judged, so the counters reflect the step and not
+  // the one before it.
+  int settle_ms = k_settle_ms;
   int step_ms = k_step_ms;
   int max_total_ms = k_max_total_ms;
 };

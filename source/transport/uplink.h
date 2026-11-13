@@ -65,5 +65,6 @@ auto resolve(const std::vector<config>& uplinks,
 
 // One leg's RIST URL: the destination, the recovery parameters, and (for a
 // configured leg) the `miface` and `weight` parameters that pin and balance it.
-auto build_url(const output_config& output_c, const leg& leg) -> std::string;
+auto build_url(const output_config& output_c, const leg& leg,
+               int bandwidth_kbps) -> std::string;
 }  // namespace uplink

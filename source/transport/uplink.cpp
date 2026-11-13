@@ -49,7 +49,8 @@ auto resolve(const std::vector<config>& uplinks,
   return legs;
 }
 
-auto build_url(const output_config& output_c, const leg& leg) -> std::string
+auto build_url(const output_config& output_c, const leg& leg,
+               int bandwidth_kbps) -> std::string
 {
   // timing-mode=0 (SOURCE) -- the librist default, and what the known-good
   // reference uses. NOT 1 (ARRIVAL), NOT 2 (RTC):
@@ -78,7 +79,7 @@ auto build_url(const output_config& output_c, const leg& leg) -> std::string
       "reorder-buffer={}&timing-mode=0",
       output_host,
       output_c.port,
-      output_c.bandwidth,
+      bandwidth_kbps,
       output_c.buffer_min,
       output_c.buffer_max,
       output_c.rtt_min,

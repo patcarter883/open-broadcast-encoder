@@ -121,7 +121,7 @@ TEST_CASE("two uplinks really bind two different interfaces", "[bond][live]")
 
   std::vector<std::tuple<std::string, int>> urls;
   for (const uplink::leg& leg : legs) {
-    urls.emplace_back(uplink::build_url(oc, leg),
+    urls.emplace_back(uplink::build_url(oc, leg, oc.bandwidth),
                       static_cast<int>(leg.weight.value_or(0)));
   }
   INFO("leg 1 URL: " << std::get<0>(urls[0]));

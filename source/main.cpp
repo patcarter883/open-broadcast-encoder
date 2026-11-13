@@ -561,6 +561,10 @@ static void rist_oob_cb(const uint8_t* data, size_t size)
 
 static bool run_transport();
 static bool current_session_is_bridged();
+// The link speed of the interface a bridged session leaves by, or 0 when the
+// route to the destination does not name one. Defined beside
+// current_session_is_bridged().
+static int bridged_interface_mbps();
 // States, before the stream starts, that the measured uplink cannot carry the
 // encode rate. Defined beside current_session_is_bridged().
 static void warn_upload_below_payload();
@@ -1319,9 +1323,11 @@ static void repost_stored_start(const hosted_session& session)
       session,
       ctx.lib.encode_cfg.selected_codec,
       geometry,
-      rist_bandwidth_kbps(payload_kbps,
-                          sizing_upload_kbps(session.is_bridged()),
-                          session.is_bridged()),
+      rist_bandwidth_kbps(
+          payload_kbps,
+          sizing_upload_kbps(session.is_bridged()),
+          session.is_bridged(),
+          session.is_bridged() ? bridged_interface_mbps() : 0),
       payload_kbps,
       ctx.lib.bridge_link_budget_kbps.load(std::memory_order_relaxed));
 }
@@ -1608,9 +1614,11 @@ static void hosted_allocate()
             outcome.session,
             source_codec,
             geometry,
-            rist_bandwidth_kbps(encode_kbps,
-                                sizing_upload_kbps(outcome.bridged),
-                                outcome.bridged),
+            rist_bandwidth_kbps(
+                encode_kbps,
+                sizing_upload_kbps(outcome.bridged),
+                outcome.bridged,
+                outcome.bridged ? bridged_interface_mbps() : 0),
             encode_kbps,
             link_budget_kbps);
         // E4: from now on the session is held, so a node that restarts must get
@@ -1956,6 +1964,15 @@ static bool current_session_is_bridged()
   return held.has_value() && held->is_bridged();
 }
 
+// A bridged session is sized from the LAN interface that reaches the bridge, so
+// the ceiling follows the link rather than the stream. 0 leaves the flat
+// ceiling in place when the route does not resolve.
+static int bridged_interface_mbps()
+{
+  return net::link_speed_for_destination(ctx.lib.output_cfg.host,
+                                         ctx.lib.output_cfg.port);
+}
+
 // A direct leg measured below the encode rate has no retransmission budget:
 // libRIST spends the ceiling on the payload and stops retransmitting, so loss
 // reaches the receiver uncorrected and the stats read "Retransmitted 0" like a
@@ -2032,7 +2049,10 @@ static bool run_transport()
   const std::optional<int> measured_upload =
       sizing_upload_kbps(current_session_is_bridged());
   ctx.lib.output_cfg.bandwidth = rist_bandwidth_kbps(
-      payload_kbps, measured_upload, current_session_is_bridged());
+      payload_kbps,
+      measured_upload,
+      current_session_is_bridged(),
+      current_session_is_bridged() ? bridged_interface_mbps() : 0);
   // State the figure on screen: the ceiling is otherwise invisible, and the
   // only 6000 in the chain is the saved default, so an operator seeing RIST
   // complain about it has no way to tell which side set it.
@@ -2042,7 +2062,11 @@ static bool run_transport()
                   ctx.lib.output_cfg.bandwidth,
                   payload_kbps,
                   ctx.lib.output_cfg.bandwidth - payload_kbps));
-  if (measured_upload.has_value()) {
+  // Only when the measurement set the ceiling. Below the stream rate the
+  // payload floor overrides it, and naming the measurement there misreports
+  // what produced the figure.
+  if (measured_upload.has_value()
+      && *measured_upload == ctx.lib.output_cfg.bandwidth) {
     transport_log(std::format(
         "[rist] the ceiling follows the measured uplink of {} kbps\n",
         *measured_upload));

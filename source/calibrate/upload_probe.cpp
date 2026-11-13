@@ -104,24 +104,28 @@ auto run(const config& cfg,
   const auto keep_running = [&h]()
   { return !h.keep_running || h.keep_running(); };
   const int step_ms = std::max(cfg.step_ms, 0);
+  const int settle_ms = std::max(cfg.settle_ms, 0);
 
-  const auto dwell = [&h, &keep_running, step_ms]() -> bool
+  const auto wait_ms = [&h, &keep_running](int total_ms) -> bool
   {
     if (h.sleep_ms) {
-      h.sleep_ms(step_ms);
+      h.sleep_ms(total_ms);
       return keep_running();
     }
     int waited = 0;
-    while (waited < step_ms) {
+    while (waited < total_ms) {
       if (!keep_running()) {
         return false;
       }
-      const int slice = std::min(k_poll_slice_ms, step_ms - waited);
+      const int slice = std::min(k_poll_slice_ms, total_ms - waited);
       std::this_thread::sleep_for(std::chrono::milliseconds(slice));
       waited += slice;
     }
     return keep_running();
   };
+
+  const auto dwell = [&wait_ms, settle_ms, step_ms]() -> bool
+  { return wait_ms(settle_ms) && wait_ms(step_ms); };
 
   bool aborted = false;
   for (const step_plan& step : planned) {

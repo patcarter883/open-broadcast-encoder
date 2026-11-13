@@ -10,6 +10,7 @@
 #include "transport/transport.h"
 
 #include "RISTNet.h"
+#include "lib/rist_bandwidth.h"
 #include "net/adapters.h"
 
 using std::string;
@@ -152,11 +153,23 @@ auto transport::setup_rist_sender(output_config& output_c) -> bool
                     resolved.front());
   }
 
+  // A weighted leg carries only its share of the rotation; a weight-0 leg
+  // duplicates the whole stream. Each leg is capped for what it actually
+  // carries, so a storm on one leg cannot spend another's allowance.
+  int total_weight = 0;
+  for (const uplink::leg& leg : resolved) {
+    total_weight += std::max(static_cast<int>(leg.weight.value_or(0)), 0);
+  }
+
   interface_list_sender.reserve(resolved.size());
   for (std::size_t i = 0; i < resolved.size(); ++i) {
     const uplink::leg& leg = resolved[i];
     interface_list_sender.emplace_back(
-        uplink::build_url(output_c, leg),
+        uplink::build_url(output_c,
+                          leg,
+                          rist_leg_cap_kbps(output_c.bandwidth,
+                                            leg.weight.value_or(0),
+                                            total_weight)),
         static_cast<int>(leg.weight.value_or(0)));
     // librist states the bind it makes ("Binding socket to <device>"); this
     // line states what was asked of it, per leg, so a leg that fell back to the
