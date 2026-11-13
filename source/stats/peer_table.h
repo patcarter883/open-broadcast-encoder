@@ -32,6 +32,7 @@ struct sample
   double quality = 0.0;
   uint32_t rtt_ms = 0;
   uint64_t bandwidth = 0;
+  uint64_t retry_bandwidth = 0;
   uint64_t sent = 0;
   uint64_t retransmitted = 0;
 };
@@ -43,6 +44,7 @@ struct entry
   double quality = 0.0;
   uint32_t rtt_ms = 0;
   uint64_t bandwidth = 0;
+  uint64_t retry_bandwidth = 0;
   uint64_t sent = 0;
   uint64_t retransmitted = 0;
   int64_t seen_ms = 0;
@@ -57,6 +59,7 @@ struct aggregate
   double quality = 0.0;
   uint32_t rtt_ms = 0;
   uint64_t bandwidth = 0;
+  uint64_t retry_bandwidth = 0;
   uint64_t sent = 0;
   uint64_t retransmitted = 0;
 };
@@ -123,6 +126,7 @@ public:
         a.rtt_ms = std::max(a.rtt_ms, e.rtt_ms);
       }
       a.bandwidth += e.bandwidth;
+      a.retry_bandwidth += e.retry_bandwidth;
       a.sent += e.sent;
       a.retransmitted += e.retransmitted;
       ++a.peers;
@@ -141,6 +145,7 @@ private:
     e.quality = s.quality;
     e.rtt_ms = s.rtt_ms;
     e.bandwidth = s.bandwidth;
+    e.retry_bandwidth = s.retry_bandwidth;
     e.sent = s.sent;
     e.retransmitted = s.retransmitted;
     e.seen_ms = now_ms;

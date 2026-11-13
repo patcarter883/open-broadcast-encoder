@@ -115,6 +115,7 @@ auto stats::got_rist_statistics(const rist_stats& statistics,
     sample.quality = statistics.stats.sender_peer.quality;
     sample.rtt_ms = statistics.stats.sender_peer.rtt;
     sample.bandwidth = statistics.stats.sender_peer.bandwidth;
+    sample.retry_bandwidth = statistics.stats.sender_peer.retry_bandwidth;
     sample.sent = statistics.stats.sender_peer.sent;
     sample.retransmitted = statistics.stats.sender_peer.retransmitted;
     stats->peers.observe(sample, now_ms);
