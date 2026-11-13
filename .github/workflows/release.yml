@@ -406,6 +406,24 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # The website links /releases/latest/download/<name> so the download URL
+      # survives a version bump. A release is immutable, so the only way to keep
+      # a stable name is to carry the same bytes twice: once versioned (the
+      # archive a support thread quotes) and once stable (what the site serves).
+      # The checksum is recomputed because the line names the file.
+      - name: Add stable download names
+        run: |
+          set -euxo pipefail
+          cd dist
+          api="$(ls -1 ./*.AppImage | head -n1)"
+          win="$(ls -1 ./*-win64.zip | head -n1)"
+          cp "${api}" open-broadcast-encoder-linux-x86_64.AppImage
+          cp "${win}" open-broadcast-encoder-windows-x64.zip
+          sha256sum open-broadcast-encoder-linux-x86_64.AppImage \
+            > open-broadcast-encoder-linux-x86_64.AppImage.sha256
+          sha256sum open-broadcast-encoder-windows-x64.zip \
+            > open-broadcast-encoder-windows-x64.zip.sha256
+
       - name: List assets
         run: ls -l dist
 
@@ -416,6 +434,9 @@ jobs:
           name: ${{ github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: true
+          # Globs, so the stable names added above ride along with the versioned
+          # ones — `*.AppImage` matches both, and every upload has a sibling
+          # `.sha256`.
           files: |
             dist/*.AppImage
             dist/*.AppImage.sha256
