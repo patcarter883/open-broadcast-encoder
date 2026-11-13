@@ -465,3 +465,16 @@ target_compile_features(librist_log_filter_test PRIVATE cxx_std_20)
 target_link_libraries(librist_log_filter_test PRIVATE Catch2::Catch2WithMain)
 
 catch_discover_tests(librist_log_filter_test)
+
+# The direct-mode upload probe: the payload driver and the peer statistics are
+# both injected, so the selection rule is pinned with no libRIST, no GStreamer
+# and no socket.
+add_executable(upload_probe_test
+    source/upload_probe_test.cpp
+    ${CMAKE_SOURCE_DIR}/source/calibrate/upload_probe.cpp
+)
+target_include_directories(upload_probe_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(upload_probe_test PRIVATE cxx_std_20)
+target_link_libraries(upload_probe_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(upload_probe_test)
