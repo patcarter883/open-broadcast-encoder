@@ -459,8 +459,14 @@ jobs:
           # Globs, so the stable names added above ride along with the versioned
           # ones — `*.AppImage` matches both, and every upload has a sibling
           # `.sha256`.
+          # Both the versioned name (…-1.0.0-win64.zip) and the stable one
+          # (…-windows-x64.zip) have to match, and they do not share a suffix:
+          # the first release shipped with only `*-win64.zip` here and the
+          # stable Windows asset silently never uploaded while Linux worked.
           files: |
             dist/*.AppImage
             dist/*.AppImage.sha256
             dist/*-win64.zip
             dist/*-win64.zip.sha256
+            dist/*-x64.zip
+            dist/*-x64.zip.sha256
