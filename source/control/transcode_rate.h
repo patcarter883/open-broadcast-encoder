@@ -21,7 +21,7 @@
 //                     the last successful calibration. Zero when no link has
 //                     been measured since this launch.
 //   ceiling_kbps      the bandwidth the RIST leg declares and sizes its
-//                     recovery ring from (lib.h's rist_bandwidth_ceiling_kbps).
+//                     recovery ring from (lib/rist_bandwidth.h).
 //                     libRIST spends it on retransmissions as well as the
 //                     payload, so it is never fully available to a target.
 //

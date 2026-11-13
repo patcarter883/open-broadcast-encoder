@@ -80,6 +80,18 @@ target_link_libraries(transcode_rate_test PRIVATE Catch2::Catch2WithMain)
 
 catch_discover_tests(transcode_rate_test)
 
+# The RIST sender's declared bandwidth: the figure decides whether ARQ is funded
+# at all, so a direct session's ceiling is pinned without libRIST.
+add_executable(rist_bandwidth_test
+    source/rist_bandwidth_test.cpp
+    ${CMAKE_SOURCE_DIR}/source/lib/rist_bandwidth.cpp
+)
+target_include_directories(rist_bandwidth_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(rist_bandwidth_test PRIVATE cxx_std_20)
+target_link_libraries(rist_bandwidth_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(rist_bandwidth_test)
+
 add_executable(backplane_test source/backplane_test.cpp)
 target_link_libraries(
     backplane_test PRIVATE

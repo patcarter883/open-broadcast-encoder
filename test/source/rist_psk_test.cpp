@@ -166,7 +166,7 @@ auto run_case(const std::string& sender_psk,
   out.host = "127.0.0.1";
   out.port = port;
   out.streams = 1;
-  out.bandwidth = rist_bandwidth_ceiling_kbps;
+  out.bandwidth = rist_bridged_ceiling_kbps;
   out.psk = sender_psk;
   out.psk_aes = sender_psk.empty() ? 0 : 128;
 
