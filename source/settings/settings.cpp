@@ -316,6 +316,12 @@ bool save(const library& lib)
       // One object per uplink, always written: an empty array is the single
       // default-route leg, which is what the encoder sends without a bond.
       {"uplinks", uplinks_json(out.uplinks)},
+      // What the upload probe measured, with the destination it describes. Not
+      // an operator setting: it is read back to size the sender and to warn
+      // before Start, and it applies only to the address recorded beside it.
+      {"direct_upload_kbps", lib.upload.kbps},
+      {"direct_upload_destination", lib.upload.destination},
+      {"direct_upload_measured_at", lib.upload.taken_at},
   };
 
   const bridge_control_config& bc = lib.bridge_ctl;
@@ -450,6 +456,18 @@ bool load(library& lib)
     get_to(j, "bandwidth", out.bandwidth);
     if (auto u = j.find("uplinks"); u != j.end() && u->is_array()) {
       out.uplinks = uplinks_from_json(*u);
+    }
+    // Absent in a file written before the probe existed: the fields keep their
+    // defaults, which is "never measured".
+    int measured_kbps = 0;
+    get_to(j, "direct_upload_kbps", measured_kbps);
+    lib.upload.kbps = std::max(measured_kbps, 0);
+    get_to(j, "direct_upload_destination", lib.upload.destination);
+    get_to(j, "direct_upload_measured_at", lib.upload.taken_at);
+    if (lib.upload.kbps == 0) {
+      // A figure without its record of when and where it was taken cannot be
+      // trusted to describe this session, so it is not carried at all.
+      lib.upload = upload_measurement {};
     }
   }
 

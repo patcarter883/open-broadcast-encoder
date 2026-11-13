@@ -8,6 +8,7 @@
 #pragma once
 
 #include <optional>
+#include <string>
 
 // Bridged session: the encoder reaches the bridge over Ethernet and the WAN
 // budget belongs to the bridge's own leg, derived there from the shaper. The
@@ -26,3 +27,11 @@ inline constexpr int rist_direct_headroom_kbps = 5000;
 auto rist_bandwidth_kbps(int payload_kbps,
                          std::optional<int> measured_upload_kbps,
                          bool bridged) -> int;
+
+// The figure to size a direct sender from. A measurement describes the path to
+// one destination, so it applies only while the session sends there: a stored
+// figure for another address is not evidence about this one and yields nothing.
+auto measured_upload_kbps_for(int measured_kbps,
+                              const std::string& measured_destination,
+                              const std::string& destination)
+    -> std::optional<int>;

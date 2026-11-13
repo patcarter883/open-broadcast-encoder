@@ -861,6 +861,41 @@ void user_interface::set_bridge_calibrate_enabled(bool on)
   Fl::awake();
 }
 
+void user_interface::calibrate_upload(FuncPtr calibrate_funcptr)
+{
+  calibrate_funcptr();
+}
+
+void user_interface::set_upload_calibration(const std::string& text,
+                                            bool is_error)
+{
+  lock();
+  if (upload_probe_output != nullptr) {
+    upload_probe_output->value(text.c_str());
+    upload_probe_output->textcolor(is_error ? FL_RED : FL_BLACK);
+    upload_probe_output->redraw();
+  }
+  unlock();
+  Fl::awake();
+}
+
+void user_interface::set_upload_calibrate_enabled(bool on)
+{
+  lock();
+  if (btn_calibrate_upload != nullptr) {
+    // The probe writes test traffic to the destination, so it is a PRE-START
+    // action like the bridge's calibrate: off while a stream is up.
+    if (on) {
+      btn_calibrate_upload->activate();
+    } else {
+      btn_calibrate_upload->deactivate();
+    }
+    btn_calibrate_upload->redraw();
+  }
+  unlock();
+  Fl::awake();
+}
+
 // ---- Hosted (portal) control callbacks -------------------------------------
 
 void user_interface::hosted_url_cb(hosted_config* hosted_config)
@@ -1335,6 +1370,7 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                                        FuncPtr bridge_claim_funcptr,
                                        FuncPtr bridge_apply_funcptr,
                                        FuncPtr bridge_calibrate_funcptr,
+                                       FuncPtr calibrate_upload_funcptr,
                                        FuncPtr hosted_allocate_funcptr,
                                        FuncPtr hosted_signin_funcptr,
                                        FuncPtr hosted_signout_funcptr,
@@ -1562,6 +1598,12 @@ void user_interface::init_ui_callbacks(input_config* input_c,
                        bridge_calibrate,
                        FuncPtr,
                        bridge_calibrate_funcptr);
+  FL_METHOD_CALLBACK_1(btn_calibrate_upload,
+                       user_interface,
+                       this,
+                       calibrate_upload,
+                       FuncPtr,
+                       calibrate_upload_funcptr);
   FL_METHOD_CALLBACK_1(btn_bridge_apply,
                        user_interface,
                        this,

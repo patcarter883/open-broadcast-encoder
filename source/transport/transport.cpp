@@ -54,6 +54,17 @@ void transport::set_oob_callback(void (*oob_callback_func)(const uint8_t*,
 
 void transport::stats_cb_func(const rist_stats& stats)
 {
+  if (stats.stats_type == RIST_STATS_SENDER_PEER) {
+    const rist_stats_sender_peer& sample = stats.stats.sender_peer;
+    std::lock_guard<std::mutex> guard(peer_snapshot_mtx);
+    peer_latest.epoch += 1;
+    peer_latest.sent = sample.sent;
+    peer_latest.received = sample.received;
+    peer_latest.retransmitted = sample.retransmitted;
+    peer_latest.rtt_ms = sample.rtt;
+    peer_latest.quality = sample.quality;
+    peer_latest_valid = true;
+  }
   // The bond is steered from the same samples the panes render, before the
   // owner's callback sees them.
   estimate_weights(stats);
@@ -61,6 +72,30 @@ void transport::stats_cb_func(const rist_stats& stats)
   if (cb != nullptr) {
     cb(stats);
   }
+}
+
+auto transport::latest_peer_snapshot(peer_snapshot& out) -> bool
+{
+  std::lock_guard<std::mutex> guard(peer_snapshot_mtx);
+  if (!peer_latest_valid) {
+    return false;
+  }
+  out = peer_latest;
+  return true;
+}
+
+void transport::destroy_sender()
+{
+  // The owner's callback may take the FLTK lock, and destroySender() joins the
+  // thread that dispatches it: clear it first so the join cannot wait on a
+  // callback that is itself waiting for the UI thread.
+  this->statistics_callback = nullptr;
+  this->oob_callback = nullptr;
+  this->rist_sender->closeAllClientConnections();
+  this->rist_sender->destroySender();
+  std::lock_guard<std::mutex> guard(peer_snapshot_mtx);
+  peer_latest = peer_snapshot {};
+  peer_latest_valid = false;
 }
 
 void transport::oob_cb_func(

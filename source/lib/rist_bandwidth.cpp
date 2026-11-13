@@ -2,6 +2,8 @@
 // Copyright (C) 2026 Pat Carter
 
 #include <algorithm>
+#include <optional>
+#include <string>
 
 #include "lib/rist_bandwidth.h"
 
@@ -18,4 +20,17 @@ auto rist_bandwidth_kbps(int payload_kbps,
   const int ceiling =
       measured ? std::min(*measured_upload_kbps, wanted) : wanted;
   return std::max(ceiling, payload_kbps);
+}
+
+auto measured_upload_kbps_for(int measured_kbps,
+                              const std::string& measured_destination,
+                              const std::string& destination)
+    -> std::optional<int>
+{
+  if (measured_kbps <= 0 || measured_destination.empty()
+      || measured_destination != destination)
+  {
+    return std::nullopt;
+  }
+  return measured_kbps;
 }

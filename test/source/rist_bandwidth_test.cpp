@@ -38,6 +38,28 @@ TEST_CASE("a measurement below the payload never cuts the payload",
   CHECK(rist_bandwidth_kbps(30000, std::optional<int> {1000}, false) == 30000);
 }
 
+TEST_CASE("a measurement sizes the sender only for its own destination",
+          "[rist][bandwidth]")
+{
+  const std::string destination = "rist://198.51.100.9:5100";
+  const auto applied = measured_upload_kbps_for(7400, destination, destination);
+  REQUIRE(applied.has_value());
+  CHECK(*applied == 7400);
+
+  // A figure taken over the path to another address says nothing about this
+  // one, so it must not size anything.
+  CHECK_FALSE(
+      measured_upload_kbps_for(7400, destination, "rist://203.0.113.4:6000")
+          .has_value());
+  // Nor does a figure with no record of where it came from, or none at all.
+  CHECK_FALSE(
+      measured_upload_kbps_for(7400, std::string {}, destination).has_value());
+  CHECK_FALSE(
+      measured_upload_kbps_for(0, destination, destination).has_value());
+  CHECK_FALSE(
+      measured_upload_kbps_for(-1, destination, destination).has_value());
+}
+
 TEST_CASE("a measurement bounds the ceiling when it is the smaller figure",
           "[rist][bandwidth]")
 {

@@ -107,7 +107,14 @@ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/source/tools)
 
 # ---- Declare executable ----
 
-add_executable(open-broadcast-encoder_exe ${CMAKE_CURRENT_LIST_DIR}/source/main.cpp)
+# The probe's adapters are built with the executable rather than into
+# calibrate_lib: they drive the live RIST sender, and that library is
+# deliberately free of libRIST and GStreamer.
+add_executable(open-broadcast-encoder_exe
+  ${CMAKE_CURRENT_LIST_DIR}/source/main.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/source/calibrate/rist_probe.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/source/calibrate/rist_probe.h
+)
 add_executable(open-broadcast-encoder::exe ALIAS open-broadcast-encoder_exe)
 
 set_property(TARGET open-broadcast-encoder_exe PROPERTY OUTPUT_NAME open-broadcast-encoder)
