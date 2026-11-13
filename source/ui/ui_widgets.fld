@@ -20,17 +20,17 @@ class ui_widgets {open
   } {
     Fl_Window main_window {
       label {Open Broadcast Encoder} open
-      xywh {0 0 1600 1010} type Double resizable visible
+      xywh {0 0 1600 1110} type Double resizable visible
     } {
       Fl_Flex pack {open
         xywh {0 0 1600 1010} margin {25 25 25 25} resizable
         fixed_size_tuples {1  1 175 }
       } {
         Fl_Flex flx_columns {open
-          xywh {25 25 1550 760} type HORIZONTAL gap 25
+          xywh {25 25 1550 860} type HORIZONTAL gap 25
         } {
           Fl_Flex flx_col_left {open
-            xywh {25 25 762 758} gap 25 fixed_size_tuples {3  0 410  1 205  2 133 }
+            xywh {25 25 762 848} gap 25 fixed_size_tuples {3  0 410  1 255  2 133 }
           } {
           Fl_Flex {} {open
             xywh {25 25 433 410} gap 25 fixed_size_tuples {2  0 180  1 205 }
@@ -207,7 +207,7 @@ class ui_widgets {open
           }
           Fl_Flex {} {
             label Output open
-            xywh {25 25 762 205} box BORDER_BOX margin {5 25 5 5} gap 25 fixed_size_tuples {5  0 25  1 25  2 25  3 25  4 25 }
+            xywh {25 25 762 255} box BORDER_BOX margin {5 25 5 5} gap 15 fixed_size_tuples {6  0 25  1 25  2 25  3 25  4 25  5 25 }
           } {
             Fl_Input input_rist_address {
               label {RIST Address}
