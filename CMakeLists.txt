@@ -154,6 +154,7 @@ target_link_libraries(open-broadcast-encoder_exe PRIVATE
   backplane_lib
   bridge_lib
   settings_lib
+  calibrate_lib
   # httplib's TLS code is reached from control/backplane/bridge; on Windows the
   # static archives carry no OpenSSL reference of their own, so the executable
   # has to name it or ld reports every SSL symbol as undefined.
