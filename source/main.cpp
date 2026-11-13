@@ -12,6 +12,7 @@
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -1089,12 +1090,14 @@ static void repost_stored_start(const hosted_session& session)
       "Receiver was not running; re-posting the stored start body "
       "for "
       + session.session_id + ".\n");
+  const int payload_kbps =
+      ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
   apply_allocation_to_receiver(
       session,
       ctx.lib.encode_cfg.selected_codec,
       geometry,
-      rist_bandwidth_ceiling_kbps,
-      ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed),
+      rist_bandwidth_kbps(payload_kbps, std::nullopt, session.is_bridged()),
+      payload_kbps,
       ctx.lib.bridge_link_budget_kbps.load(std::memory_order_relaxed));
 }
 
@@ -1204,12 +1207,6 @@ static void hosted_allocate()
   const std::string encoder_name = ctx.lib.encoder_name;
   // Copied on the UI thread: the worker below must never read ctx itself.
   const codec source_codec = ctx.lib.encode_cfg.selected_codec;
-  // The encoder is authoritative on the ingest rate: the portal's transport row
-  // states a placeholder it cannot know (DT-22 sends only the POP). The
-  // receiver gets the same ceiling the sender uses, so the two ends size their
-  // recovery rings alike.
-  const int video_kbps = rist_bandwidth_ceiling_kbps;
-
   // What the portal's transcode sizing needs and only this encoder can state:
   // its own encode bitrate. `measured_budget_kbps` is left empty on purpose --
   // the bridge does not relay WAN link statistics back to the encoder yet, so
@@ -1243,7 +1240,6 @@ static void hosted_allocate()
        bridge_cfg,
        encoder_name,
        source_codec,
-       video_kbps,
        encode_kbps,
        link_budget_kbps,
        bitrates]
@@ -1373,12 +1369,18 @@ static void hosted_allocate()
         if (auto encoder = ctx.lib.encoder_ptr.load()) {
           geometry = encoder->source_geometry_now();
         }
-        apply_allocation_to_receiver(outcome.session,
-                                     source_codec,
-                                     geometry,
-                                     video_kbps,
-                                     encode_kbps,
-                                     link_budget_kbps);
+        // The encoder is authoritative on the ingest rate: the portal's
+        // transport row states a placeholder it cannot know (DT-22 sends only
+        // the POP). The receiver gets the same ceiling the sender uses, so the
+        // two ends size their recovery rings alike -- and the topology that
+        // decides it is the allocation's, answered just above.
+        apply_allocation_to_receiver(
+            outcome.session,
+            source_codec,
+            geometry,
+            rist_bandwidth_kbps(encode_kbps, std::nullopt, outcome.bridged),
+            encode_kbps,
+            link_budget_kbps);
         // E4: from now on the session is held, so a node that restarts must get
         // its configuration back without the operator doing anything.
         ensure_hosted_watchdog();
@@ -1702,6 +1704,14 @@ static void hosted_end_session()
       }));
 }
 
+// A held session states the topology its destination belongs to. With no
+// session, the address the operator typed is the leg the encoder sends on.
+static bool current_session_is_bridged()
+{
+  const std::optional<hosted_session> held = settings::load_hosted_session();
+  return held.has_value() && held->is_bridged();
+}
+
 static bool run_transport()
 {
   // The address is the operator's single statement of the destination and the
@@ -1728,12 +1738,15 @@ static bool run_transport()
         "enter a RIST address, then start again.\n");
     return false;
   }
-  // The ceiling sizes the recovery ring; it is not a link budget (the encoder's
-  // leg is Ethernet, the WAN budget lives on the bridge's leg). Flat, so a
-  // saved 6000 default can never leave the ring with no retransmission budget.
+  // The ceiling sizes the recovery ring and funds retransmission; it is not the
+  // payload rate. Bridged: the WAN budget lives on the bridge's leg. Direct:
+  // this encoder's leg is the WAN, so the ceiling follows the payload. Either
+  // way it is above the payload, so a saved 6000 default cannot leave the ring
+  // with no retransmission budget.
   const int payload_kbps =
       ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
-  ctx.lib.output_cfg.bandwidth = rist_bandwidth_ceiling_kbps;
+  ctx.lib.output_cfg.bandwidth = rist_bandwidth_kbps(
+      payload_kbps, std::nullopt, current_session_is_bridged());
   // State the figure on screen: the ceiling is otherwise invisible, and the
   // only 6000 in the chain is the saved default, so an operator seeing RIST
   // complain about it has no way to tell which side set it.

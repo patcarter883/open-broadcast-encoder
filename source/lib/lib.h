@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "lib/address.h"
+#include "lib/rist_bandwidth.h"
 #include "stats/peer_table.h"
 #include "transport/uplink.h"
 
@@ -168,16 +169,6 @@ struct output_config
   // adapter (see transport/uplink.h); all of them leave by different devices.
   std::vector<uplink::config> uplinks;
 };
-
-// RIST's bandwidth is a CEILING used to size the recovery ring, not a statement
-// about the link: the encoder reaches the bridge over Ethernet, and the WAN
-// budget belongs to the bridge's own leg (derived there from the shaper). A
-// flat ceiling above the payload gives the ring retransmission headroom without
-// overrunning the receiver's NACK window -- at the 5000 ms buffer the ring
-// holds ~bandwidth*0.475 packets and the window addresses 32768, so 20000 kbps
-// keeps ~9500 packets in range while leaving several Mbit/s of budget over the
-// payload.
-inline constexpr int rist_bandwidth_ceiling_kbps = 20000;
 
 // ---------------------------------------------------------------------------
 // Bridge control (DT-19, DT-21). The rist2rist bridge on the customer LAN: the

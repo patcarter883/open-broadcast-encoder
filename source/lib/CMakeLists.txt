@@ -18,6 +18,8 @@ target_sources(open-broadcast-encoder_lib
     lib.cpp
     address.h
     address.cpp
+    rist_bandwidth.h
+    rist_bandwidth.cpp
     ndi_options.h
 )
 

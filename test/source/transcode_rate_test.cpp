@@ -11,8 +11,8 @@
 
 namespace
 {
-// The deployed transport ceiling: the RIST bandwidth the encoder declares and
-// sizes its recovery ring from (lib.h's rist_bandwidth_ceiling_kbps).
+// The deployed transport ceiling: the RIST bandwidth a bridged encoder declares
+// and sizes its recovery ring from (lib/rist_bandwidth.h).
 constexpr int kCeiling = 20000;
 // The encoding rig's configured source rate on the cellular deployment.
 constexpr int kSource = 7000;
