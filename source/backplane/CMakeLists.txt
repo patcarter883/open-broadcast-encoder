@@ -15,6 +15,8 @@ target_sources(backplane_lib ${warning_guard}
     device_auth.h
     device_auth.cpp
     device_auth_httplib.cpp
+    link_samples.h
+    link_samples.cpp
 )
 
 target_include_directories(backplane_lib PUBLIC

@@ -92,6 +92,20 @@ target_compile_features(backplane_test PRIVATE cxx_std_20)
 
 catch_discover_tests(backplane_test)
 
+# Link telemetry: the sample body is a contract with the backplane and with the
+# receiver's own samples, so its shape is asserted here rather than assumed.
+add_executable(link_samples_test source/link_samples_test.cpp)
+target_link_libraries(
+    link_samples_test PRIVATE
+    backplane_lib
+    open-broadcast-encoder_lib
+    nlohmann_json::nlohmann_json
+    Catch2::Catch2WithMain
+)
+target_compile_features(link_samples_test PRIVATE cxx_std_20)
+
+catch_discover_tests(link_samples_test TEST_PREFIX "link_samples: ")
+
 add_executable(device_auth_test source/device_auth_test.cpp)
 target_link_libraries(
     device_auth_test PRIVATE

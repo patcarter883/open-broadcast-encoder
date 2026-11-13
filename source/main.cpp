@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -32,6 +33,7 @@
 
 #include "backplane/backplane.h"
 #include "backplane/device_auth.h"
+#include "backplane/link_samples.h"
 #include "bridge/actuate.h"
 #include "bridge/bridge_client.h"
 #include "bridge/discovery.h"
@@ -119,6 +121,19 @@ static void join_control_threads()
   }
 }
 
+// Link telemetry to the backplane. The reporter is built at Start, because the
+// base URL and the session it reports for are both read then, and released when
+// the sender stops. Guarded because the RIST stats callback runs on librist's
+// thread while Start/Stop run on the UI thread.
+static std::mutex link_samples_mutex;
+static std::shared_ptr<backplane::link_sample_reporter> g_link_samples;
+// Only the transition into and out of failure is logged: a sample is sent every
+// second, and a backplane that is down for an hour must not fill the pane.
+static std::atomic<bool> g_link_samples_failing {false};
+// librist calls the stats callback once per PEER per interval, so a bonded
+// session would otherwise emit one sample per leg.
+constexpr std::int64_t k_link_sample_gap_ms = 900;
+
 static auto encode_log(const std::string& msg)
 {
   if (ctx.ui != nullptr) {
@@ -171,22 +186,120 @@ static auto rist_log_cb(void* /*arg*/,
   return 1;
 }
 
-static auto rist_stats_cb(const rist_stats& stats)
+// One link sample a second while the session's flow is on the wire
+// (TELEMETRY_CONTRACT.md). This end is the sender: it reports its own counters
+// and its peer's reports, and every figure it cannot observe is sent as null --
+// a zero would be an observation ("nothing was lost") nobody made.
+static void report_link_sample()
 {
-  if (ctx.ui == nullptr) {
+  static std::atomic<std::int64_t> last_ms {0};
+  const std::int64_t now_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now().time_since_epoch())
+          .count();
+  if (now_ms - last_ms.load(std::memory_order_relaxed) < k_link_sample_gap_ms) {
     return;
   }
-  auto encoder_snapshot = ctx.lib.encoder_ptr.load();
-  int new_bitrate = 0;
-  // got_rist_statistics reports the new bitrate itself under its single lock;
-  // no second lock here, which also closes the window in which the OOB
-  // callback could change current_bitrate between the decision and this read.
-  if (stats::got_rist_statistics(
-          stats, &ctx.lib.stats, ctx.lib.encode_cfg, *ctx.ui, &new_bitrate)
-      && encoder_snapshot)
+  last_ms.store(now_ms, std::memory_order_relaxed);
+
+  std::shared_ptr<backplane::link_sample_reporter> reporter;
   {
-    encoder_snapshot->set_encode_bitrate(new_bitrate);
+    std::lock_guard<std::mutex> guard(link_samples_mutex);
+    reporter = g_link_samples;
   }
+  if (!reporter) {
+    return;
+  }
+
+  // The session's own record is the attribution: no session, no sample.
+  const std::optional<hosted_session> held = settings::load_hosted_session();
+  if (!held.has_value() || held->session_id.empty()) {
+    return;
+  }
+  if (held->control_token.empty()) {
+    // Show-once: a session read back from the portal does not restate its
+    // token, and the device token authenticates the device rather than the
+    // session. With no retained token there is nothing to authenticate a
+    // sample with, so none is sent for this session.
+    return;
+  }
+
+  peer_stats::aggregate peers;
+  {
+    std::lock_guard<std::mutex> guard(ctx.lib.stats.mutex);
+    peers = ctx.lib.stats.peers.total();
+  }
+  if (!peers.any) {
+    // No leg has reported yet, so there is nothing observed to report.
+    return;
+  }
+
+  const backplane::link_sample_result result =
+      reporter->report(held->session_id,
+                       held->control_token,
+                       backplane::link_reading_from(peers));
+
+  if (result.ok) {
+    if (g_link_samples_failing.exchange(false)) {
+      transport_log("Link samples: the backplane is accepting them again.\n");
+    }
+    return;
+  }
+  if (!g_link_samples_failing.exchange(true)) {
+    transport_log("Link samples stopped: " + result.error + "\n");
+  }
+}
+
+// Build the reporter for the flow this Start is about to put on the wire. The
+// credential is the control token retained from the allocation, and the
+// destination must be the one that allocation named: a sample describes the
+// session's flow, never a hand-typed address.
+static void open_link_samples()
+{
+  std::shared_ptr<backplane::link_sample_reporter> reporter;
+  const std::optional<hosted_session> held = settings::load_hosted_session();
+  if (held.has_value() && !held->session_id.empty()
+      && !held->control_token.empty() && !ctx.lib.hosted.backplane_url.empty())
+  {
+    const std::string target =
+        held->encoder_target.empty() ? held->rist_url : held->encoder_target;
+    if (!target.empty() && target == ctx.lib.output_cfg.address) {
+      secrets::register_secret(held->control_token);
+      reporter = std::make_shared<backplane::link_sample_reporter>(
+          make_link_sample_transport(ctx.lib.hosted.backplane_url));
+    }
+  }
+
+  std::lock_guard<std::mutex> guard(link_samples_mutex);
+  g_link_samples = std::move(reporter);
+  g_link_samples_failing.store(false);
+}
+
+static void close_link_samples()
+{
+  std::lock_guard<std::mutex> guard(link_samples_mutex);
+  g_link_samples.reset();
+}
+
+static auto rist_stats_cb(const rist_stats& stats)
+{
+  if (ctx.ui != nullptr) {
+    auto encoder_snapshot = ctx.lib.encoder_ptr.load();
+    int new_bitrate = 0;
+    // got_rist_statistics reports the new bitrate itself under its single lock;
+    // no second lock here, which also closes the window in which the OOB
+    // callback could change current_bitrate between the decision and this read.
+    if (stats::got_rist_statistics(
+            stats, &ctx.lib.stats, ctx.lib.encode_cfg, *ctx.ui, &new_bitrate)
+        && encoder_snapshot)
+    {
+      encoder_snapshot->set_encode_bitrate(new_bitrate);
+    }
+  }
+
+  // After the sample above, so the reading includes this interval. Telemetry is
+  // not a display: it is reported whether or not a UI is attached.
+  report_link_sample();
 }
 
 static void rist_oob_cb(const uint8_t* data, size_t size)
@@ -1315,6 +1428,7 @@ static void stop()
     ctx.transporter->set_statistics_callback(nullptr);
     ctx.transporter->set_oob_callback(nullptr);
   }
+  close_link_samples();
   auto encoder = ctx.lib.encoder_ptr.exchange(nullptr);
   if (encoder) {
     encoder->stop_encode_thread();
@@ -1642,6 +1756,8 @@ static bool run_transport()
         "by this build. See the transport log.\n");
     return false;
   }
+  // Telemetry follows the sender: samples begin with this flow and end with it.
+  open_link_samples();
   return true;
 }
 
