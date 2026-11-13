@@ -2,6 +2,23 @@
 
 This is the open-broadcast-encoder project.
 
+# Download
+
+Prebuilt binaries are published with every release — no installer, and
+GStreamer is inside the download:
+
+| Platform | File |
+|---|---|
+| Linux x86_64 | `open-broadcast-encoder-linux-x86_64.AppImage` |
+| Windows 10/11 64-bit | `open-broadcast-encoder-windows-x64.zip` |
+
+- Latest release: <https://github.com/patcarter883/open-broadcast-encoder/releases/latest>
+- Download page, install steps and checksums: <https://stream.huntervalleyit.net.au/download>
+
+Each artefact publishes a `.sha256` beside it — check it before running, as
+neither build is code-signed yet. The NDI runtime is the user's own install
+(see Licensing); everything else the encoder needs is bundled.
+
 # Building and installing
 
 See the [BUILDING](BUILDING.md) document.
