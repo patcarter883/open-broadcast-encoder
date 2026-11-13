@@ -190,8 +190,11 @@ jobs:
         # repository publishes no releases, so the download can only 404.
         run: |
           set -euxo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [ "${VERSION}" = "${GITHUB_REF_NAME}" ]; then
+          # Only a tag names a version. A branch name is not one: stripping the
+          # "v" off branch "v2" produced an artefact called "...-2-x86_64".
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
             VERSION="0.0.0-dev+${GITHUB_SHA::8}"
           fi
           export VERSION
@@ -206,26 +209,45 @@ jobs:
             cp -a /usr/lib/lib${lib}.so* AppDir/usr/lib/ 2>/dev/null || true
           done
           cp -a /usr/lib/gstreamer-1.0/. AppDir/usr/lib/gstreamer-1.0/
-          # linuxdeploy only writes AppRun when one is absent, so the exports
-          # survive the packaging pass below.
-          python3 - <<'PY'
-          # Byte-level: linuxdeploy writes AppRun with non-UTF-8 bytes, so a
-          # text read fails before anything is patched.
-          import pathlib
-          apprun = pathlib.Path("AppDir/AppRun")
-          head, sep, tail = apprun.read_bytes().partition(b"\n")
-          export = (
-              b'export GST_PLUGIN_SYSTEM_PATH_1_0="$APPDIR/usr/lib/gstreamer-1.0"\n'
-              b'export LD_LIBRARY_PATH="$APPDIR/usr/lib:${LD_LIBRARY_PATH:-}"\n'
-          )
-          apprun.write_bytes(head + sep + export + tail)
-          PY
+          # AppRun is OURS, and it must be a real file. linuxdeploy writes
+          # AppRun as a symlink to the payload binary, so patching "AppRun"
+          # rewrites the executable itself — that is how an AppImage is shipped
+          # with a corrupt ELF. Unlink first, then drop in a launcher that sets
+          # the same two variables for a bundled GStreamer.
+          rm -f AppDir/AppRun
+          cat > AppDir/AppRun <<'LAUNCHER'
+          #!/bin/sh
+          # GStreamer dlopen()s its plugins, so the bundled set is only found
+          # because it is named here; the runtime .so files sit beside the app.
+          HERE="$(dirname "$(readlink -f "$0")")"
+          export GST_PLUGIN_SYSTEM_PATH_1_0="$HERE/usr/lib/gstreamer-1.0"
+          export LD_LIBRARY_PATH="$HERE/usr/lib:${LD_LIBRARY_PATH:-}"
+          exec "$HERE/usr/bin/open-broadcast-encoder" "$@"
+          LAUNCHER
+          chmod +x AppDir/AppRun
+          # Two assertions, because the failure they catch is silent until a
+          # user runs it: the payload is still an ELF, and AppRun is not a
+          # symlink back into it.
+          test -f AppDir/AppRun && test ! -L AppDir/AppRun
+          head -c 4 AppDir/usr/bin/open-broadcast-encoder | grep -q 'ELF'
           # appimagetool, not a second linuxdeploy pass: linuxdeploy would
           # re-resolve the bundled GStreamer this time and ldd fails on it.
           ARCH=x86_64 /tmp/appimagetool-x86_64.AppImage AppDir \
             "open-broadcast-encoder-${VERSION}-x86_64.AppImage"
           test -f "open-broadcast-encoder-${VERSION}-x86_64.AppImage"
           echo "APPIMAGE_NAME=open-broadcast-encoder-${VERSION}-x86_64.AppImage" >> "$GITHUB_ENV"
+
+      - name: Smoke-test the AppImage
+        # A packaged binary that cannot start is the one failure this release
+        # exists to prevent, and nothing before this point would notice. The
+        # container has no FUSE, so the runtime extracts itself first.
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          set -euxo pipefail
+          out="$(./"${APPIMAGE_NAME}" --version)"
+          echo "${out}"
+          printf '%s\n' "${out}" | grep -Eq '^open-broadcast-encoder [0-9]'
 
       - name: Compute SHA-256 checksum
         run: |
