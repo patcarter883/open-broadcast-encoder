@@ -108,7 +108,7 @@ enum class reattach_action
 {
   reattach,  // restore the target and re-post the stored /start body
   clear_session,  // the session is over: drop the file and say so
-  retry,  // keep the file and try again in 15 s
+  retry,  // keep the file and probe again, backing off between tries
   keep_report  // keep the file; this needs the operator, not another try
 };
 
@@ -127,6 +127,53 @@ session_probe classify_probe(int http_status, bool body_usable);
 // orphan nothing and lose a billable one), and a state this build does not
 // recognise keeps the file for the operator.
 reattach_action decide_reattach(session_probe probe, const std::string& state);
+
+// Pacing for the reattach retry. `unavailable` is the one probe result that
+// means "this backplane is saturated or unreachable", so probing it at a fixed
+// interval adds load to a node that is already at its limit. This doubles the
+// wait per unanswered probe, from `base_seconds` up to `max_seconds`, and
+// returns to the base on the first answer so a recovered portal is reattached
+// to promptly instead of after the ceiling.
+struct reattach_backoff_config
+{
+  int base_seconds = 5;
+  int max_seconds = 60;
+  // Fraction of the nominal delay added on top, so a fleet of encoders that
+  // lost the same node does not retry in lockstep. Zero disables it, which is
+  // what a test asserting the exact schedule uses.
+  double jitter_fraction = 0.2;
+};
+
+class reattach_backoff
+{
+public:
+  // Returns a value in [0, 1). Injected so the schedule is reproducible.
+  using jitter_fn = std::function<double()>;
+
+  explicit reattach_backoff(reattach_backoff_config limits = {},
+                            jitter_fn jitter = {});
+
+  // Seconds to wait before the next probe. Non-decreasing until the cap: the
+  // 1st call is the base, the 2nd is twice that, and so on.
+  int next_delay_seconds();
+
+  // Back to the base delay. Called on any probe that got an answer (found,
+  // gone or refused) -- only a non-answer earned a longer wait.
+  void reset();
+
+  int attempts() const { return m_attempts; }
+
+  // The uncapped, unjittered interval behind the last delay. A caller reports
+  // and rate-limits on this, not on the jittered value, so a steady cap does
+  // not look like a new interval on every attempt.
+  int last_nominal_seconds() const { return m_last_nominal; }
+
+private:
+  reattach_backoff_config m_limits;
+  jitter_fn m_jitter;
+  int m_attempts = 0;
+  int m_last_nominal = 0;
+};
 
 // Fold a fresh read of the session over the persisted copy (E3). The portal
 // restates URLs and state, but the control token and PSK are show-once: a
