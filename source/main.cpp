@@ -1729,9 +1729,10 @@ static void stop()
 //   allocated/running -> restore the destination and re-post the stored /start
 //                        body (a recreated node container has its config back)
 //   ended, or 404     -> drop the file: there is nothing left to hold
-//   no answer / 5xx   -> keep the file, say "reconnect pending", retry every
-//                        15 s for up to five minutes, then give up and KEEP the
-//                        file so the next launch tries again
+//   no answer / 5xx   -> keep the file, say "reconnect pending", retry with
+//                        exponential backoff (5 s doubling to a 60 s cap, with
+//                        jitter) for up to five minutes, then give up and KEEP
+//                        the file so the next launch tries again
 //   refused token     -> keep the file and say so: retrying would only produce
 //                        five minutes of 401s, and the session may be live
 //
@@ -1740,7 +1741,8 @@ static void stop()
 // ---------------------------------------------------------------------------
 namespace
 {
-constexpr int kReattachRetrySeconds = 15;
+constexpr int kReattachBaseDelaySeconds = 5;
+constexpr int kReattachMaxDelaySeconds = 60;
 constexpr int kReattachGiveUpAfterSeconds = 300;  // five minutes
 }  // namespace
 
@@ -1779,11 +1781,26 @@ static void hosted_reattach()
       hosted.device_token,
       make_httplib_transport(hosted.backplane_url, hosted.device_token));
 
+  reattach_backoff backoff({kReattachBaseDelaySeconds,
+                            kReattachMaxDelaySeconds,
+                            0.2});
   int waited = 0;
   bool announced = false;
+  // The interval the last "still reconnecting" line reported. The loop logs on
+  // each new interval, not on each attempt: a line per attempt is a log flood
+  // written to the node that is already saturated.
+  int logged_interval = kReattachBaseDelaySeconds;
   while (!g_shutdown.load(std::memory_order_acquire)) {
     const session_fetch_result fetched = backplane.get_session(session_id);
-    switch (decide_reattach(fetched.probe, fetched.state)) {
+    const reattach_action action =
+        decide_reattach(fetched.probe, fetched.state);
+    if (action != reattach_action::retry) {
+      // The portal answered -- found, gone or refused -- so the next failure
+      // (if any) starts from the base interval, not from the ceiling this run
+      // had climbed to.
+      backoff.reset();
+    }
+    switch (action) {
       case reattach_action::reattach: {
         // The portal may restate the URLs; the show-once secrets are only on
         // disk, so the two are merged rather than replaced.
@@ -1860,10 +1877,12 @@ static void hosted_reattach()
         break;
     }
 
+    const int delay = backoff.next_delay_seconds();
     if (!announced) {
       transport_log("Hosted: reconnect pending for session " + session_id + " ("
-                    + fetched.error + "); retrying every "
-                    + std::to_string(kReattachRetrySeconds)
+                    + fetched.error + "); retrying with backoff from "
+                    + std::to_string(kReattachBaseDelaySeconds) + " s to "
+                    + std::to_string(kReattachMaxDelaySeconds)
                     + " s for up to five minutes.\n");
       if (ctx.ui != nullptr) {
         ctx.ui->set_hosted_session_held(true);
@@ -1871,21 +1890,32 @@ static void hosted_reattach()
       }
       announced = true;
     }
-    if (waited >= kReattachGiveUpAfterSeconds) {
+    // Reported on the unjittered interval: the jitter would otherwise make every
+    // attempt at the cap look like a new interval and log anyway.
+    if (backoff.last_nominal_seconds() != logged_interval) {
+      logged_interval = backoff.last_nominal_seconds();
+      transport_log("Hosted: still reconnecting to " + session_id
+                    + "; next try in " + std::to_string(delay) + " s.\n");
+    }
+    // Checked against the wait that is about to happen, so the whole retry run
+    // stays inside the five minutes the operator was told.
+    if (waited + delay > kReattachGiveUpAfterSeconds) {
       // Give up trying, but keep the record: the session is still the
       // operator's, and the next launch is another chance to reattach.
       transport_log("Hosted: giving up reattaching to " + session_id
-                    + " after five minutes; the session record is kept.\n");
+                    + " after "
+                    + std::to_string(kReattachGiveUpAfterSeconds)
+                    + " s of retrying; the session record is kept.\n");
       if (ctx.ui != nullptr) {
         ctx.ui->set_hosted_state(
             "Reattach gave up - " + session_id + " is still recorded", true);
       }
       return;
     }
-    if (!interruptible_sleep(kReattachRetrySeconds)) {
+    if (!interruptible_sleep(delay)) {
       return;  // the app is exiting
     }
-    waited += kReattachRetrySeconds;
+    waited += delay;
   }
 }
 

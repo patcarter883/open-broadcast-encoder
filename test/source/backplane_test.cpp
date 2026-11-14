@@ -523,7 +523,7 @@ TEST_CASE("an unreadable or unknown session keeps its record",
   CHECK(decide_reattach(session_probe::unavailable, "running")
         == reattach_action::retry);
 
-  // A refused device token will not fix itself in fifteen seconds.
+  // A refused device token will not fix itself by being asked again.
   CHECK(decide_reattach(session_probe::unauthorised, "running")
         == reattach_action::keep_report);
 
@@ -637,4 +637,90 @@ TEST_CASE("an unreachable portal is a retry, not a verdict", "[backplane][e3]")
   CHECK_FALSE(r.ok);
   CHECK(r.probe == session_probe::unavailable);
   CHECK(decide_reattach(r.probe, r.state) == reattach_action::retry);
+}
+
+// Only an unanswered probe may stretch the retry interval. A refused token and a
+// session the portal no longer has are verdicts: the loop ends on both, so
+// neither is allowed to look like a transient failure that earns a longer wait.
+TEST_CASE("only a non-answer classifies as a retry", "[backplane][e3][backoff]")
+{
+  CHECK(decide_reattach(classify_probe(500, false), "")
+        == reattach_action::retry);
+  CHECK(decide_reattach(classify_probe(503, false), "")
+        == reattach_action::retry);
+  CHECK(decide_reattach(classify_probe(0, false), "")
+        == reattach_action::retry);
+  CHECK(decide_reattach(classify_probe(401, false), "")
+        == reattach_action::keep_report);
+  CHECK(decide_reattach(classify_probe(403, false), "")
+        == reattach_action::keep_report);
+  CHECK(decide_reattach(classify_probe(404, false), "")
+        == reattach_action::clear_session);
+}
+
+// A backplane that keeps failing to answer earns a longer wait each time, up to
+// the cap: the fixed interval was what turned a saturated node into a node that
+// was also being polled by every encoder that had lost it.
+TEST_CASE("an unanswered probe backs off to the cap",
+          "[backplane][e3][backoff]")
+{
+  reattach_backoff backoff({5, 60, 0.0});
+  const std::vector<int> expected {5, 10, 20, 40, 60, 60, 60, 60};
+
+  std::vector<int> actual;
+  for (const int want : expected) {
+    actual.push_back(backoff.next_delay_seconds());
+    INFO("attempt " << actual.size() << " = " << actual.back() << " s");
+    CHECK(actual.back() == want);
+  }
+  for (size_t i = 1; i < actual.size(); ++i) {
+    INFO("attempts " << i << " and " << i + 1);
+    CHECK(actual.at(i) >= actual.at(i - 1));
+  }
+  CHECK(backoff.attempts() == static_cast<int>(expected.size()));
+}
+
+// The jitter is a spread on top of the nominal interval, never a shortening of
+// it, so a fleet that lost the same node does not retry in lockstep while the
+// cap still bounds how long any one encoder waits.
+TEST_CASE("jitter extends the interval but not past the cap",
+          "[backplane][e3][backoff]")
+{
+  reattach_backoff backoff({5, 60, 0.2}, [] { return 1.0; });  // top of range
+
+  CHECK(backoff.next_delay_seconds() == 6);   //  5 + 20%
+  CHECK(backoff.next_delay_seconds() == 12);  // 10 + 20%
+  CHECK(backoff.next_delay_seconds() == 24);  // 20 + 20%
+  CHECK(backoff.next_delay_seconds() == 48);  // 40 + 20%
+  CHECK(backoff.next_delay_seconds() == 72);  // 60 + 20%, held
+  CHECK(backoff.next_delay_seconds() == 72);
+}
+
+// A portal that answered is reattached to after the base interval, not after the
+// ceiling the previous failures had reached.
+TEST_CASE("an answered probe resets the interval to the base",
+          "[backplane][e3][backoff]")
+{
+  reattach_backoff backoff({5, 60, 0.0});
+  CHECK(backoff.next_delay_seconds() == 5);
+  CHECK(backoff.next_delay_seconds() == 10);
+  CHECK(backoff.next_delay_seconds() == 20);
+  CHECK(backoff.next_delay_seconds() == 40);
+
+  backoff.reset();
+  CHECK(backoff.attempts() == 0);
+  CHECK(backoff.next_delay_seconds() == 5);
+}
+
+// A cap below the base, or a base of zero, would produce a schedule the caller
+// cannot reason about; both are pinned rather than left to multiply.
+TEST_CASE("a nonsensical backoff config is pinned", "[backplane][e3][backoff]")
+{
+  reattach_backoff inverted({10, 5, -1.0});
+  CHECK(inverted.next_delay_seconds() == 10);
+  CHECK(inverted.next_delay_seconds() == 10);
+
+  reattach_backoff zero_base({0, 0, 0.0});
+  CHECK(zero_base.next_delay_seconds() == 1);
+  CHECK(zero_base.next_delay_seconds() == 1);
 }

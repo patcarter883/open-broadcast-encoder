@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 
+#include <cmath>
+#include <random>
 #include <utility>
 #include <vector>
 
@@ -413,6 +415,63 @@ reattach_action decide_reattach(session_probe probe, const std::string& state)
   // A state this build does not know is not worth guessing about: the session
   // may still be billable, so the file is kept and the operator told.
   return reattach_action::keep_report;
+}
+
+namespace
+{
+// A unit value from a per-thread generator seeded from the system entropy: the
+// whole point of the jitter is that two encoders sharing a saturated node do
+// not pick the same delay.
+double random_unit()
+{
+  static thread_local std::mt19937 rng {std::random_device {}()};
+  static thread_local std::uniform_real_distribution<double> dist {0.0, 1.0};
+  return dist(rng);
+}
+}  // namespace
+
+reattach_backoff::reattach_backoff(reattach_backoff_config limits,
+                                   jitter_fn jitter)
+    : m_limits(limits), m_jitter(std::move(jitter))
+{
+  // A zero base or a cap below it would make the schedule meaningless (a busy
+  // loop, or an interval the caller cannot influence), so both are pinned.
+  if (m_limits.base_seconds < 1) {
+    m_limits.base_seconds = 1;
+  }
+  if (m_limits.max_seconds < m_limits.base_seconds) {
+    m_limits.max_seconds = m_limits.base_seconds;
+  }
+  if (m_limits.jitter_fraction < 0.0) {
+    m_limits.jitter_fraction = 0.0;
+  }
+}
+
+int reattach_backoff::next_delay_seconds()
+{
+  // base, 2*base, 4*base, ... clamped to the cap. Doubling, not base * attempts,
+  // is what lets a saturated node shed load: five minutes of retries is then
+  // about six probes instead of twenty.
+  long long nominal = m_limits.base_seconds;
+  for (int i = 0; i < m_attempts && nominal < m_limits.max_seconds; ++i) {
+    nominal *= 2;
+  }
+  if (nominal > m_limits.max_seconds) {
+    nominal = m_limits.max_seconds;
+  }
+  m_last_nominal = static_cast<int>(nominal);
+  ++m_attempts;
+  // Jitter is added on top of the nominal delay, never subtracted, so the
+  // sequence stays non-decreasing and the cap still bounds the wait.
+  const double unit = m_jitter ? m_jitter() : random_unit();
+  const int delay = static_cast<int>(std::lround(
+      static_cast<double>(nominal) * (1.0 + unit * m_limits.jitter_fraction)));
+  return delay < m_limits.base_seconds ? m_limits.base_seconds : delay;
+}
+
+void reattach_backoff::reset()
+{
+  m_attempts = 0;
 }
 
 session_fetch_result backplane_client::get_session(
