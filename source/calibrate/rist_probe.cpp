@@ -18,9 +18,12 @@ namespace calibrate
 namespace
 {
 
-// libRIST carries ~1.3 kB per packet; transport::send_buffer splits on the same
-// figure.
-constexpr std::size_t k_packet_bytes = 1316;
+// A payload that fits the path MTU, not just a 1500-byte LAN. 7 x 188 (1316)
+// needs 1356 bytes with RTP/UDP/IP, which a 1340-byte path refuses outright --
+// every sendto fails and the ramp reads as a leg that carried nothing. 6 x 188
+// needs 1168, so it crosses any path of 1200 or more and costs one packet per
+// datagram on a full-MTU path.
+constexpr std::size_t k_packet_bytes = 6 * 188;
 // Pacing slice. A step is a few seconds long, so 20 ms is fine enough to hold
 // the rate without spinning.
 constexpr int k_tick_ms = 20;
