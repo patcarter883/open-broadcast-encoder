@@ -505,6 +505,20 @@ target_link_libraries(rist_probe_adapter_test PRIVATE Catch2::Catch2WithMain)
 
 catch_discover_tests(rist_probe_adapter_test)
 
+# The ramp's lifecycle and the decision to run it: End Session cancels and
+# joins a running ramp before it deallocates, and an allocation that already
+# holds a fresh figure sends no probe traffic. The ramp's body is injected, so
+# the ordering is pinned with no sender, no UI and no portal.
+add_executable(probe_lifecycle_test
+    source/probe_lifecycle_test.cpp
+    ${CMAKE_SOURCE_DIR}/source/lib/rist_bandwidth.cpp
+)
+target_include_directories(probe_lifecycle_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(probe_lifecycle_test PRIVATE cxx_std_20)
+target_link_libraries(probe_lifecycle_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(probe_lifecycle_test)
+
 # The measured uplink as it lands on disk: a figure read back only with the
 # destination it describes, and an older file loading with none at all.
 add_executable(upload_settings_test source/upload_settings_test.cpp)

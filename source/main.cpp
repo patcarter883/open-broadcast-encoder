@@ -43,6 +43,8 @@
 #include "bridge/mdns.h"
 #include "bridge/reporting.h"
 #include "bridge/ubus.h"
+#include "calibrate/probe_lifecycle.h"
+#include "calibrate/probe_policy.h"
 #include "calibrate/rist_probe.h"
 #include "control/control.h"
 #include "encode.h"
@@ -254,25 +256,17 @@ static void upload_destination_changed()
   refresh_upload_display();
 }
 
-// One ramp at a time, on its own thread: the ramp drives the transporter, so a
-// Start has to be able to stop and join it before that sender is replaced.
-static std::mutex probe_thread_mtx;
-static std::thread g_probe_thread;
-static std::atomic<bool> g_probe_active {false};
-static std::atomic<bool> g_probe_cancel {false};
+// One ramp at a time, on its own thread: the ramp drives the transporter, so
+// every path that closes the session or replaces that sender cancels and joins
+// it first (calibrate/probe_lifecycle.h holds the ordering).
+static probe_lifecycle::worker g_probe;
 
 // Aborts an in-flight ramp and waits for it. A caller must not hold the FLTK
 // lock: the ramp reports through setters that take it, so a join under the lock
 // would wait on the thread it is joining.
 static void stop_upload_probe()
 {
-  g_probe_cancel.store(true, std::memory_order_release);
-  std::lock_guard<std::mutex> guard(probe_thread_mtx);
-  if (g_probe_thread.joinable()) {
-    g_probe_thread.join();
-  }
-  g_probe_cancel.store(false, std::memory_order_release);
-  g_probe_active.store(false, std::memory_order_release);
+  g_probe.stop();
 }
 
 // Measure this host's uplink to the configured destination. The ramp runs for
@@ -302,7 +296,7 @@ static void calibrate_upload()
     ctx.ui->set_upload_calibration("set an encode bitrate first", true);
     return;
   }
-  if (g_probe_active.load(std::memory_order_acquire)) {
+  if (g_probe.running()) {
     ctx.ui->set_upload_calibration("already measuring", false);
     return;
   }
@@ -312,26 +306,9 @@ static void calibrate_upload()
   if (ctx.transporter == nullptr) {
     ctx.transporter = std::make_unique<transport>();
   }
-  ctx.ui->set_upload_calibration("measuring - the ramp runs for a few seconds",
-                                 false);
-  transport_log("Uplink probe: ramping the sender to " + destination
-                + " from the " + std::to_string(encode_kbps)
-                + " kbps encode rate.\n");
-  g_probe_active.store(true, std::memory_order_release);
-  std::lock_guard<std::mutex> guard(probe_thread_mtx);
-  g_probe_thread = std::thread(
+  const bool started = g_probe.start(
       [destination, encode_kbps]
       {
-        // Cleared on every way out, including an aborted ramp.
-        struct active_guard
-        {
-          ~active_guard()
-          {
-            g_probe_active.store(false, std::memory_order_release);
-          }
-        };
-        [[maybe_unused]] active_guard guard;
-
         // initSender builds a fresh context, so any sender left from a previous
         // Start is destroyed first. Both rist_destroy() and initSender() block
         // on their own threads: this one is a worker, not the UI thread.
@@ -349,7 +326,7 @@ static void calibrate_upload()
             .keep_running =
                 []
             {
-              return !g_probe_cancel.load(std::memory_order_acquire)
+              return !g_probe.cancel_requested()
                   && !ctx.lib.is_running.load(std::memory_order_acquire);
             },
         };
@@ -381,6 +358,65 @@ static void calibrate_upload()
         transport_log("Uplink probe: " + text + " (to " + destination + ").\n");
         ctx.ui->set_upload_calibration(text, true);
       });
+  if (!started) {
+    // A ramp that was already in flight owns the transporter; the press is not
+    // queued behind it.
+    ctx.ui->set_upload_calibration("already measuring", false);
+    return;
+  }
+  ctx.ui->set_upload_calibration("measuring - the ramp runs for a few seconds",
+                                 false);
+  transport_log("Uplink probe: ramping the sender to " + destination
+                + " from the " + std::to_string(encode_kbps)
+                + " kbps encode rate.\n");
+}
+
+// Whether THIS allocation should run the ramp (calibrate/probe_policy.h): the
+// figure is reused while it describes this destination and is inside its
+// window, because the ramp writes test traffic to a node that is already
+// carrying the session. Only a missing, foreign or stale figure -- or the
+// operator's own Calibrate upload press -- starts a new one.
+static void calibrate_upload_if_needed()
+{
+  if (ctx.ui == nullptr) {
+    return;
+  }
+  const std::string destination = ctx.lib.output_cfg.address;
+  const int encode_kbps =
+      ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
+  const upload_measurement measured = upload_measurement_now();
+  const probe_policy::decision plan = probe_policy::decide(
+      measured.kbps,
+      measured.destination,
+      measured.taken_at,
+      destination,
+      encode_kbps,
+      ctx.lib.is_running.load(std::memory_order_acquire),
+      std::time(nullptr));
+  switch (plan) {
+    case probe_policy::decision::fresh:
+      transport_log(
+          std::format("Uplink probe: not run - {} kbps measured {} still "
+                      "describes this link. Press Calibrate upload to measure "
+                      "it again.\n",
+                      measured.kbps,
+                      measured.taken_at));
+      refresh_upload_display();
+      return;
+    case probe_policy::decision::run:
+      transport_log("Uplink probe: no usable figure for " + destination
+                    + " - measuring.\n");
+      calibrate_upload();
+      return;
+    case probe_policy::decision::no_destination:
+    case probe_policy::decision::no_bitrate:
+      transport_log(std::format("Uplink probe: not run - {}.\n",
+                                probe_policy::describe(plan)));
+      return;
+    case probe_policy::decision::streaming:
+      // Nothing to do: the stream owns the sender the ramp would rebuild.
+      return;
+  }
 }
 
 static auto rist_log_cb(void* /*arg*/,
@@ -1578,6 +1614,12 @@ static void hosted_allocate()
           // Point the encoder at the chain the allocation decided: the bridge
           // when one is in the path, the node otherwise.
           ctx.ui->set_encoder_target(outcome.encoder_target);
+          // The session is on disk and billable the moment allocation returns,
+          // so End Session is live from here -- BEFORE the ramp, which takes
+          // seconds. During a capacity run the operator must be able to close a
+          // session the encoder is still measuring, and pressing End Session
+          // cancels that ramp (hosted_end_session below).
+          ctx.ui->set_hosted_session_held(true);
           // The session's key, and only on a DIRECT leg. A bridged session's
           // hop to the bridge is a clear LAN leg by design -- the bridge holds
           // the secret for its own WAN leg, and its decryptor rejects anything
@@ -1585,15 +1627,12 @@ static void hosted_allocate()
           if (!outcome.bridged) {
             ctx.ui->set_session_psk(outcome.session.psk,
                                     outcome.session.psk_aes);
-            // The allocation just moved the destination, so the stored figure
-            // describes a link this session no longer uses. The encoder is idle
-            // before Start, which is the one moment the ramp may run.
+            // Sizing the sender is a DIRECT sender's problem, and the figure is
+            // a property of the link, not of this allocation: it is reused
+            // while it still describes the address the allocation produced.
             refresh_upload_display();
-            calibrate_upload();
+            calibrate_upload_if_needed();
           }
-          // The session is now on disk and billable, so End Session becomes the
-          // only way to close it (Stop Encode holds it).
-          ctx.ui->set_hosted_session_held(true);
         }
         // The session exists and is billable, so the receiver must be told what
         // to fan out to even when there is no UI to report to. Its transcode
@@ -1919,15 +1958,56 @@ static void hosted_reattach()
   }
 }
 
+// The deallocate itself, and everything the caller does with its answer.
+// Split out so End Session can express the one ordering it must never get
+// wrong: cancel and JOIN the ramp, THEN close (probe_lifecycle::cancel_then).
+static void deallocate_held_session(const hosted_config& hosted,
+                                    const std::string& session_id)
+{
+  backplane_client backplane(
+      hosted.backplane_url,
+      hosted.device_token,
+      make_httplib_transport(hosted.backplane_url, hosted.device_token));
+  std::string err;
+  if (backplane.deallocate(session_id, err)) {
+    settings::clear_hosted_session();
+    // E4: nothing is held any more, so the poll has nothing to watch.
+    stop_hosted_watchdog();
+    transport_log("Session " + session_id + " ended.\n");
+    if (ctx.ui != nullptr) {
+      ctx.ui->set_hosted_session_held(false);
+      // The allocation's key died with the session: leaving it armed would key
+      // a later Start to an address the portal no longer serves.
+      ctx.ui->set_session_psk(std::string {}, 0);
+      ctx.ui->set_hosted_state("Session ended", false);
+    }
+    return;
+  }
+  // Kept, deliberately: the portal still considers this billed.
+  transport_log("Ending session " + session_id + " failed: " + err
+                + " - the session is still held.\n");
+  if (ctx.ui != nullptr) {
+    ctx.ui->set_hosted_state(
+        "End session failed: " + err + " - the session is still held", true);
+  }
+}
+
 // The End Session action (E2). Deallocate the session the encoder still holds
 // and clear the file ONLY on a 2xx: a deallocate that reports success without
 // the portal having accepted it would silently leave a billable session
 // running, so a failure KEEPS the file and says so. The operator can retry, and
 // the next launch's cleanup still finds it.
 //
+// It is also the way out of an allocation whose ramp is still running: the
+// probe is cancelled and joined BEFORE the deallocate, so no probe thread can
+// touch a session that is already gone, and the button works for the whole
+// probe rather than being refused until it finishes.
+//
 // Blocking HTTP, so -- like every other hosted action -- it runs on a tracked
 // background thread; the UI is only ever touched through the thread-safe
-// setters.
+// setters. The join lives on that worker too: the ramp reports through setters
+// that take the FLTK lock, so joining it from the UI thread would wait on
+// itself.
 static void hosted_end_session()
 {
   const std::optional<hosted_session> held = settings::load_hosted_session();
@@ -1955,33 +2035,17 @@ static void hosted_end_session()
   track_control_thread(std::thread(
       [hosted, session_id]
       {
-        backplane_client backplane(
-            hosted.backplane_url,
-            hosted.device_token,
-            make_httplib_transport(hosted.backplane_url, hosted.device_token));
-        std::string err;
-        if (backplane.deallocate(session_id, err)) {
-          settings::clear_hosted_session();
-          // E4: nothing is held any more, so the poll has nothing to watch.
-          stop_hosted_watchdog();
-          transport_log("Session " + session_id + " ended.\n");
-          if (ctx.ui != nullptr) {
-            ctx.ui->set_hosted_session_held(false);
-            // The allocation's key died with the session: leaving it armed
-            // would key a later Start to an address the portal no longer
-            // serves.
-            ctx.ui->set_session_psk(std::string {}, 0);
-            ctx.ui->set_hosted_state("Session ended", false);
-          }
-          return;
-        }
-        // Kept, deliberately: the portal still considers this billed.
-        transport_log("Ending session " + session_id + " failed: " + err
-                      + " - the session is still held.\n");
-        if (ctx.ui != nullptr) {
-          ctx.ui->set_hosted_state(
-              "End session failed: " + err + " - the session is still held",
-              true);
+        const bool cancelled_probe = probe_lifecycle::cancel_then(
+            g_probe,
+            [&hosted, &session_id]
+            { deallocate_held_session(hosted, session_id); });
+        if (cancelled_probe) {
+          // A ramp that stopped short yields no figure (upload_probe::select),
+          // so the operator is told the measurement was abandoned rather than
+          // left to read the pane as "measured".
+          transport_log("Uplink probe: cancelled - session " + session_id
+                        + " was ended while the ramp was running; a partial "
+                          "ramp yields no figure.\n");
         }
       }));
 }
