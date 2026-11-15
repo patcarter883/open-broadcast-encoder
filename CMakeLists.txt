@@ -5,7 +5,7 @@ include(cmake/prelude.cmake)
 
 project(
     open-broadcast-encoder
-    VERSION 1.0.0
+    VERSION 1.0.1
     DESCRIPTION "Streaming Broadcast Video Encoder"
     HOMEPAGE_URL "https://stream.huntervalleyit.net.au/"
     LANGUAGES C CXX
