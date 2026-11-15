@@ -15,10 +15,13 @@
 // winsock2.h before windows.h, and both before iphlpapi.h: iphlpapi's adapter
 // types (IP_ADAPTER_ADDRESSES, GAA_FLAG_*) are declared in terms of winsock and
 // Win32 types, and pulling it in first leaves them undefined.
+//
+// clang-format off
 #  include <winsock2.h>
 #  include <windows.h>
 #  include <iphlpapi.h>
 #  include <ws2tcpip.h>
+// clang-format on
 #else
 #  include <arpa/inet.h>
 #  include <ifaddrs.h>
