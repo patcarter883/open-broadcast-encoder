@@ -198,11 +198,20 @@ static auto save_settings_to_disk() -> bool
 
 // "2026-11-13 14:32", local time. The operator reads this to know whether the
 // figure still describes the venue's link.
+static auto fill_local_time(std::tm& out, std::time_t now) -> bool
+{
+#if defined(_WIN32)
+  return localtime_s(&out, &now) == 0;
+#else
+  return ::localtime_r(&now, &out) != nullptr;
+#endif
+}
+
 static auto local_timestamp_now() -> std::string
 {
   const std::time_t now = std::time(nullptr);
   std::tm local {};
-  if (::localtime_r(&now, &local) == nullptr) {
+  if (!fill_local_time(local, now)) {
     return {};
   }
   char stamp[32] {};
