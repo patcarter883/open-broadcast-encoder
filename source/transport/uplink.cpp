@@ -49,7 +49,8 @@ auto resolve(const std::vector<config>& uplinks,
   return legs;
 }
 
-auto build_url(const output_config& output_c, const leg& leg,
+auto build_url(const output_config& output_c,
+               const leg& leg,
                int bandwidth_kbps) -> std::string
 {
   // timing-mode=0 (SOURCE) -- the librist default, and what the known-good

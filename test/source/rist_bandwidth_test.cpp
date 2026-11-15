@@ -36,7 +36,8 @@ TEST_CASE("a measurement below the stream never cuts the stream",
   // A trickle measured on the uplink is not a reason to declare less than the
   // sender is asked to send: the result is clamped up to the stream rate.
   const int stream = rist_stream_rate_kbps(30000);
-  CHECK(rist_bandwidth_kbps(30000, std::optional<int> {25000}, false) == stream);
+  CHECK(rist_bandwidth_kbps(30000, std::optional<int> {25000}, false)
+        == stream);
   CHECK(rist_bandwidth_kbps(30000, std::optional<int> {1000}, false) == stream);
 }
 
@@ -72,7 +73,8 @@ TEST_CASE("a measurement bounds the ceiling when it is the smaller figure",
   // link.
   const int stream = rist_stream_rate_kbps(30000);
   const int wanted = stream + rist_direct_headroom_kbps(stream);
-  CHECK(rist_bandwidth_kbps(30000, std::optional<int> {100000}, false) == wanted);
+  CHECK(rist_bandwidth_kbps(30000, std::optional<int> {100000}, false)
+        == wanted);
   // 0 is "no measurement this launch", not a headroom of zero.
   CHECK(rist_bandwidth_kbps(30000, std::optional<int> {0}, false) == wanted);
 }

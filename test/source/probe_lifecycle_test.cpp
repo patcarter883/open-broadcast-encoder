@@ -21,9 +21,10 @@
 #include <thread>
 #include <vector>
 
+#include "calibrate/probe_lifecycle.h"
+
 #include <catch2/catch_test_macros.hpp>
 
-#include "calibrate/probe_lifecycle.h"
 #include "calibrate/probe_policy.h"
 #include "lib/rist_bandwidth.h"
 
@@ -122,19 +123,16 @@ TEST_CASE("an allocation with a fresh measurement runs no ramp",
                              k_encode_kbps,
                              false,
                              now)
-        == probe_policy::decision::run) {
+        == probe_policy::decision::run)
+    {
       ++ramps;
     }
   }
   CHECK(ramps == 0);
-  CHECK(probe_policy::decide(7400,
-                             k_destination,
-                             taken,
-                             k_destination,
-                             k_encode_kbps,
-                             false,
-                             now)
-        == probe_policy::decision::fresh);
+  CHECK(
+      probe_policy::decide(
+          7400, k_destination, taken, k_destination, k_encode_kbps, false, now)
+      == probe_policy::decision::fresh);
 }
 
 // A missing or stale figure is what the ramp is for -- exactly once, and the
@@ -165,7 +163,8 @@ TEST_CASE("a missing or stale measurement runs the ramp once",
     return true;
   };
 
-  // Never measured: the first allocation probes, the next ones reuse the figure.
+  // Never measured: the first allocation probes, the next ones reuse the
+  // figure.
   CHECK(allocate());
   CHECK_FALSE(allocate());
   CHECK_FALSE(allocate());

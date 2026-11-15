@@ -28,9 +28,9 @@ namespace probe_policy
 {
 
 // How long a measured figure is trusted before the ramp runs again for it.
-// Twelve hours covers a broadcast day: an operator re-allocating between venues,
-// rehearsals and the show reuses one measurement, while the next day's link is
-// measured again rather than assumed unchanged.
+// Twelve hours covers a broadcast day: an operator re-allocating between
+// venues, rehearsals and the show reuses one measurement, while the next day's
+// link is measured again rather than assumed unchanged.
 inline constexpr std::int64_t k_fresh_for_seconds = 12 * 60 * 60;
 
 enum class decision
@@ -80,8 +80,7 @@ inline auto age_seconds(std::string_view taken_at, std::time_t now)
   if (!taken.has_value()) {
     return std::nullopt;
   }
-  return static_cast<std::int64_t>(now)
-      - static_cast<std::int64_t>(*taken);
+  return static_cast<std::int64_t>(now) - static_cast<std::int64_t>(*taken);
 }
 
 // Should this allocation run the ramp?

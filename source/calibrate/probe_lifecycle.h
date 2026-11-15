@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Pat Carter
 
-// The upload ramp's lifecycle: one probe at a time, held in a thread the encoder
-// can always stop and join. The ramp drives the live RIST sender and runs for
-// seconds, so every path that closes or replaces that sender -- End Session, a
-// Start, Stop, shutdown -- has to be able to abort it and wait for it to be
-// gone before doing anything else.
+// The upload ramp's lifecycle: one probe at a time, held in a thread the
+// encoder can always stop and join. The ramp drives the live RIST sender and
+// runs for seconds, so every path that closes or replaces that sender -- End
+// Session, a Start, Stop, shutdown -- has to be able to abort it and wait for
+// it to be gone before doing anything else.
 //
 // The join is the important half. A ramp that is only asked to stop keeps
 // writing to a sender the caller is about to destroy, and its completion
@@ -94,8 +94,7 @@ public:
   {
     cancel_.store(true, std::memory_order_release);
     std::lock_guard<std::mutex> guard(mtx_);
-    if (thread_.joinable()
-        && thread_.get_id() == std::this_thread::get_id()) {
+    if (thread_.joinable() && thread_.get_id() == std::this_thread::get_id()) {
       // The ramp asking to stop itself: joining would wait on this very thread.
       // The flag is already set, so the ramp unwinds by its own next poll.
       return;

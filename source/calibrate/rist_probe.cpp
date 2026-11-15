@@ -145,8 +145,8 @@ auto run_probe(transport& sender, int encode_kbps, const upload_probe::hooks& h)
   rist_payload_ramp ramp(sender);
   // The ramp targets the rate the stream needs on the wire, not the video
   // bitrate alone: audio and the transport headers travel with it.
-  const upload_probe::config cfg {
-      .encode_kbps = rist_stream_rate_kbps(encode_kbps)};
+  const upload_probe::config cfg {.encode_kbps =
+                                      rist_stream_rate_kbps(encode_kbps)};
   return upload_probe::run(cfg, stats, ramp, h);
 }
 

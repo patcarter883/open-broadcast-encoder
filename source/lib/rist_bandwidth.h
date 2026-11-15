@@ -17,9 +17,9 @@
 // so 20000 kbps keeps ~9500 packets in range.
 inline constexpr int rist_bridged_ceiling_kbps = 20000;
 
-// Bridge mode reaches the bridge over the LAN, so the ceiling is a share of that
-// interface rather than a figure derived from the stream. The remainder is left
-// for everything else on the link.
+// Bridge mode reaches the bridge over the LAN, so the ceiling is a share of
+// that interface rather than a figure derived from the stream. The remainder is
+// left for everything else on the link.
 inline constexpr int rist_bridged_interface_pct = 80;
 
 // The ceiling for a bridged session leaving by an interface of

@@ -52,7 +52,7 @@ auto rist_leg_cap_kbps(int session_cap_kbps, int weight, int total_weight)
 auto rist_stream_rate_kbps(int video_kbps) -> int
 {
   return (video_kbps + rist_audio_kbps) * (100 + rist_transport_overhead_pct)
-         / 100;
+      / 100;
 }
 
 auto measured_upload_kbps_for(int measured_kbps,
