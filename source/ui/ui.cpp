@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Pat Carter
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <format>
 #include <functional>
@@ -32,6 +33,15 @@
 
 namespace
 {
+// The clock the End Session arm is measured on: monotonic, so a system clock
+// step during a broadcast cannot expire (or extend) the confirmation window.
+double monotonic_seconds()
+{
+  return std::chrono::duration<double>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
 // Select the menu item whose user_data encodes `value`. The encoder menu order
 // (AMD, NVENC, QSV, Software) does NOT match the encoder enum order, so a saved
 // choice must be restored by matching user_data — never by using the enum as a
@@ -931,22 +941,28 @@ void user_interface::hosted_allocate(FuncPtr allocate_funcptr)
 // End Session is destructive and billable, so it is a two-step action: the
 // first click only arms it, and a 5 s timer reverts the label. That is the
 // whole guard -- there is no modal: the operator has already been told the
-// session is held by the status line and the log. The deallocate itself runs
-// on a tracked worker in main.cpp, because it blocks on HTTP.
+// session is held by the status line and the log.
+//
+// The second click hands off to a tracked worker in main.cpp and returns at
+// once. That worker stops and joins the encode, cancels and joins the uplink
+// probe, and only then deallocates, because it blocks on both a thread join and
+// HTTP and must not do either on this thread. The button stays disabled until
+// the session changes state, so a third click cannot start a second teardown.
 void user_interface::hosted_end_session(FuncPtr end_session_funcptr)
 {
   lock();
-  if (!end_session_armed) {
-    end_session_armed = true;
+  if (end_session_confirm.click(monotonic_seconds())
+      == end_session_flow::confirm::answer::armed)
+  {
     btn_hosted_end_session->label("End Session?");
     btn_hosted_end_session->redraw();
-    Fl::add_timeout(5.0, end_session_timeout_cb, this);
+    Fl::add_timeout(
+        end_session_flow::arm_window_seconds, end_session_timeout_cb, this);
     unlock();
     Fl::awake();
     return;
   }
   // Second click inside the window: run it.
-  end_session_armed = false;
   Fl::remove_timeout(end_session_timeout_cb, this);
   btn_hosted_end_session->label("End Session");
   btn_hosted_end_session->deactivate();
@@ -965,7 +981,7 @@ void user_interface::end_session_timeout_cb(void* data)
     return;
   }
   self->lock();
-  self->end_session_armed = false;
+  self->end_session_confirm.disarm();
   self->btn_hosted_end_session->label("End Session");
   self->btn_hosted_end_session->redraw();
   self->refresh_end_session();
@@ -975,21 +991,35 @@ void user_interface::end_session_timeout_cb(void* data)
 
 void user_interface::refresh_end_session()
 {
-  // A held session is the precondition; a live feed forbids ending it, because
-  // that would tear the receiver down under the operator's stream.
-  if (hosted_session_held && !btn_stop_encode->active()) {
+  // A held session is the whole precondition. A live feed does not close the
+  // door: End Session stops the stream itself, in the order main.cpp's
+  // hosted_end_session() enforces, so the button is exactly as usable during a
+  // broadcast as it is on a standby slate.
+  if (end_session_flow::enabled(
+          {hosted_session_held, btn_stop_encode->active() != 0}))
+  {
     btn_hosted_end_session->activate();
     return;
   }
   btn_hosted_end_session->deactivate();
-  if (end_session_armed) {
+  if (end_session_confirm.armed()) {
     // The timer stays queued and no-ops; removing it here would mean touching
     // FLTK's timer list from a worker thread, which set_hosted_session_held()
     // may be on.
-    end_session_armed = false;
+    end_session_confirm.disarm();
     btn_hosted_end_session->label("End Session");
     btn_hosted_end_session->redraw();
   }
+}
+
+void user_interface::set_stream_stopped()
+{
+  lock();
+  btn_start_encode->activate();
+  btn_stop_encode->deactivate();
+  refresh_end_session();
+  unlock();
+  Fl::awake();
 }
 
 void user_interface::set_hosted_session_held(bool held)
@@ -1020,8 +1050,8 @@ void user_interface::start(void (*start_funcptr)())
   lock();
   btn_start_encode->deactivate();
   btn_stop_encode->activate();
-  // Ending the session under a live feed is refused: the button only comes
-  // alive again once Stop has taken the stream down.
+  // End Session stays live: it stops this stream as part of closing the
+  // session, so starting one does not take the action away.
   refresh_end_session();
   unlock();
   // Same discipline as stop() below. The event loop owns the lock permanently

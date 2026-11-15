@@ -532,3 +532,14 @@ target_link_libraries(
 target_compile_features(upload_settings_test PRIVATE cxx_std_20)
 
 catch_discover_tests(upload_settings_test)
+
+# End Session as one operator action: the enable rule, the two-click arm, and
+# the order it must use -- stop and join the encode, cancel and join the probe,
+# then deallocate, with a failed stop leaving the session held. Header-only over
+# injected steps, so the sequence is pinned with no UI, no sender and no portal.
+add_executable(end_session_flow_test source/end_session_flow_test.cpp)
+target_include_directories(end_session_flow_test PRIVATE ${CMAKE_SOURCE_DIR}/source)
+target_compile_features(end_session_flow_test PRIVATE cxx_std_20)
+target_link_libraries(end_session_flow_test PRIVATE Catch2::Catch2WithMain)
+
+catch_discover_tests(end_session_flow_test)

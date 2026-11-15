@@ -59,6 +59,7 @@
 #include "transport.h"
 #include "transport/librist_log_filter.h"
 #include "ui.h"
+#include "ui/end_session_flow.h"
 #include "version.h"
 
 app_context ctx;
@@ -652,6 +653,11 @@ static void publish_encode_state(encode_state state)
       state == encode_state::idle || state == encode_state::failed});
   Fl::awake(encode_state_apply, post.release());
 }
+
+// Set by the sender thread as its last act. A stop waits on this instead of
+// joining blindly: a join has no deadline, and the End Session action has to be
+// able to report a sender that will not leave its loop rather than hang on it.
+static std::atomic_bool g_encode_worker_done {false};
 
 static void run_loop()
 {
@@ -1704,15 +1710,35 @@ static void run()
     ctx.lib.preview_thread.join();
   }
 
-  ctx.lib.threads.emplace_back(run_loop);
+  g_encode_worker_done = false;
+  ctx.lib.threads.emplace_back(
+      []
+      {
+        run_loop();
+        g_encode_worker_done.store(true, std::memory_order_release);
+      });
 }
 
-static void stop()
+// How long the sender thread is given to leave its loop once it is told to
+// stop. Past this the stop is a failure, not a slow success: the caller's next
+// step is to deallocate the session this sender is writing to, and doing that
+// underneath a loop that may still be sending is the one thing that must never
+// happen.
+constexpr auto encode_stop_deadline = std::chrono::milliseconds(5000);
+
+// Stops the encode and waits for its worker. Every caller that tears down what
+// the sender owns (the End Session action, Stop Encode) goes through this, so
+// the "sender is down" precondition has exactly one implementation.
+//
+// The wait is bounded by encode_stop_deadline rather than a join, and the
+// encoder's own teardown (stop_encode_thread(), which joins its pipeline
+// threads) runs only after the sender loop has left. `timed_out` therefore
+// means the sender may still be writing and nothing downstream may be touched.
+static auto stop_encode_and_join() -> end_session_flow::stop_outcome
 {
+  const bool was_running = !ctx.lib.threads.empty();
   ctx.lib.is_running = false;
-  // A ramp still in flight cannot outlive the stream it gave way to.
-  stop_upload_probe();
-  // Silence the sender's callbacks (fast atomic stores — safe on the UI
+  // Silence the sender's callbacks (fast atomic stores — safe from any
   // thread). We do NOT destroy the transporter here: rist_destroy() must not
   // run while the UI thread holds Fl::lock() and joins run_loop (librist's
   // stats callback takes Fl::lock() → deadlock). It is destroyed at the next
@@ -1722,6 +1748,20 @@ static void stop()
     ctx.transporter->set_oob_callback(nullptr);
   }
   close_link_samples();
+  if (!was_running) {
+    return end_session_flow::stop_outcome::nothing_running;
+  }
+
+  const auto deadline = std::chrono::steady_clock::now() + encode_stop_deadline;
+  while (!g_encode_worker_done.load(std::memory_order_acquire)
+         && std::chrono::steady_clock::now() < deadline)
+  {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  if (!g_encode_worker_done.load(std::memory_order_acquire)) {
+    return end_session_flow::stop_outcome::timed_out;
+  }
+
   auto encoder = ctx.lib.encoder_ptr.exchange(nullptr);
   if (encoder) {
     encoder->stop_encode_thread();
@@ -1732,6 +1772,23 @@ static void stop()
     }
   }
   ctx.lib.threads.clear();
+  g_encode_worker_done = false;
+  return end_session_flow::stop_outcome::stopped;
+}
+
+static void stop()
+{
+  ctx.lib.is_running = false;
+  // A ramp still in flight cannot outlive the stream it gave way to.
+  stop_upload_probe();
+  if (stop_encode_and_join() == end_session_flow::stop_outcome::timed_out) {
+    // Stop Encode is the operator's own teardown, so it says what did not
+    // happen rather than pretending the feed is down.
+    encode_log(std::format(
+        "\n*** Stop Encode: the sender did not stop within {} s and may still "
+        "be sending. The session is still held; try Stop again. ***\n",
+        encode_stop_deadline.count() / 1000));
+  }
 
   // The hosted session is NOT released here. Stop Encode ends the feed, not the
   // session: the receiver goes on its standby slate, the operator can start the
@@ -1959,8 +2016,9 @@ static void hosted_reattach()
 }
 
 // The deallocate itself, and everything the caller does with its answer.
-// Split out so End Session can express the one ordering it must never get
-// wrong: cancel and JOIN the ramp, THEN close (probe_lifecycle::cancel_then).
+// Split out because End Session reaches it as the LAST step of one fixed order
+// (end_session_flow::run): the encode is stopped and joined, the ramp is
+// cancelled and joined, and only then does this run.
 static void deallocate_held_session(const hosted_config& hosted,
                                     const std::string& session_id)
 {
@@ -1992,22 +2050,31 @@ static void deallocate_held_session(const hosted_config& hosted,
   }
 }
 
-// The End Session action (E2). Deallocate the session the encoder still holds
-// and clear the file ONLY on a 2xx: a deallocate that reports success without
-// the portal having accepted it would silently leave a billable session
-// running, so a failure KEEPS the file and says so. The operator can retry, and
-// the next launch's cleanup still finds it.
+// The End Session action (E2): one operator action that closes the session the
+// encoder holds, whether or not a feed is running. Deallocate the session and
+// clear the file ONLY on a 2xx: a deallocate that reports success without the
+// portal having accepted it would silently leave a billable session running, so
+// a failure KEEPS the file and says so. The operator can retry, and the next
+// launch's cleanup still finds it.
 //
-// It is also the way out of an allocation whose ramp is still running: the
-// probe is cancelled and joined BEFORE the deallocate, so no probe thread can
-// touch a session that is already gone, and the button works for the whole
-// probe rather than being refused until it finishes.
+// Ending a session that is being streamed stops the stream, in one fixed order
+// (end_session_flow::run) because a receiver torn down under a live sender is
+// the failure this whole action exists to avoid:
 //
-// Blocking HTTP, so -- like every other hosted action -- it runs on a tracked
-// background thread; the UI is only ever touched through the thread-safe
-// setters. The join lives on that worker too: the ramp reports through setters
-// that take the FLTK lock, so joining it from the UI thread would wait on
-// itself.
+//   1. stop the encode and join its worker,
+//   2. cancel the uplink ramp and join it,
+//   3. deallocate.
+//
+// A stop that does not complete -- the sender loop missed its deadline, or its
+// teardown failed -- abandons the action before step 2 and leaves the session
+// held, because the operator can retry a stop but cannot clean up a session
+// that was deallocated while a sender was still writing to it.
+//
+// All of it blocks (joins, HTTP), so -- like every other hosted action -- it
+// runs on a tracked background thread; the UI is only ever touched through the
+// thread-safe setters. The joins live on that worker too: the sender and the
+// ramp both report through setters that take the FLTK lock, so joining either
+// from the UI thread would wait on itself.
 static void hosted_end_session()
 {
   const std::optional<hosted_session> held = settings::load_hosted_session();
@@ -2035,11 +2102,49 @@ static void hosted_end_session()
   track_control_thread(std::thread(
       [hosted, session_id]
       {
-        const bool cancelled_probe = probe_lifecycle::cancel_then(
-            g_probe,
+        const end_session_flow::result outcome = end_session_flow::run(
+            []
+            {
+              const auto stopped = stop_encode_and_join();
+              if (stopped == end_session_flow::stop_outcome::stopped
+                  && ctx.ui != nullptr) {
+                // The stream is down, so the pair is presented as stopped
+                // before the deallocate goes out: the screen matches the
+                // sender from this point, not after the HTTP round trip.
+                ctx.ui->set_stream_stopped();
+              }
+              return stopped;
+            },
+            []
+            {
+              // Cancel and JOIN the ramp before anything it writes to is
+              // destroyed (probe_lifecycle's rule). The join is on this worker,
+              // never the UI thread.
+              const bool was_running = g_probe.running();
+              g_probe.stop();
+              return was_running;
+            },
             [&hosted, &session_id]
             { deallocate_held_session(hosted, session_id); });
-        if (cancelled_probe) {
+
+        if (!end_session_flow::stop_completed(outcome.stop)) {
+          // Refused, by design: the session is still held and still billed, and
+          // the button is handed back so the operator can stop the sender and
+          // press it again.
+          transport_log("End Session aborted for session " + session_id + ": "
+                        + end_session_flow::stop_failure_text(outcome.stop)
+                        + ". The session is still held and nothing was "
+                          "deallocated.\n");
+          if (ctx.ui != nullptr) {
+            ctx.ui->set_hosted_state(
+                "End session aborted: the stream did not stop - end it again "
+                "once it has.",
+                true);
+            ctx.ui->set_hosted_session_held(true);
+          }
+          return;
+        }
+        if (outcome.probe_cancelled) {
           // A ramp that stopped short yields no figure (upload_probe::select),
           // so the operator is told the measurement was abandoned rather than
           // left to read the pane as "measured".
