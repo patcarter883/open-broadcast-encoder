@@ -639,8 +639,8 @@ TEST_CASE("an unreachable portal is a retry, not a verdict", "[backplane][e3]")
   CHECK(decide_reattach(r.probe, r.state) == reattach_action::retry);
 }
 
-// Only an unanswered probe may stretch the retry interval. A refused token and a
-// session the portal no longer has are verdicts: the loop ends on both, so
+// Only an unanswered probe may stretch the retry interval. A refused token and
+// a session the portal no longer has are verdicts: the loop ends on both, so
 // neither is allowed to look like a transient failure that earns a longer wait.
 TEST_CASE("only a non-answer classifies as a retry", "[backplane][e3][backoff]")
 {
@@ -688,7 +688,7 @@ TEST_CASE("jitter extends the interval but not past the cap",
 {
   reattach_backoff backoff({5, 60, 0.2}, [] { return 1.0; });  // top of range
 
-  CHECK(backoff.next_delay_seconds() == 6);   //  5 + 20%
+  CHECK(backoff.next_delay_seconds() == 6);  //  5 + 20%
   CHECK(backoff.next_delay_seconds() == 12);  // 10 + 20%
   CHECK(backoff.next_delay_seconds() == 24);  // 20 + 20%
   CHECK(backoff.next_delay_seconds() == 48);  // 40 + 20%
@@ -696,8 +696,8 @@ TEST_CASE("jitter extends the interval but not past the cap",
   CHECK(backoff.next_delay_seconds() == 72);
 }
 
-// A portal that answered is reattached to after the base interval, not after the
-// ceiling the previous failures had reached.
+// A portal that answered is reattached to after the base interval, not after
+// the ceiling the previous failures had reached.
 TEST_CASE("an answered probe resets the interval to the base",
           "[backplane][e3][backoff]")
 {

@@ -386,14 +386,14 @@ static void calibrate_upload_if_needed()
   const int encode_kbps =
       ctx.lib.encode_cfg.bitrate.load(std::memory_order_relaxed);
   const upload_measurement measured = upload_measurement_now();
-  const probe_policy::decision plan = probe_policy::decide(
-      measured.kbps,
-      measured.destination,
-      measured.taken_at,
-      destination,
-      encode_kbps,
-      ctx.lib.is_running.load(std::memory_order_acquire),
-      std::time(nullptr));
+  const probe_policy::decision plan =
+      probe_policy::decide(measured.kbps,
+                           measured.destination,
+                           measured.taken_at,
+                           destination,
+                           encode_kbps,
+                           ctx.lib.is_running.load(std::memory_order_acquire),
+                           std::time(nullptr));
   switch (plan) {
     case probe_policy::decision::fresh:
       transport_log(
@@ -1365,11 +1365,10 @@ static void repost_stored_start(const hosted_session& session)
       session,
       ctx.lib.encode_cfg.selected_codec,
       geometry,
-      rist_bandwidth_kbps(
-          payload_kbps,
-          sizing_upload_kbps(session.is_bridged()),
-          session.is_bridged(),
-          session.is_bridged() ? bridged_interface_mbps() : 0),
+      rist_bandwidth_kbps(payload_kbps,
+                          sizing_upload_kbps(session.is_bridged()),
+                          session.is_bridged(),
+                          session.is_bridged() ? bridged_interface_mbps() : 0),
       payload_kbps,
       ctx.lib.bridge_link_budget_kbps.load(std::memory_order_relaxed));
 }
@@ -1659,11 +1658,10 @@ static void hosted_allocate()
             outcome.session,
             source_codec,
             geometry,
-            rist_bandwidth_kbps(
-                encode_kbps,
-                sizing_upload_kbps(outcome.bridged),
-                outcome.bridged,
-                outcome.bridged ? bridged_interface_mbps() : 0),
+            rist_bandwidth_kbps(encode_kbps,
+                                sizing_upload_kbps(outcome.bridged),
+                                outcome.bridged,
+                                outcome.bridged ? bridged_interface_mbps() : 0),
             encode_kbps,
             link_budget_kbps);
         // E4: from now on the session is held, so a node that restarts must get
@@ -1877,9 +1875,8 @@ static void hosted_reattach()
       hosted.device_token,
       make_httplib_transport(hosted.backplane_url, hosted.device_token));
 
-  reattach_backoff backoff({kReattachBaseDelaySeconds,
-                            kReattachMaxDelaySeconds,
-                            0.2});
+  reattach_backoff backoff(
+      {kReattachBaseDelaySeconds, kReattachMaxDelaySeconds, 0.2});
   int waited = 0;
   bool announced = false;
   // The interval the last "still reconnecting" line reported. The loop logs on
@@ -1986,8 +1983,8 @@ static void hosted_reattach()
       }
       announced = true;
     }
-    // Reported on the unjittered interval: the jitter would otherwise make every
-    // attempt at the cap look like a new interval and log anyway.
+    // Reported on the unjittered interval: the jitter would otherwise make
+    // every attempt at the cap look like a new interval and log anyway.
     if (backoff.last_nominal_seconds() != logged_interval) {
       logged_interval = backoff.last_nominal_seconds();
       transport_log("Hosted: still reconnecting to " + session_id
@@ -1998,8 +1995,7 @@ static void hosted_reattach()
     if (waited + delay > kReattachGiveUpAfterSeconds) {
       // Give up trying, but keep the record: the session is still the
       // operator's, and the next launch is another chance to reattach.
-      transport_log("Hosted: giving up reattaching to " + session_id
-                    + " after "
+      transport_log("Hosted: giving up reattaching to " + session_id + " after "
                     + std::to_string(kReattachGiveUpAfterSeconds)
                     + " s of retrying; the session record is kept.\n");
       if (ctx.ui != nullptr) {
@@ -2265,7 +2261,8 @@ static bool run_transport()
   // payload floor overrides it, and naming the measurement there misreports
   // what produced the figure.
   if (measured_upload.has_value()
-      && *measured_upload == ctx.lib.output_cfg.bandwidth) {
+      && *measured_upload == ctx.lib.output_cfg.bandwidth)
+  {
     transport_log(std::format(
         "[rist] the ceiling follows the measured uplink of {} kbps\n",
         *measured_upload));

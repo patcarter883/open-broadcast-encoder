@@ -9,8 +9,6 @@
 
 #include <algorithm>
 #include <atomic>
-
-#include "lib/rist_bandwidth.h"
 #include <cstdint>
 #include <format>
 #include <string>

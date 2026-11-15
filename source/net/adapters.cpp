@@ -15,10 +15,10 @@
 // winsock2.h before windows.h, and both before iphlpapi.h: iphlpapi's adapter
 // types (IP_ADAPTER_ADDRESSES, GAA_FLAG_*) are declared in terms of winsock and
 // Win32 types, and pulling it in first leaves them undefined.
+#  include <iphlpapi.h>
+#  include <windows.h>
 #  include <winsock2.h>
 #  include <ws2tcpip.h>
-#  include <windows.h>
-#  include <iphlpapi.h>
 #else
 #  include <arpa/inet.h>
 #  include <ifaddrs.h>
@@ -208,7 +208,8 @@ auto link_speed_for_destination(const std::string& host, int port) -> int
   target.sin_port = htons(static_cast<std::uint16_t>(port));
   if (::inet_pton(AF_INET, host.c_str(), &target.sin_addr) != 1
       || ::connect(fd, reinterpret_cast<sockaddr*>(&target), sizeof(target))
-             != 0) {
+          != 0)
+  {
     ::close(fd);
     return 0;
   }

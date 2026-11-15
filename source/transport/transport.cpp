@@ -165,11 +165,11 @@ auto transport::setup_rist_sender(output_config& output_c) -> bool
   for (std::size_t i = 0; i < resolved.size(); ++i) {
     const uplink::leg& leg = resolved[i];
     interface_list_sender.emplace_back(
-        uplink::build_url(output_c,
-                          leg,
-                          rist_leg_cap_kbps(output_c.bandwidth,
-                                            leg.weight.value_or(0),
-                                            total_weight)),
+        uplink::build_url(
+            output_c,
+            leg,
+            rist_leg_cap_kbps(
+                output_c.bandwidth, leg.weight.value_or(0), total_weight)),
         static_cast<int>(leg.weight.value_or(0)));
     // librist states the bind it makes ("Binding socket to <device>"); this
     // line states what was asked of it, per leg, so a leg that fell back to the

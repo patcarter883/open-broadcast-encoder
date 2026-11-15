@@ -432,7 +432,8 @@ double random_unit()
 
 reattach_backoff::reattach_backoff(reattach_backoff_config limits,
                                    jitter_fn jitter)
-    : m_limits(limits), m_jitter(std::move(jitter))
+    : m_limits(limits)
+    , m_jitter(std::move(jitter))
 {
   // A zero base or a cap below it would make the schedule meaningless (a busy
   // loop, or an interval the caller cannot influence), so both are pinned.
@@ -449,9 +450,9 @@ reattach_backoff::reattach_backoff(reattach_backoff_config limits,
 
 int reattach_backoff::next_delay_seconds()
 {
-  // base, 2*base, 4*base, ... clamped to the cap. Doubling, not base * attempts,
-  // is what lets a saturated node shed load: five minutes of retries is then
-  // about six probes instead of twenty.
+  // base, 2*base, 4*base, ... clamped to the cap. Doubling, not base *
+  // attempts, is what lets a saturated node shed load: five minutes of retries
+  // is then about six probes instead of twenty.
   long long nominal = m_limits.base_seconds;
   for (int i = 0; i < m_attempts && nominal < m_limits.max_seconds; ++i) {
     nominal *= 2;
