@@ -19,6 +19,10 @@
 #include <stdint.h>
 
 #include "lib/lib.h"
+// The End Session action's rules -- the enable predicate, the two-click arm and
+// the stop-then-deallocate order -- live in a header with no FLTK in it so they
+// are pinned by tests; this class is their only caller in the UI.
+#include "ui/end_session_flow.h"
 // The widget tree comes from the design file: ui.fld is turned into
 // ui_widgets.{h,cpp} by fluid at build time, and declares every panel, row,
 // label, output and button as a public member of `ui_widgets`, plus the static
@@ -103,10 +107,13 @@ public:
   void set_hosted_state(const std::string& text, bool is_error);
   void set_hosted_token(const std::string& token);
   // Whether a hosted session is held on disk, which is what makes End Session
-  // actionable. The button is alive only when this is true AND the encoder is
-  // not streaming -- ending the session under a live feed would tear the
-  // receiver down while it is on the air. Safe from any thread (FLTK lock).
+  // actionable. The button is alive whenever this is true, streaming or not:
+  // End Session stops the stream itself. Safe from any thread (FLTK lock).
   void set_hosted_session_held(bool held);
+  // The stream went down without Stop being pressed -- End Session stops it as
+  // part of closing the session. Presents the pair as stopped and re-evaluates
+  // End Session. Safe from any thread (FLTK lock).
+  void set_stream_stopped();
   // The LAN cameras found by the capture browse (MC4). Runs on the same kind of
   // tracked background thread as the bridge actions, so it takes the FLTK lock
   // and repopulates the picker from a worker without touching the config.
@@ -239,16 +246,17 @@ private:
   void hosted_sign_in(FuncPtr signin_funcptr);
   void hosted_sign_out(FuncPtr signout_funcptr);
   // The two-step End Session: the first click arms it (label changes, a 5 s
-  // timer reverts), the second inside that window runs the deallocate. The work
-  // itself is in main.cpp, off the UI thread, like every other hosted action.
+  // timer reverts), the second inside that window runs the action. The work
+  // itself is in main.cpp, off the UI thread, like every other hosted action:
+  // it stops and joins the encode, cancels the probe, then deallocates.
   void hosted_end_session(FuncPtr end_session_funcptr);
   static void end_session_timeout_cb(void* data);
-  void disarm_end_session();
-  // End Session is actionable only when a session is held AND nothing is being
-  // streamed. Called from the setters and from start()/stop(), all under the
-  // FLTK lock.
+  // End Session is actionable whenever a session is held. A live feed is not a
+  // reason to grey it out: the action stops the stream itself. Called from the
+  // setters and from start()/stop(), all under the FLTK lock.
   void refresh_end_session();
-  bool end_session_armed = false;
+  // The arm/confirm state behind the two clicks above.
+  end_session_flow::confirm end_session_confirm;
   bool hosted_session_held = false;
   // The model the hosted widgets edit; set once in init_ui_callbacks, so the
   // thread-safe setters update the model as well as the widgets.

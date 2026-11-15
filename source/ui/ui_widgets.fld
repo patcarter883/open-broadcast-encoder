@@ -287,7 +287,7 @@ class ui_widgets {open
             }
             Fl_Button btn_hosted_end_session {
               label {End Session}
-              tooltip {Closes the hosted session and stops billing it. Stop Encode leaves the session allocated (the node goes on standby), so this is the only action that ends it. Two clicks: click again within 5 s.}
+              tooltip {Closes the hosted session and stops billing it, streaming or not: a live feed is stopped first, then the session is ended. Stop Encode on its own only ends the feed and leaves the session allocated (the node goes on standby). Two clicks: click again within 5 s.}
               xywh {765 464 110 25} deactivate
             }
             Fl_Output hosted_token_output {
